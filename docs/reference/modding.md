@@ -1,3 +1,7 @@
+> **Reference.** Это справка по ограничениям TES3MP 0.8.1, а не описание
+> архитектуры v2. Актуальные контракты архивов — в
+> [`docs/v2/03-contracts.md`](../v2/03-contracts.md) §6.
+
 # Modding TES3MP 0.8.1 — Limitations and Capabilities
 
 This document describes what is supported and **not** supported in TES3MP 0.8.1 (based on OpenMW 0.47).
@@ -15,7 +19,8 @@ MWScript is executed by OpenMW on the client and supports functions like `Messag
 
 - All clients must have the same plugins
 - `test_plugin.omwaddon` is an example working plugin that uses MWScript
-- Plugins are distributed via `mods.tar.gz` (downloaded via nginx at `/download/mods/<filename>`)
+- Plugins are distributed via `mods.tar.gz` (downloaded from the panel at
+  `/api/v1/mods/current/archive`)
 - The server checks their presence and CRC via `requiredDataFiles.json`
 
 ### Server-side Lua scripts

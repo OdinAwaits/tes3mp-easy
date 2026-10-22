@@ -1,3 +1,7 @@
+> **Reference.** Справка по `config.lua` TES3MP 0.8.1. Наша панель
+> редактирует только белый список ключей; см.
+> [`docs/v2/05-panel.md`](../v2/05-panel.md) §11.
+
 # config.lua reference
 
 Full documentation of all settings in `/tes3mp-easy/container-data/server/scripts/config.lua` (TES3MP 0.8.1).

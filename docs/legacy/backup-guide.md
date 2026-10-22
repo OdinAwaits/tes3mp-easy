@@ -1,3 +1,8 @@
+> **Legacy / не руководство к действию.** Старая схема бэкапов через `export`
+> и автоудаление старше 30 дней больше не используются. Актуально —
+> [`docs/v2/08-runbook.md`](../v2/08-runbook.md) §6 и
+> [`docs/v2/03-contracts.md`](../v2/03-contracts.md) §6.
+
 # Backup Guide
 
 The server stores backups of two data types: **mods** and **state**. State combines players and world data into a single archive.
