@@ -36,7 +36,9 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
   `--help` и тесты контракта процесса.
 - C03 закрыт: добавлены `internal/pathguard` и потоковый `internal/archive`
   с лимитами и защитой от небезопасных записей.
-- Функциональных ops-команд пока нет. Следующая задача — C04.
+- C04 закрыт: добавлена потоковая валидация mods-архивов — layout, JSON, CRC,
+  расширения, имена скриптов и запрет базовых ESM.
+- Функциональных ops-команд пока нет. Следующая задача — C05.
 
 Схема веток на момент старта:
 
@@ -70,8 +72,8 @@ read-контрактов, клиент — после появления пуб
 | C01 | done | Каркас Go и CI | `go.mod`, `cmd/tes3mp-easy-ops`, CI |
 | C02 | done | JSON-envelope, exit codes, флаги | стабильный машинный интерфейс |
 | C03 | done | Безопасный tar.gz reader | потоковое чтение и pathguard |
-| C04 | next | Валидация mods-архивов | `requiredDataFiles.json`, plugins/scripts |
-| C05 | planned | Валидация state и `current.txt` | вложенная структура, sha256 |
+| C04 | done | Валидация mods-архивов | `requiredDataFiles.json`, plugins/scripts |
+| C05 | next | Валидация state и `current.txt` | вложенная структура, sha256 |
 | C06 | planned | Retention и имена архивов | buckets, protected, бюджеты |
 | C07 | planned | Contract harness и docs test | проверка реального бинарника |
 
@@ -123,7 +125,14 @@ Scope:
 Тесты: tar-фикстуры генерируются в тесте; отдельные случаи на каждый запрет,
 пустой tar, gzip-мусор после tar и превышение лимитов.
 
-### C04 — валидация mods-архивов
+### C04 — валидация mods-архивов (done)
+
+Сделано: `internal/archive` получил `ValidateMods`/`ValidateModsFile`/
+`ValidateModsReader` и `ParseRequiredDataFiles`. Плагины читаются потоково,
+CRC32 считается без буферизации содержимого; JSON ограничен 8 MiB. Проверяются
+layout, порядок базовых ESM, уникальность имён без учёта регистра, формат CRC,
+наличие каждого плагина в обе стороны, расширения и имена скриптов. Базовые ESM
+в `plugins/` отклоняются.
 
 Scope:
 
