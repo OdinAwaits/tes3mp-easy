@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the TES3MP Easy state backup every 5 minutes
+Documentation=https://github.com/Saagilat/tes3mp-easy
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=tes3mp-easy-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,26 @@
+[Unit]
+Description=TES3MP dedicated server
+Documentation=https://github.com/Saagilat/tes3mp-easy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tes3mp
+Group=tes3mp
+WorkingDirectory=/tes3mp-easy
+ExecStart=/opt/tes3mp-easy/tes3mp/tes3mp-server
+Restart=on-failure
+RestartSec=5s
+MemoryHigh=384M
+MemoryMax=448M
+OOMScoreAdjust=-500
+UMask=0027
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world
+
+[Install]
+WantedBy=multi-user.target

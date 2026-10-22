@@ -48,7 +48,10 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
   RAM, swap и диска; режим `--check` ничего не меняет.
 - I02 закрыт: добавлены пользователи/группы, layout данных, sudoers и
   `rootctl`; повторный запуск установки идемпотентен.
-- Функциональных ops-команд пока нет. Следующая задача — I03.
+- I03 закрыт: добавлены `tes3mp.service`, `tes3mp-panel.service`,
+  `tes3mp-easy-backup.service/.timer`, drop-in journald и `vm.swappiness=10`;
+  bootstrap ставит их идемпотентно, но не запускает до появления runtime.
+- Функциональных ops-команд пока нет. Следующая задача — I04.
 
 Схема веток на момент старта:
 
@@ -230,7 +233,7 @@ Scope:
 |---|---|---|---|
 | I01 | done | Preflight bootstrap | OS, arch, systemd, root, диск, идемпотентность |
 | I02 | done | Пользователи, каталоги, sudoers, rootctl | узкая модель привилегий |
-| I03 | planned | systemd-юниты, timer, journald, sysctl | запуск и лимиты |
+| I03 | done | systemd-юниты, timer, journald, sysctl | лимиты и установка; запуск в I05 |
 | I04 | planned | Runtime TES3MP и базовые моды | готовый игровой сервер |
 | I05 | planned | Bootstrap на чистой VM | установка с нуля без ручных шагов |
 
@@ -282,6 +285,41 @@ smoke на Debian 12 подтвердил ownership/modes, `visudo -c` и sudo-�
 Готово, когда на чистом Debian 12 пользователи, каталоги, rootctl и sudoers
 созданы, повторный запуск не меняет состояние, а rootctl не даёт обойти
 фиксированный набор команд.
+
+### I03 — systemd units, journald, sysctl (done)
+
+Сделано: в `systemd/` добавлены `tes3mp.service`, `tes3mp-panel.service`,
+`tes3mp-easy-backup.service` и `tes3mp-easy-backup.timer`; в
+`systemd/journald.conf.d/tes3mp-easy.conf` — капы `SystemMaxUse=100M` и
+`RuntimeMaxUse=32M`, в `sysctl.d/99-tes3mp-easy.conf` — `vm.swappiness=10`.
+`bootstrap.sh` валидирует каждый unit через `systemd-analyze verify` до записи,
+ставит файлы `0644 root:root` в `/etc/systemd/system`, journald drop-in и
+sysctl drop-in, затем делает `systemctl daemon-reload`, перезапускает
+`systemd-journald.service` и применяет `sysctl -q -p`.
+
+Пока runtime TES3MP и бинарники ops/panel не установлены (I04–I05),
+`systemd-analyze` сообщает `Command ... is not executable: No such file or
+directory`. Bootstrap допускает только эту диагностику для ожидаемого
+`ExecStart` соответствующего unit и всё равно падает на синтаксических ошибках,
+неизвестных директивах, опечатках в пути и ошибках зависимостей. Юниты
+не запускаются и не включаются в I03: первый запуск — в I05, после установки
+runtime. Панель получит `CAP_NET_BIND_SERVICE`, `NoNewPrivileges=no` и доступ на
+запись только к путям, которые нужны ей и дочернему `ops`; сервер и backup —
+`NoNewPrivileges=yes`, `UMask=0027` и минимальные `ReadWritePaths`.
+
+Тесты: `test/infra` fake-host проверяет установку всех шести файлов, режимы,
+содержимое, порядок «verify до install», `daemon-reload`, перезапуск journald и
+`sysctl -p`; отдельные тесты — допустимая диагностика отсутствующего runtime,
+отказ на синтаксической ошибке, отсутствие `systemd-analyze`/`sysctl`,
+отсутствие source-файлов, сбой `daemon-reload` и `sysctl`. `systemd_test.go`
+проверяет лимиты, пользователей, `ExecStart`, timer и drop-in-файлы. Real-host
+smoke на Debian 12 подтвердил установку, режимы `0644`, `systemd-analyze verify`
+с ожидаемыми отсутствующими `ExecStart`, `daemon-reload`, restart journald,
+`vm.swappiness=10` и идемпотентность; юниты остались `inactive`.
+
+Ограничение I03: unit-файлы используют production-пути `/tes3mp-easy` и
+`/opt/tes3mp-easy`; `--root` по-прежнему управляет только data layout и
+preflight. Полная проверка запуска и лимитов — после I04/I05 на чистой VM.
 
 Критерий milestone: на Debian 12/Ubuntu 24.04 x86_64 после `bootstrap.sh`
 поднимаются `tes3mp.service` и backup timer; unit панели установлен и проходит

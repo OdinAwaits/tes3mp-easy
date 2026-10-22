@@ -80,6 +80,8 @@ ops дополнительно пропускает бэкап, если игр�
 - `Restart=on-failure`, `RestartSec=5s`;
 - `ProtectSystem=strict`, `PrivateTmp=yes`, `ProtectHome=yes`;
 - `ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world`;
+- `NoNewPrivileges=yes`, `UMask=0027`: сервер не повышает привилегии, а его
+  файлы создаются как `0640`, каталоги — `0750`;
 - `SupplementaryGroups=systemd-journal` юниту не нужен: сервер пишет
   stdout/stderr; группа `systemd-journal` у пользователя `tes3mp` нужна только
   для `ops logs`;
@@ -103,7 +105,10 @@ ops дополнительно пропускает бэкап, если игр�
 
 `tes3mp-easy-backup.service` не получает прав root и не управляет юнитами:
 ему достаточно прочитать состояние (`systemctl is-active`) и записать архив от
-пользователя `tes3mp`.
+пользователя `tes3mp`. Юнит запускает
+`tes3mp-easy-ops --root /tes3mp-easy --json backups create --type state
+--if-running`, имеет `NoNewPrivileges=yes`, `UMask=0027` и пишет только в
+`backups/`, `.locks/` и `.staging/`.
 
 ## 4. Пользователи, группы и sudoers
 
@@ -165,6 +170,14 @@ rootctl.
 │   ├── tes3mp-server
 │   └── lib/                      # библиотеки из релиза TES3MP
 ├── systemd/
+│   ├── tes3mp.service
+│   ├── tes3mp-panel.service
+│   ├── tes3mp-easy-backup.service
+│   ├── tes3mp-easy-backup.timer
+│   └── journald.conf.d/
+│       └── tes3mp-easy.conf
+├── sysctl.d/
+│   └── 99-tes3mp-easy.conf
 ├── sudoers.d/
 ├── rootctl/
 │   └── tes3mp-easy-rootctl

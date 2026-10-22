@@ -4,7 +4,9 @@
 #
 # I01 implements the read-only preflight. I02 adds the privilege model: system
 # users and groups, the data directory layout, sudoers and the fixed rootctl
-# helper. Systemd units, runtime, initial data and the panel start in I03-I05.
+# helper. I03 installs the systemd units, the backup timer, journald limits and
+# the sysctl drop-in. Runtime, initial data and the first service start remain
+# in I04-I05.
 #
 # Usage: sudo ./bootstrap.sh [--check] [--root PATH]
 #
@@ -39,6 +41,16 @@ SCRIPT_DIR=$(cd -- "$SCRIPT_DIR" >/dev/null 2>&1 && pwd)
 # release tree.
 ROOTCTL_SOURCE="${TES3MP_EASY_ROOTCTL_SOURCE:-$SCRIPT_DIR/rootctl/tes3mp-easy-rootctl}"
 SUDOERS_SOURCE="${TES3MP_EASY_SUDOERS_SOURCE:-$SCRIPT_DIR/sudoers.d/tes3mp-easy}"
+SYSTEMD_SOURCE_DIR="${TES3MP_EASY_SYSTEMD_SOURCE:-$SCRIPT_DIR/systemd}"
+JOURNALD_SOURCE="${TES3MP_EASY_JOURNALD_SOURCE:-$SYSTEMD_SOURCE_DIR/journald.conf.d/tes3mp-easy.conf}"
+SYSCTL_SOURCE="${TES3MP_EASY_SYSCTL_SOURCE:-$SCRIPT_DIR/sysctl.d/99-tes3mp-easy.conf}"
+
+readonly -a UNIT_FILES=(
+    tes3mp.service
+    tes3mp-panel.service
+    tes3mp-easy-backup.service
+    tes3mp-easy-backup.timer
+)
 
 prefixed() {
     printf '%s%s' "$INSTALL_ROOT" "$1"
@@ -48,6 +60,11 @@ SUDOERS_DIR=$(prefixed /etc/sudoers.d)
 SUDOERS_DEST="$SUDOERS_DIR/tes3mp-easy"
 LIBEXEC_DIR=$(prefixed /usr/local/libexec)
 ROOTCTL_DEST="$LIBEXEC_DIR/tes3mp-easy-rootctl"
+SYSTEMD_UNIT_DIR=$(prefixed /etc/systemd/system)
+JOURNALD_CONFIG_DIR=$(prefixed /etc/systemd/journald.conf.d)
+JOURNALD_CONFIG_DEST="$JOURNALD_CONFIG_DIR/tes3mp-easy.conf"
+SYSCTL_CONFIG_DIR=$(prefixed /etc/sysctl.d)
+SYSCTL_CONFIG_DEST="$SYSCTL_CONFIG_DIR/99-tes3mp-easy.conf"
 
 # A nominal 512 MiB VPS reports about 480-500 MiB MemTotal after firmware and
 # kernel reservations; a nominal 7 GiB filesystem reports about 6.3 GiB total.
@@ -128,7 +145,11 @@ Checks:
 Installs (I02):
   users and groups tes3mp/tes3mp-panel, the data directory layout,
   /usr/local/libexec/tes3mp-easy-rootctl and /etc/sudoers.d/tes3mp-easy.
-  Systemd units and the runtime are installed by later stages.
+
+Installs (I03):
+  tes3mp.service, tes3mp-panel.service, tes3mp-easy-backup.service,
+  tes3mp-easy-backup.timer, the journald drop-in and vm.swappiness=10.
+  The TES3MP runtime and the first service start are installed by I04-I05.
 
 Exit status:
   0  all checks and installation steps passed (warnings are allowed)
@@ -606,6 +627,109 @@ install_privilege_layout() {
     pass "sudoers: $SUDOERS_DEST"
 }
 
+# verify_unit_source UNIT
+#
+# The runtime binaries arrive in I04-I05, after this stage. systemd-analyze
+# treats an absent ExecStart target as a verification failure, so before the
+# runtime exists only that exact diagnostic is accepted. Syntax errors,
+# unknown directives and dependency problems still abort the install.
+verify_unit_source() {
+    local unit=$1
+    local unit_name=${unit##*/}
+    local expected_exec=""
+    local output line
+    local saw_pending=0
+    local unexpected=0
+
+    case "$unit_name" in
+        tes3mp.service) expected_exec=/opt/tes3mp-easy/tes3mp/tes3mp-server ;;
+        tes3mp-panel.service) expected_exec=/opt/tes3mp-easy/bin/tes3mp-easy-panel ;;
+        tes3mp-easy-backup.service) expected_exec=/opt/tes3mp-easy/bin/tes3mp-easy-ops ;;
+    esac
+
+    if output=$(systemd-analyze verify --man=no "$unit" 2>&1); then
+        pass "unit syntax: $unit_name"
+        return
+    fi
+
+    while IFS= read -r line; do
+        [[ -z $line ]] && continue
+        if [[ -n $expected_exec &&
+            $line == *": Command $expected_exec is not executable: No such file or directory" ]]; then
+            # Expected until the matching runtime binary is installed in
+            # I04-I05. A typo in ExecStart, a wrong binary for this unit or
+            # any other diagnostic still fails verification.
+            saw_pending=1
+            continue
+        fi
+        printf '%s\n' "$line" >&2
+        unexpected=1
+    done <<<"$output"
+
+    if ((unexpected || saw_pending == 0)); then
+        abort_install "systemd-analyze rejected $unit"
+    fi
+    pass "unit syntax: $unit_name (runtime executable pending)"
+}
+
+install_systemd_layout() {
+    local unit src
+
+    if ! command -v systemd-analyze >/dev/null 2>&1; then
+        abort_install "systemd-analyze is required to validate systemd units"
+    fi
+    if ! command -v sysctl >/dev/null 2>&1; then
+        abort_install "sysctl is required to apply vm.swappiness"
+    fi
+
+    for unit in "${UNIT_FILES[@]}"; do
+        src="$SYSTEMD_SOURCE_DIR/$unit"
+        if [[ ! -f $src ]]; then
+            abort_install "systemd unit source not found: $src"
+        fi
+    done
+    if [[ ! -f $JOURNALD_SOURCE ]]; then
+        abort_install "journald source not found: $JOURNALD_SOURCE"
+    fi
+    if [[ ! -f $SYSCTL_SOURCE ]]; then
+        abort_install "sysctl source not found: $SYSCTL_SOURCE"
+    fi
+
+    # Validate every unit before writing any of them. This keeps a typo from
+    # leaving the host with a half-updated unit set.
+    for unit in "${UNIT_FILES[@]}"; do
+        verify_unit_source "$SYSTEMD_SOURCE_DIR/$unit"
+    done
+
+    ensure_dir "$SYSTEMD_UNIT_DIR" root root 0755
+    for unit in "${UNIT_FILES[@]}"; do
+        src="$SYSTEMD_SOURCE_DIR/$unit"
+        run_install install -m 0644 -o root -g root "$src" "$SYSTEMD_UNIT_DIR/$unit"
+        pass "unit: $SYSTEMD_UNIT_DIR/$unit"
+    done
+
+    ensure_dir "$JOURNALD_CONFIG_DIR" root root 0755
+    run_install install -m 0644 -o root -g root \
+        "$JOURNALD_SOURCE" "$JOURNALD_CONFIG_DEST"
+    pass "journald: $JOURNALD_CONFIG_DEST (SystemMaxUse=100M, RuntimeMaxUse=32M)"
+
+    ensure_dir "$SYSCTL_CONFIG_DIR" root root 0755
+    run_install install -m 0644 -o root -g root \
+        "$SYSCTL_SOURCE" "$SYSCTL_CONFIG_DEST"
+    pass "sysctl: $SYSCTL_CONFIG_DEST (vm.swappiness=10)"
+
+    run_install systemctl --no-ask-password daemon-reload
+    pass "systemd: daemon reloaded"
+
+    # journald reads drop-ins at process start; restart it now so the caps are
+    # active before the first service start in I05.
+    run_install systemctl --no-ask-password restart systemd-journald.service
+    pass "journald: restarted with the TES3MP Easy limits"
+
+    run_install sysctl -q -p "$SYSCTL_CONFIG_DEST"
+    pass "sysctl: applied $SYSCTL_CONFIG_DEST"
+}
+
 main() {
     parse_args "$@"
 
@@ -632,7 +756,9 @@ main() {
 
     info "Installing the I02 privilege model"
     install_privilege_layout
-    info "Bootstrap stage I02 complete: users, directories, rootctl and sudoers are in place."
+    info "Installing the I03 systemd units, journald limits and sysctl"
+    install_systemd_layout
+    info "Bootstrap stage I03 complete: users, directories, rootctl, sudoers, units, journald and sysctl are in place."
 }
 
 main "$@"

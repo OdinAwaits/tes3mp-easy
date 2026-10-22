@@ -62,9 +62,11 @@ timedatectl
    sudo ./bootstrap.sh --check
    ```
 
-   В I02 `bootstrap.sh` выполняет preflight и ставит только пользователей,
-   группы, каталоги, rootctl и sudoers. Полный список ниже — целевое состояние
-   после I03–I05.
+   В I03 `bootstrap.sh` выполняет preflight, ставит пользователей, группы,
+   каталоги, rootctl, sudoers, systemd-юниты, journald drop-in и sysctl. Runtime
+   TES3MP и первый запуск юнитов появятся в I04–I05; до этого `tes3mp.service`
+   и backup timer установлены, но не запущены. Полный список ниже — целевое
+   состояние после I05.
 
 Bootstrap:
 
@@ -106,6 +108,20 @@ Bootstrap:
 если файл остался, удалите его вручную.
 
 ## 3. Первый запуск и проверка
+
+После I05 `bootstrap.sh` сам запускает юниты. Начиная с I03 их можно проверить
+статически до появления runtime:
+
+```bash
+systemd-analyze verify /etc/systemd/system/tes3mp.service
+systemd-analyze verify /etc/systemd/system/tes3mp-panel.service
+systemd-analyze verify /etc/systemd/system/tes3mp-easy-backup.service
+systemd-analyze verify /etc/systemd/system/tes3mp-easy-backup.timer
+systemctl cat tes3mp-easy-backup.timer
+```
+
+До I04 `systemd-analyze` ожидаемо ругается на отсутствующий `ExecStart`; другие
+ошибки недопустимы. Ручной запуск:
 
 ```bash
 sudo systemctl start tes3mp.service

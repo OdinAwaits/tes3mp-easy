@@ -183,6 +183,42 @@ if [ "${1:-}" = "--version" ]; then
     printf 'systemd 255\n'
     exit 0
 fi
+printf 'systemctl args=%s\n' "$*" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+if [ "${TES3MP_FAKE_SYSTEMCTL_FAIL:-0}" = "1" ]; then
+    printf 'systemctl failed\n' >&2
+    exit 1
+fi
+exit 0
+`, 0o755)
+	h.writeFile(filepath.Join(h.bin, "systemd-analyze"), `#!/bin/sh
+printf 'systemd-analyze args=%s\n' "$*" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+if [ "${TES3MP_FAKE_SYSTEMD_ANALYZE_PENDING:-0}" = "1" ]; then
+    unit=
+    for arg in "$@"; do
+        unit=$arg
+    done
+    unit=${unit##*/}
+    case "$unit" in
+        tes3mp.service) cmd=/opt/tes3mp-easy/tes3mp/tes3mp-server ;;
+        tes3mp-panel.service) cmd=/opt/tes3mp-easy/bin/tes3mp-easy-panel ;;
+        tes3mp-easy-backup.service) cmd=/opt/tes3mp-easy/bin/tes3mp-easy-ops ;;
+        *) exit 0 ;;
+    esac
+    printf '%s: Command %s is not executable: No such file or directory\n' "$unit" "$cmd" >&2
+    exit 1
+fi
+if [ "${TES3MP_FAKE_SYSTEMD_ANALYZE_FAIL:-0}" = "1" ]; then
+    printf '%s\n' "${TES3MP_FAKE_SYSTEMD_ANALYZE_ERROR:-syntax error in fake unit}" >&2
+    exit 1
+fi
+exit 0
+`, 0o755)
+	h.writeFile(filepath.Join(h.bin, "sysctl"), `#!/bin/sh
+printf 'sysctl args=%s\n' "$*" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+if [ "${TES3MP_FAKE_SYSCTL_FAIL:-0}" = "1" ]; then
+    printf 'sysctl failed\n' >&2
+    exit 1
+fi
 exit 0
 `, 0o755)
 	h.writeFile(filepath.Join(h.bin, "getent"), `#!/bin/sh
@@ -449,7 +485,15 @@ func TestBootstrapPreflightPassesAndInstalls(t *testing.T) {
 		"user: tes3mp-panel created",
 		"rootctl: " + filepath.Join(h.installRoot, "usr/local/libexec/tes3mp-easy-rootctl"),
 		"sudoers: " + filepath.Join(h.installRoot, "etc/sudoers.d/tes3mp-easy"),
-		"Bootstrap stage I02 complete",
+		"Installing the I03 systemd units, journald limits and sysctl",
+		"unit syntax: tes3mp.service",
+		"unit syntax: tes3mp-panel.service",
+		"unit syntax: tes3mp-easy-backup.service",
+		"unit syntax: tes3mp-easy-backup.timer",
+		"systemd: daemon reloaded",
+		"journald: restarted with the TES3MP Easy limits",
+		"sysctl: applied " + filepath.Join(h.installRoot, "etc/sysctl.d/99-tes3mp-easy.conf"),
+		"Bootstrap stage I03 complete",
 	} {
 		assertContains(t, got.stdout, want)
 	}
@@ -481,11 +525,24 @@ func TestBootstrapPreflightPassesAndInstalls(t *testing.T) {
 		{filepath.Join(h.dataRoot, ".staging"), 0o700, false},
 		{filepath.Join(h.installRoot, "usr/local/libexec"), 0o755, false},
 		{filepath.Join(h.installRoot, "etc/sudoers.d"), 0o750, false},
+		{filepath.Join(h.installRoot, "etc/systemd/system"), 0o755, false},
+		{filepath.Join(h.installRoot, "etc/systemd/journald.conf.d"), 0o755, false},
+		{filepath.Join(h.installRoot, "etc/sysctl.d"), 0o755, false},
 	} {
 		assertPathMode(t, dir.path, dir.perm, dir.setgid)
 	}
 	assertPathMode(t, filepath.Join(h.installRoot, "usr/local/libexec/tes3mp-easy-rootctl"), 0o750, false)
 	assertPathMode(t, filepath.Join(h.installRoot, "etc/sudoers.d/tes3mp-easy"), 0o440, false)
+	for _, file := range []string{
+		"etc/systemd/system/tes3mp.service",
+		"etc/systemd/system/tes3mp-panel.service",
+		"etc/systemd/system/tes3mp-easy-backup.service",
+		"etc/systemd/system/tes3mp-easy-backup.timer",
+		"etc/systemd/journald.conf.d/tes3mp-easy.conf",
+		"etc/sysctl.d/99-tes3mp-easy.conf",
+	} {
+		assertPathMode(t, filepath.Join(h.installRoot, file), 0o644, false)
+	}
 
 	logData, err := os.ReadFile(h.commandLog)
 	if err != nil {
@@ -504,6 +561,17 @@ func TestBootstrapPreflightPassesAndInstalls(t *testing.T) {
 		"install owner=root group=tes3mp mode=0750 src=" + projectPath(t, "rootctl", "tes3mp-easy-rootctl"),
 		"install owner=root group=root mode=0440 src=" + projectPath(t, "sudoers.d", "tes3mp-easy"),
 		"visudo file=" + projectPath(t, "sudoers.d", "tes3mp-easy"),
+		"systemd-analyze args=verify --man=no " + projectPath(t, "systemd", "tes3mp.service"),
+		"systemd-analyze args=verify --man=no " + projectPath(t, "systemd", "tes3mp-easy-backup.timer"),
+		"install owner=root group=root mode=0644 src=" + projectPath(t, "systemd", "tes3mp.service"),
+		"install owner=root group=root mode=0644 src=" + projectPath(t, "systemd", "tes3mp-panel.service"),
+		"install owner=root group=root mode=0644 src=" + projectPath(t, "systemd", "tes3mp-easy-backup.service"),
+		"install owner=root group=root mode=0644 src=" + projectPath(t, "systemd", "tes3mp-easy-backup.timer"),
+		"install owner=root group=root mode=0644 src=" + projectPath(t, "systemd", "journald.conf.d", "tes3mp-easy.conf"),
+		"install owner=root group=root mode=0644 src=" + projectPath(t, "sysctl.d", "99-tes3mp-easy.conf"),
+		"systemctl args=--no-ask-password daemon-reload",
+		"systemctl args=--no-ask-password restart systemd-journald.service",
+		"sysctl args=-q -p " + filepath.Join(h.installRoot, "etc/sysctl.d/99-tes3mp-easy.conf"),
 	} {
 		assertContains(t, log, want)
 	}
@@ -514,6 +582,25 @@ func TestBootstrapPreflightPassesAndInstalls(t *testing.T) {
 	}
 	assertContains(t, string(sudoers), "tes3mp-panel ALL=(tes3mp) NOPASSWD: /opt/tes3mp-easy/bin/tes3mp-easy-ops")
 	assertContains(t, string(sudoers), "tes3mp ALL=(root) NOPASSWD: /usr/local/libexec/tes3mp-easy-rootctl start")
+
+	assertInstalledFile(t, h, "etc/systemd/system/tes3mp.service", "MemoryMax=448M", "OOMScoreAdjust=-500")
+	assertInstalledFile(t, h, "etc/systemd/system/tes3mp-panel.service", "CapabilityBoundingSet=CAP_NET_BIND_SERVICE", "NoNewPrivileges=no")
+	assertInstalledFile(t, h, "etc/systemd/system/tes3mp-easy-backup.service", "Type=oneshot", "TimeoutStartSec=9min", "Nice=19")
+	assertInstalledFile(t, h, "etc/systemd/system/tes3mp-easy-backup.timer", "OnUnitActiveSec=5min", "AccuracySec=30s")
+	assertInstalledFile(t, h, "etc/systemd/journald.conf.d/tes3mp-easy.conf", "SystemMaxUse=100M", "RuntimeMaxUse=32M")
+	assertInstalledFile(t, h, "etc/sysctl.d/99-tes3mp-easy.conf", "vm.swappiness=10")
+}
+
+func assertInstalledFile(t *testing.T, h *fakeHost, rel string, wants ...string) {
+	t.Helper()
+
+	data, err := os.ReadFile(filepath.Join(h.installRoot, rel))
+	if err != nil {
+		t.Fatalf("read installed %s: %v", rel, err)
+	}
+	for _, want := range wants {
+		assertContains(t, string(data), want)
+	}
 }
 
 func assertPathMode(t *testing.T, path string, perm fs.FileMode, setgid bool) {
@@ -632,6 +719,134 @@ func TestBootstrapInstallFailures(t *testing.T) {
 			t.Fatalf("sudoers file exists after visudo rejection (stat err = %v)", err)
 		}
 	})
+}
+
+func TestBootstrapAcceptsPendingSystemdExecutables(t *testing.T) {
+	h := newFakeHost(t)
+	h.env["TES3MP_FAKE_SYSTEMD_ANALYZE_PENDING"] = "1"
+
+	got := h.run(t)
+
+	assertExit(t, got, 0)
+	if got.stderr != "" {
+		t.Fatalf("stderr = %q, want empty", got.stderr)
+	}
+	for _, unit := range []string{
+		"tes3mp.service",
+		"tes3mp-panel.service",
+		"tes3mp-easy-backup.service",
+	} {
+		assertContains(t, got.stdout, "unit syntax: "+unit+" (runtime executable pending)")
+	}
+	assertInstalledFile(t, h, "etc/systemd/system/tes3mp-panel.service")
+}
+
+func TestBootstrapRejectsUnexpectedMissingSystemdExecutable(t *testing.T) {
+	h := newFakeHost(t)
+	h.env["TES3MP_FAKE_SYSTEMD_ANALYZE_FAIL"] = "1"
+	h.env["TES3MP_FAKE_SYSTEMD_ANALYZE_ERROR"] = "tes3mp.service: Command /opt/tes3mp-easy/tes3mp/tes3mp-servr is not executable: No such file or directory"
+
+	got := h.run(t)
+
+	assertExit(t, got, 1)
+	assertContains(t, got.stderr, "tes3mp-servr")
+	assertContains(t, got.stderr, "systemd-analyze rejected")
+	assertContains(t, got.stderr, "Installation failed.")
+}
+
+func TestBootstrapRejectsInvalidSystemdUnit(t *testing.T) {
+	h := newFakeHost(t)
+	h.env["TES3MP_FAKE_SYSTEMD_ANALYZE_FAIL"] = "1"
+	h.env["TES3MP_FAKE_SYSTEMD_ANALYZE_ERROR"] = "tes3mp.service: Unknown key name 'Bogus' in section 'Service', ignoring."
+
+	got := h.run(t)
+
+	assertExit(t, got, 1)
+	assertContains(t, got.stderr, "Unknown key name 'Bogus'")
+	assertContains(t, got.stderr, "systemd-analyze rejected")
+	assertContains(t, got.stderr, "Installation failed.")
+	if _, err := os.Stat(filepath.Join(h.installRoot, "etc/systemd/system/tes3mp.service")); !os.IsNotExist(err) {
+		t.Fatalf("unit exists after verification failure (stat err = %v)", err)
+	}
+}
+
+func TestBootstrapSystemdFailureModes(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*fakeHost)
+		want  string
+	}{
+		{
+			name: "systemd-analyze missing",
+			setup: func(h *fakeHost) {
+				h.removeCommand("systemd-analyze")
+			},
+			want: "systemd-analyze is required",
+		},
+		{
+			name: "sysctl missing",
+			setup: func(h *fakeHost) {
+				h.removeCommand("sysctl")
+			},
+			want: "sysctl is required",
+		},
+		{
+			name: "unit source missing",
+			setup: func(h *fakeHost) {
+				h.env["TES3MP_EASY_SYSTEMD_SOURCE"] = filepath.Join(h.dir, "missing-systemd")
+			},
+			want: "systemd unit source not found",
+		},
+		{
+			name: "journald source missing",
+			setup: func(h *fakeHost) {
+				h.env["TES3MP_EASY_JOURNALD_SOURCE"] = filepath.Join(h.dir, "missing-journald.conf")
+			},
+			want: "journald source not found",
+		},
+		{
+			name: "sysctl source missing",
+			setup: func(h *fakeHost) {
+				h.env["TES3MP_EASY_SYSCTL_SOURCE"] = filepath.Join(h.dir, "missing-sysctl.conf")
+			},
+			want: "sysctl source not found",
+		},
+		{
+			name: "systemd-analyze fails without diagnostics",
+			setup: func(h *fakeHost) {
+				h.env["TES3MP_FAKE_SYSTEMD_ANALYZE_FAIL"] = "1"
+				h.env["TES3MP_FAKE_SYSTEMD_ANALYZE_ERROR"] = ""
+			},
+			want: "systemd-analyze rejected",
+		},
+		{
+			name: "daemon-reload fails",
+			setup: func(h *fakeHost) {
+				h.env["TES3MP_FAKE_SYSTEMCTL_FAIL"] = "1"
+			},
+			want: "command failed: systemctl --no-ask-password daemon-reload",
+		},
+		{
+			name: "sysctl apply fails",
+			setup: func(h *fakeHost) {
+				h.env["TES3MP_FAKE_SYSCTL_FAIL"] = "1"
+			},
+			want: "command failed: sysctl -q -p ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newFakeHost(t)
+			tt.setup(h)
+
+			got := h.run(t)
+
+			assertExit(t, got, 1)
+			assertContains(t, got.stderr, tt.want)
+			assertContains(t, got.stderr, "Installation failed.")
+		})
+	}
 }
 
 func TestBootstrapReportsRAMWarning(t *testing.T) {

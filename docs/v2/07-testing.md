@@ -45,9 +45,10 @@ OS-матрица: Debian 12 и Ubuntu 24.04, x86_64, systemd. Другие ОС
 
 `test/infra` запускает настоящий `bootstrap.sh` с подменёнными `/etc/os-release`,
 `/proc`, системным каталогом systemd и командами `id`, `uname`, `df`,
-`systemctl`, `getent`, `groupadd`, `useradd`, `usermod`, `install`, `visudo`.
-Проверяются успех, предупреждения, каждый отказ (root, ОС, arch, systemd, RAM,
-swap, диск), границы порогов и то, что `--check` не меняет ни одного файла.
+`systemctl`, `systemd-analyze`, `sysctl`, `getent`, `groupadd`, `useradd`,
+`usermod`, `install`, `visudo`. Проверяются успех, предупреждения, каждый отказ
+(root, ОС, arch, systemd, RAM, swap, диск), границы порогов и то, что `--check`
+не меняет ни одного файла.
 
 Для I02 дополнительно проверяются создание групп/пользователей, layout и режимы
 каталогов, установка `rootctl` (`root:tes3mp 0750`) и sudoers (валидация
@@ -60,6 +61,21 @@ swap, диск), границы порогов и то, что `--check` не м
 Real-host smoke I02 выполнен на Debian 12 x86_64: `id`, ownership/modes,
 `visudo -c`, `tes3mp-panel` → ops от `tes3mp`, `tes3mp` → rootctl; `status` и
 лишний аргумент отклоняются.
+
+Для I03 дополнительно проверяются установка четырёх unit-файлов, journald
+drop-in и sysctl drop-in с режимами `0644`, их содержимое и порядок «verify до
+install». Fake `systemd-analyze` покрывает допустимую диагностику
+`Command ... is not executable: No such file or directory` (runtime появится в
+I04–I05) и отказ на любой другой ошибке; fake `systemctl` — `daemon-reload` и
+перезапуск journald, fake `sysctl` — применение `-p`. Отдельно проверяются
+отсутствие `systemd-analyze`/`sysctl`, отсутствие source-файлов, сбой
+`daemon-reload` и `sysctl`, а `test/infra/systemd_test.go` — лимиты памяти,
+OOM score, пользователи, `ExecStart`, timer и drop-in-файлы.
+
+Real-host smoke I03 на Debian 12: units установлены `0644 root:root`,
+`systemd-analyze verify` выдал только ожидаемые ошибки отсутствующих
+`ExecStart`, journald перезапущен, `vm.swappiness=10`, повторный bootstrap не
+изменил содержимое; юниты не запускались.
 
 ## 3. Фикстуры
 
