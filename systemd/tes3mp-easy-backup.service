@@ -1,6 +1,10 @@
 [Unit]
 Description=TES3MP Easy state backup
 Documentation=https://github.com/Saagilat/tes3mp-easy
+# Before M2 the timer is already active while the ops binary does not exist.
+# A condition (rather than a failing ExecStart) keeps the timer healthy and
+# lets the first trigger after the ops install create a backup automatically.
+ConditionPathExists=/opt/tes3mp-easy/bin/tes3mp-easy-ops
 
 [Service]
 Type=oneshot

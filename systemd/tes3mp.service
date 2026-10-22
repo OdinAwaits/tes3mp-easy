@@ -8,6 +8,7 @@ Wants=network-online.target
 Type=simple
 User=tes3mp
 Group=tes3mp
+Environment=HOME=/tes3mp-easy
 WorkingDirectory=/tes3mp-easy
 ExecStart=/opt/tes3mp-easy/tes3mp/tes3mp-server
 Restart=on-failure
@@ -20,7 +21,7 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world
+ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/configs
 
 [Install]
 WantedBy=multi-user.target

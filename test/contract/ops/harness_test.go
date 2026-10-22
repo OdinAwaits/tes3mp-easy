@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +17,8 @@ import (
 const runTimeout = 15 * time.Second
 
 type harness struct {
-	binary string
+	binary  string
+	fakeBin string
 }
 
 type result struct {
@@ -43,20 +45,36 @@ func (h *harness) Run(t *testing.T, args ...string) result {
 	return h.RunRoot(t, t.TempDir(), args...)
 }
 
+// RunEnv executes the binary with a fresh temp root and extra environment.
+func (h *harness) RunEnv(t *testing.T, env map[string]string, args ...string) result {
+	t.Helper()
+	return h.RunRootEnv(t, t.TempDir(), env, args...)
+}
+
 // RunRoot executes the binary with --root root.
 func (h *harness) RunRoot(t *testing.T, root string, args ...string) result {
 	t.Helper()
+	return h.RunRootEnv(t, root, nil, args...)
+}
+
+// RunRootEnv executes the binary with --root root and extra environment.
+func (h *harness) RunRootEnv(t *testing.T, root string,
+	env map[string]string, args ...string,
+) result {
+	t.Helper()
 	full := append([]string{"--root", root}, args...)
-	return h.run(t, root, full)
+	return h.run(t, root, full, env)
 }
 
 // RunArgs executes the binary without injecting --root.
 func (h *harness) RunArgs(t *testing.T, args ...string) result {
 	t.Helper()
-	return h.run(t, t.TempDir(), args)
+	return h.run(t, t.TempDir(), args, nil)
 }
 
-func (h *harness) run(t *testing.T, dir string, args []string) result {
+func (h *harness) run(t *testing.T, dir string, args []string,
+	extraEnv map[string]string,
+) result {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
@@ -64,10 +82,7 @@ func (h *harness) run(t *testing.T, dir string, args []string) result {
 
 	cmd := exec.CommandContext(ctx, h.binary, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
-		"GOMAXPROCS=1",
-		"TZ=UTC",
-	)
+	cmd.Env = h.environment(extraEnv)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -91,6 +106,40 @@ func (h *harness) run(t *testing.T, dir string, args []string) result {
 		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
 	}
+}
+
+func (h *harness) environment(extra map[string]string) []string {
+	values := make(map[string]string)
+	for _, entry := range os.Environ() {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok {
+			values[key] = value
+		}
+	}
+	values["GOMAXPROCS"] = "1"
+	values["TZ"] = "UTC"
+	if h.fakeBin != "" {
+		if path := values["PATH"]; path != "" {
+			values["PATH"] = h.fakeBin + string(os.PathListSeparator) + path
+		} else {
+			values["PATH"] = h.fakeBin
+		}
+	}
+	for key, value := range extra {
+		values[key] = value
+	}
+
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	env := make([]string, 0, len(keys))
+	for _, key := range keys {
+		env = append(env, key+"="+values[key])
+	}
+	return env
 }
 
 func (r result) requireExit(t *testing.T, want int) {

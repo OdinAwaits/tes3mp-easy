@@ -2,7 +2,7 @@
 
 **Статус:** living, рабочий план.
 
-**Обновлено:** 2026-10-22.
+**Обновлено:** 2026-10-23.
 
 Документ фиксирует декомпозицию v2 на проверяемые задачи. Это не контракт:
 JSON-схемы, коды ошибок, форматы архивов и HTTP API по-прежнему живут только
@@ -51,7 +51,19 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
 - I03 закрыт: добавлены `tes3mp.service`, `tes3mp-panel.service`,
   `tes3mp-easy-backup.service/.timer`, drop-in journald и `vm.swappiness=10`;
   bootstrap ставит их идемпотентно, но не запускает до появления runtime.
-- Функциональных ops-команд пока нет. Следующая задача — I04.
+- I04 закрыт: bootstrap ставит проверенный TES3MP 0.8.1, базовые конфиги,
+  `mods-init-*`/`current.txt` и связывает runtime с data root; fake-host тесты
+  покрывают checksum, отказы, symlinks и идемпотентность.
+- I05 закрыт: bootstrap включает и запускает `tes3mp.service` и
+  `tes3mp-easy-backup.timer`, проверяет `is-active` и не запускает панель до
+  M4; `ConditionPathExists` не даёт таймеру падать до появления ops.
+- O01 закрыт: добавлен `internal/systemd` с `Runner`/`ExecRunner`, типизированными
+  `Show`, `IsActive`, `Logs`, `Control`, `CommandError` и fake runner
+  `internal/systemd/systemdtest`; CLI-команды ещё не подключены.
+- O02 закрыт: `status` и `logs` подключены к CLI и адаптеру, `Show` запрашивает
+  время в UTC; contract-тесты запускают реальный бинарник с fake
+  `systemctl`/`journalctl` через `PATH`.
+- Следующая задача — O03 (`doctor` core).
 
 Схема веток на момент старта:
 
@@ -234,8 +246,8 @@ Scope:
 | I01 | done | Preflight bootstrap | OS, arch, systemd, root, диск, идемпотентность |
 | I02 | done | Пользователи, каталоги, sudoers, rootctl | узкая модель привилегий |
 | I03 | done | systemd-юниты, timer, journald, sysctl | лимиты и установка; запуск в I05 |
-| I04 | planned | Runtime TES3MP и базовые моды | готовый игровой сервер |
-| I05 | planned | Bootstrap на чистой VM | установка с нуля без ручных шагов |
+| I04 | done | Runtime TES3MP и базовые моды | готовый игровой сервер |
+| I05 | done | Первый запуск и bootstrap | сервер и таймер поднимаются без ручных шагов |
 
 ### I01 — preflight bootstrap (done)
 
@@ -297,8 +309,9 @@ smoke на Debian 12 подтвердил ownership/modes, `visudo -c` и sudo-�
 sysctl drop-in, затем делает `systemctl daemon-reload`, перезапускает
 `systemd-journald.service` и применяет `sysctl -q -p`.
 
-Пока runtime TES3MP и бинарники ops/panel не установлены (I04–I05),
-`systemd-analyze` сообщает `Command ... is not executable: No such file or
+На момент I03 runtime TES3MP и бинарники ops/panel ещё не установлены
+(runtime появится в I04, ops — в M2, panel — в M4), поэтому `systemd-analyze`
+сообщает `Command ... is not executable: No such file or
 directory`. Bootstrap допускает только эту диагностику для ожидаемого
 `ExecStart` соответствующего unit и всё равно падает на синтаксических ошибках,
 неизвестных директивах, опечатках в пути и ошибках зависимостей. Юниты
@@ -325,14 +338,87 @@ preflight. Полная проверка запуска и лимитов — п
 поднимаются `tes3mp.service` и backup timer; unit панели установлен и проходит
 `systemd-analyze verify`, но сам бинарник панели появляется только в M4.
 
+### I04 — runtime TES3MP и базовые моды (done)
+
+Сделано: `server/tes3mp-version.txt` фиксирует версию 0.8.1, URL и sha256.
+Bootstrap ставит `libluajit`/`curl`/`tar`, скачивает архив, проверяет sha256 до
+распаковки, собирает staging (`--strip-components=1 --no-same-owner`), делает
+`chown -R root:root`, выставляет executable-биты, пишет
+`.tes3mp-install-info` внутри staging и атомарно переименовывает каталог в
+`/opt/tes3mp-easy/tes3mp`. Любая ошибка удаляет staging/архив; существующий
+runtime принимается только при совпадении маркера и обязательных файлов и
+никогда не перезаписывается.
+
+Изменяемые пути runtime — symlinks в `/tes3mp-easy`: три конфига,
+`mods/scripts`, `players/`, пять `world/*`, `requiredDataFiles.json` и
+`banlist.json`. Базовые конфиги и `requiredDataFiles.json` создаются только при
+отсутствии и с отказом на symlink/не-regular-file. Bootstrap также создаёт
+`mods-init-*` и канонический `current.txt`, HOME-каталоги
+`.config/openmw`/`.local/share/openmw`; `tes3mp.service` получает
+`Environment=HOME=/tes3mp-easy` и `ReadWritePaths=.../configs` для banlist.
+
+Тесты: fake-host bootstrap проверяет пакеты, скачивание, checksum, `chown`,
+режимы и содержимое маркера, 12 symlinks, конфиги, base-архив, canonical
+`current.txt`, HOME-каталоги и идемпотентность. Отказы: checksum mismatch,
+runtime без маркера/неполный, чужой layout, сбой `curl`/`chown`, symlinked
+config/requiredData/current, неканонический `current.txt`, суффиксы `-1`/`-010`
+и невозможная дата. `systemd_test.go` проверяет `HOME` и `configs` в
+`ReadWritePaths`.
+
+Ограничение: установка на реальном хосте не выполнялась; checksum, layout и
+запуск официального архива с symlinks проверены в sandbox, а real-host smoke
+входит в I05 на чистой VM. Известный контракт: runtime требует ровно версию из
+`server/tes3mp-version.txt`; для смены версии каталог отводят вручную по
+runbook.
+
+Критерий I04: на чистом Debian 12 bootstrap создаёт root-owned TES3MP 0.8.1,
+конфиги и валидный `mods-init-*`/`current.txt`, а повторный запуск не меняет
+состояние; запуск юнитов и end-to-end smoke — I05.
+
+### I05 — первый запуск и bootstrap (done)
+
+Сделано: после I04 `bootstrap.sh` делает `systemctl enable` и `start` для
+`tes3mp.service`, проверяет `is-active --quiet`, затем делает
+`enable --now tes3mp-easy-backup.timer` и тоже проверяет активность. Ошибка
+любой команды или переход сервера в `inactive` сразу обрывает установку с
+указанием на `journalctl`. Повторный запуск использует `start`, а не
+`restart`, поэтому идемпотентен и не отключает игроков. `tes3mp-panel.service`
+намеренно не включается и не запускается: бинарника панели нет до M4.
+
+Чтобы таймер можно было включить до появления ops, в
+`tes3mp-easy-backup.service` добавлен
+`ConditionPathExists=/opt/tes3mp-easy/bin/tes3mp-easy-ops`: до M2 тики
+пропускаются без `failed`, а после установки ops первый же тик создаёт
+state-бэкап. `tes3mp.service` и таймер включаются в автозагрузку.
+
+Тесты: fake `systemctl` различает `start`, `enable --now` и `is-active` и умеет
+сымитировать отказ каждой операции и неактивный unit. Покрыты успешный запуск,
+отказ `start`/`enable --now`, сервер, вышедший сразу после старта, неактивный
+таймер, отсутствие запуска панели и backup service до появления их бинарников,
+а также идемпотентность. `systemd_test.go` проверяет `ConditionPathExists`.
+
+Ограничение: полноценный real-host smoke на чистой VM Debian 12/Ubuntu 24.04
+не выполнялся — в окружении разработки нет root/systemd-менеджера. Удалось
+запустить настоящий TES3MP 0.8.1 транзиентным `systemd --user` unit с
+`Type=simple`, `MemoryHigh/MemoryMax`, `NoNewPrivileges`, `UMask` и
+`PrivateTmp`: сервер стал `active`, слушал `25565/udp` и писал `world/`.
+`ProtectSystem=strict`, `ProtectHome=yes`, `ReadWritePaths` и запуск от
+`tes3mp` под системным systemd остаются обязательной проверкой I05 на VM
+вместе с `libluajit-5.1.so.2`.
+
+Критерий I05: на чистом Debian 12/Ubuntu 24.04 после `sudo ./bootstrap.sh`
+`tes3mp.service` и `tes3mp-easy-backup.timer` активны и включены, сервер
+отвечает на `25565/udp`, панель остаётся неактивной до M4, а повторный bootstrap
+не перезапускает сервер.
+
 ## 6. M2 — ops только чтение
 
 Ветка: `v2-ops-read`. Оценка: 6–8 рабочих дней.
 
 | ID | Статус | Задача | Результат |
 |---|---|---|---|
-| O01 | planned | Systemd/journald adapter | интерфейс + fake для тестов |
-| O02 | planned | `status` и `logs` | состояния unit и журнал |
+| O01 | done | Systemd/journald adapter | интерфейс + fake для тестов |
+| O02 | done | `status` и `logs` | состояния unit и журнал |
 | O03 | planned | `doctor` core | root, OS, arch, systemd, units, диск |
 | O04 | planned | `doctor` deep | current, конфиги, архивы, бюджеты |
 | O05 | planned | `backups list` | пагинация, сортировка, `--sha256` |
@@ -340,6 +426,40 @@ preflight. Полная проверка запуска и лимитов — п
 
 Критерий milestone: read-команды не берут lock, не меняют файлы, а при
 недоступном systemd/journald возвращают `service_unavailable` и exit 6.
+
+### O01 — Systemd/journald adapter (done)
+
+Сделано: `internal/systemd` содержит `Runner` с production `ExecRunner` и
+типизированный `Client`: `Show` (`systemctl show` + разбор `KEY=VALUE`),
+`IsActive`, `Logs` (`journalctl -o cat`) и `Control` (`sudo -n` + фиксированный
+rootctl). Ошибки несут argv, exit code и stderr через `CommandError`; имена
+unit и глаголы валидируются до запуска. `internal/systemd/systemdtest.Runner`
+записывает вызовы и отдаёт заготовленный ответ. CLI-команды не менялись.
+
+Тесты: точный argv, парсинг свойств, active/inactive/failed/недоступность,
+хвостовые и пустые строки журнала, три глагола rootctl, отказ для неверного
+unit/глагола, `ExecRunner` на helper-процессе (stdout, stderr, exit code,
+context, отсутствие shell).
+
+### O02 — `status` и `logs` (done)
+
+Сделано: CLI получил read-only команды `status` и `logs`. `status` читает
+`systemctl show` (с `--timestamp=utc`) и `is-active`, отдаёт `unit`, `state`,
+`health`, `started_at`; поддерживаются `tes3mp.service` и
+`tes3mp-easy-backup.timer`. Для таймера `started_at` берётся из
+`LastTriggerUSec`, для сервиса — из `ActiveEnterTimestamp`. `logs` требует
+`--tail 1..10000`, вызывает `journalctl ... -o cat` и отдаёт текст или
+`data.lines`.
+
+Ошибки: недоступный systemd/journald и `LoadState=not-found` — exit 6
+`service_unavailable`; неверные unit/tail/лишние аргументы — exit 2
+`invalid_argument`; ошибка `is-active` после успешного `show` даёт
+`health=unhealthy`, но не скрывает состояние. Обе команды не берут lock и не
+трогают data root.
+
+Тесты: unit-тесты маппинга/таймстемпов/флагов и contract-тесты реального
+бинарника с fake `systemctl`/`journalctl` в `PATH` (точный argv, JSON-поля,
+`lines: []`, коды выхода, отсутствие `backend`).
 
 ## 7. M3 — ops мутации
 

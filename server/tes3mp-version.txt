@@ -1,3 +1,5 @@
-# URL to download TES3MP server binary
-# Used by install.sh
+# URL and checksum of the TES3MP server release.
+# Used by install.sh and by bootstrap.sh's I04 runtime install.
+TES3MP_VERSION=0.8.1
 TES3MP_URL=https://github.com/TES3MP/TES3MP/releases/download/tes3mp-0.8.1/tes3mp-server-GNU+Linux-x86_64-release-0.8.1-68954091c5-6da3fdea59.tar.gz
+TES3MP_SHA256=106a56e32a00ff7a92b574fae0e25671e90a199f509b16d483a8d7da6fc3bcf0

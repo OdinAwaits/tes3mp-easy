@@ -46,7 +46,12 @@ func runTestMain(m *testing.M) (int, error) {
 		return 0, fmt.Errorf("build ops binary: %w\n%s", buildErr, output)
 	}
 
-	testHarness = &harness{binary: binary}
+	fakeBin := filepath.Join(tempDir, "bin")
+	if err := writeFakeBin(fakeBin); err != nil {
+		return 0, fmt.Errorf("write fake systemd tools: %w", err)
+	}
+
+	testHarness = &harness{binary: binary, fakeBin: fakeBin}
 	return m.Run(), nil
 }
 

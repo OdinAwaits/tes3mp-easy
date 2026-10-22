@@ -2,7 +2,7 @@
 
 **Статус:** draft.
 
-**Обновлено:** 2026-10-22.
+**Обновлено:** 2026-10-23.
 
 Документ описывает целевую нативную схему на systemd. Нормативные форматы,
 retention и коды — в `03-contracts.md`. Контейнерный запуск в v2 не
@@ -47,7 +47,7 @@ best-effort и не входят в MVP.
 
 | Компонент | Где | Роль | Что пишет |
 |---|---|---|---|
-| `tes3mp.service` | VPS, systemd, UDP 25565 | Игровой сервер | `players/`, `world/` во время игры |
+| `tes3mp.service` | VPS, systemd, UDP 25565 | Игровой сервер | `players/`, `world/`, `configs/banlist.json` во время игры |
 | `tes3mp-panel.service` | VPS, systemd, :80/:443 | HTTPS-панель, публичный API, админка | `panel-data/` |
 | `tes3mp-easy-backup.timer` | VPS, systemd | Запускает бэкап каждые 5 минут | — |
 | `tes3mp-easy-backup.service` | VPS, systemd, oneshot | Один запуск `ops backups create` | через `ops` в `backups/` |
@@ -75,11 +75,13 @@ ops дополнительно пропускает бэкап, если игр�
 
 `tes3mp.service`:
 
-- `WorkingDirectory=/tes3mp-easy`;
+- `WorkingDirectory=/tes3mp-easy`, `Environment=HOME=/tes3mp-easy`;
 - `ExecStart=/opt/tes3mp-easy/tes3mp/tes3mp-server`;
 - `Restart=on-failure`, `RestartSec=5s`;
 - `ProtectSystem=strict`, `PrivateTmp=yes`, `ProtectHome=yes`;
-- `ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world`;
+- `ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/configs`;
+  `configs/` нужен целиком, потому что `banlist.json` сервера — symlink в этот
+  каталог; `customScripts.lua` и остальные конфиги сервер только читает;
 - `NoNewPrivileges=yes`, `UMask=0027`: сервер не повышает привилегии, а его
   файлы создаются как `0640`, каталоги — `0750`;
 - `SupplementaryGroups=systemd-journal` юниту не нужен: сервер пишет
@@ -108,7 +110,16 @@ ops дополнительно пропускает бэкап, если игр�
 пользователя `tes3mp`. Юнит запускает
 `tes3mp-easy-ops --root /tes3mp-easy --json backups create --type state
 --if-running`, имеет `NoNewPrivileges=yes`, `UMask=0027` и пишет только в
-`backups/`, `.locks/` и `.staging/`.
+`backups/`, `.locks/` и `.staging/`. `ConditionPathExists` на
+`/opt/tes3mp-easy/bin/tes3mp-easy-ops` позволяет включить таймер в I05, когда
+бинарник ops ещё не установлен (M2): срабатывания пропускаются, а первый тик
+после установки ops создаёт бэкап без ручного вмешательства.
+
+Bootstrap I05 включает и запускает `tes3mp.service` и
+`tes3mp-easy-backup.timer`. `tes3mp-panel.service` остаётся установленным, но
+неактивным до M4, когда появится бинарник панели; включение сейчас привело бы
+к циклу перезапусков. Повторный bootstrap использует `start`, а не `restart`,
+поэтому не отключает игроков.
 
 ## 4. Пользователи, группы и sudoers
 
@@ -131,7 +142,11 @@ ops дополнительно пропускает бэкап, если игр�
 - `panel-data/uploads/` — `tes3mp-panel:tes3mp 2770`, файлы `0640`; группа
   `tes3mp` должна иметь write, иначе `ops` не сможет сделать rename upload в
   `backups/mods/`;
-- `.locks/`, `.staging/` — `tes3mp:tes3mp 0700`.
+- `.locks/`, `.staging/` — `tes3mp:tes3mp 0700`;
+- `.config/openmw/`, `.local/share/openmw/` — `tes3mp:tes3mp 0700`: это
+  `$HOME/.config/openmw` и `$HOME/.local/share/openmw` для prelaunch-скрипта;
+  заранее созданные каталоги не требуют записи в `/tes3mp-easy` при
+  `ProtectSystem=strict`.
 
 `tes3mp-panel` входит в группу `tes3mp` для чтения `backups/`, `players/` и
 `mods/`; `uploads/` — узкое исключение с group-write, нужное для rename.
@@ -166,7 +181,8 @@ rootctl.
 ├── bin/
 │   ├── tes3mp-easy-ops
 │   └── tes3mp-easy-panel
-├── tes3mp/
+├── tes3mp/                       # TES3MP 0.8.1, root:root 0755
+│   ├── .tes3mp-install-info      # версия, URL и sha256 установленного релиза
 │   ├── tes3mp-server
 │   └── lib/                      # библиотеки из релиза TES3MP
 ├── systemd/
@@ -188,7 +204,7 @@ rootctl.
 │   ├── tes3mp-server-default.cfg
 │   ├── config.lua
 │   ├── banlist.json
-│   └── customScripts.lua         # генерируется ops, read-only
+│   └── customScripts.lua         # bootstrap копирует базовый; ops обновляет
 ├── players/
 ├── world/
 │   ├── cell/
@@ -198,11 +214,12 @@ rootctl.
 │   └── custom/
 ├── mods/
 │   ├── plugins/
+│   │   └── requiredDataFiles.json
 │   └── scripts/
 ├── backups/
 │   ├── mods/
 │   │   ├── current.txt
-│   │   ├── mods-init-*.tar.gz
+│   │   ├── mods-init-*.tar.gz    # базовый архив, создаёт bootstrap
 │   │   └── mods-*.tar.gz
 │   └── state/
 │       ├── state-*.tar.gz
@@ -213,10 +230,26 @@ rootctl.
 │   ├── initial-password.txt
 │   ├── tls/
 │   └── uploads/                  # временные загрузки модов
+├── .config/openmw/               # HOME-каталоги для tes3mp-prelaunch
+├── .local/share/openmw/
 ├── .staging/                     # распаковка и подмена, чистится ops
 └── .locks/
     └── ops.lock
 ```
+
+В дереве `/opt/tes3mp-easy/tes3mp` изменяемые пути — symlinks в data root:
+`tes3mp-server-default.cfg`, `server/scripts/{config.lua,customScripts.lua}`,
+`server/scripts/custom/` и `server/data/{player,cell,world,map,recordstore,custom}/`,
+`server/data/requiredDataFiles.json`, `server/data/banlist.json`. Поэтому
+обновление или замена runtime не трогает конфиги, state и моды. Конфиги и
+`requiredDataFiles.json` bootstrap создаёт только при отсутствии; существующий
+файл он не перезаписывает.
+
+`mods-init-*` — base-архив с `plugins/requiredDataFiles.json` (три ESM с пустыми
+CRC-списками) и пустым `scripts/`; `current.txt` указывает на него в каноническом
+формате `<sha256> <name>\n`. Повторный bootstrap принимает только канонический
+`current.txt` с существующим архивом и совпадающим sha256, иначе останавливается,
+не перезаписывая данные.
 
 `panel-data/uploads` — единственное место, куда панель пишет пользовательские
 файлы. После успешного `ops mods import` панель удаляет временный файл.

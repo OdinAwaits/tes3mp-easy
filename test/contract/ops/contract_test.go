@@ -85,7 +85,7 @@ func TestJSONErrorContract(t *testing.T) {
 		},
 		{
 			name: "known command is unfinished",
-			args: []string{"--json", "status"},
+			args: []string{"--json", "doctor"},
 			exit: 1,
 			code: "internal",
 		},
@@ -109,7 +109,7 @@ func TestHumanErrorContract(t *testing.T) {
 		{name: "missing command", exit: 2, message: "command is required"},
 		{name: "unknown flag", args: []string{"--unknown"}, exit: 2, message: "unknown flag"},
 		{name: "unknown command", args: []string{"bogus"}, exit: 2, message: "unknown command"},
-		{name: "unfinished", args: []string{"status"}, exit: 1, message: "not implemented"},
+		{name: "unfinished", args: []string{"doctor"}, exit: 1, message: "not implemented"},
 	}
 
 	for _, tt := range tests {
@@ -121,7 +121,7 @@ func TestHumanErrorContract(t *testing.T) {
 }
 
 func TestJSONOutputIsOneEnvelope(t *testing.T) {
-	res := testHarness.Run(t, "--json", "status")
+	res := testHarness.Run(t, "--json", "doctor")
 	env := res.requireJSONError(t, 1, "internal")
 
 	if len(env.Data) != 0 {
@@ -159,8 +159,8 @@ func TestRootFixtureIsReadOnly(t *testing.T) {
 	}
 
 	res := testHarness.RunRoot(t, root, "--json", "status")
-	if res.ExitCode != 1 {
-		t.Fatalf("exit = %d, want 1; stdout=%q stderr=%q",
+	if res.ExitCode != 0 {
+		t.Fatalf("exit = %d, want 0; stdout=%q stderr=%q",
 			res.ExitCode, res.Stdout, res.Stderr)
 	}
 

@@ -2,7 +2,7 @@
 
 **Статус:** draft.
 
-**Обновлено:** 2026-10-22.
+**Обновлено:** 2026-10-23.
 
 Runbook для нативной установки на Debian/Ubuntu x86_64 с systemd. Все
 команды — от пользователя с sudo. Если не сказано иное, `ROOT=/tes3mp-easy`,
@@ -62,55 +62,79 @@ timedatectl
    sudo ./bootstrap.sh --check
    ```
 
-   В I03 `bootstrap.sh` выполняет preflight, ставит пользователей, группы,
-   каталоги, rootctl, sudoers, systemd-юниты, journald drop-in и sysctl. Runtime
-   TES3MP и первый запуск юнитов появятся в I04–I05; до этого `tes3mp.service`
-   и backup timer установлены, но не запущены. Полный список ниже — целевое
-   состояние после I05.
+   Начиная с I05 `bootstrap.sh` выполняет preflight, ставит пользователей,
+   группы, каталоги, rootctl, sudoers, systemd-юниты, journald drop-in, sysctl,
+   TES3MP 0.8.1, базовые конфиги и base mod-пак, а затем включает и запускает
+   `tes3mp.service` и `tes3mp-easy-backup.timer`. Бинарники ops и панели
+   появятся в M2 и M4; до этого backup service пропускается по
+   `ConditionPathExists`, а `tes3mp-panel.service` остаётся неактивным.
 
 Bootstrap:
 
 - проверяет Debian/Ubuntu, x86_64, systemd, RAM/swap/диск;
 - ставит пакеты: `libluajit-5.1-2`, `ca-certificates`, `curl`, `tar`,
-  `gzip`, `rsync`;
+  `gzip`, `rsync`, `coreutils`;
 - создаёт пользователей `tes3mp` и `tes3mp-panel`, группы, каталоги и права;
+- скачивает TES3MP 0.8.1 из `server/tes3mp-version.txt`, проверяет sha256,
+  распаковывает staging, делает его `root:root`, пишет маркер
+  `.tes3mp-install-info` и атомарно переименовывает в
+  `/opt/tes3mp-easy/tes3mp`;
+- связывает изменяемые пути runtime с `/tes3mp-easy` (конфиги, `players/`,
+  `world/`, `mods/scripts`, `requiredDataFiles.json`, `banlist.json`);
+- создаёт базовые `tes3mp-server-default.cfg`, `config.lua`,
+  `customScripts.lua`, `banlist.json` и `requiredDataFiles.json`, не
+  перезаписывая существующие;
+- создаёт `mods-init-*`, канонический `current.txt` и HOME-каталоги
+  `.config/openmw`, `.local/share/openmw`;
 - ставит `tes3mp.service`, `tes3mp-panel.service`,
   `tes3mp-easy-backup.service`, `tes3mp-easy-backup.timer`;
 - ставит `/usr/local/libexec/tes3mp-easy-rootctl` и
   `/etc/sudoers.d/tes3mp-easy`;
 - настраивает journald (`SystemMaxUse=100M`, `RuntimeMaxUse=32M`) и
   `vm.swappiness=10`;
-- создаёт `mods-init-*`, `current.txt`, `customScripts.lua`;
-- генерирует первый пароль панели;
-- запускает `tes3mp.service`, `tes3mp-panel.service`,
-  `tes3mp-easy-backup.timer`.
+- включает в автозагрузку и запускает `tes3mp.service` и
+  `tes3mp-easy-backup.timer`, затем проверяет `is-active`; панель не запускает.
 
 3. Проверьте:
 
    ```bash
    sudo systemctl status tes3mp.service --no-pager
-   sudo systemctl status tes3mp-panel.service --no-pager
    sudo systemctl status tes3mp-easy-backup.timer --no-pager
    sudo systemctl list-timers tes3mp-easy-backup.timer
-   sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-     --root /tes3mp-easy --json doctor
+   sudo systemctl status tes3mp-panel.service --no-pager
    ```
 
-`doctor` должен вернуть `status=ok` (допустим `warn` по месту) и exit 0.
+Ожидаемо: сервер `active (running)`, таймер `active (waiting)`, панель
+`inactive (dead)` до M4. Если backup service запустился и был пропущен, это
+нормально до появления `/opt/tes3mp-easy/bin/tes3mp-easy-ops` в M2. `ops doctor`
+и `/healthz` появятся позже; до M2/M4 их вызывать нельзя.
 
-4. Откройте `https://<IP>/`, войдите с временным паролем:
+4. После M4 откройте `https://<IP>/`, войдите с временным паролем:
 
    ```bash
    sudo cat /tes3mp-easy/panel-data/initial-password.txt
    ```
 
 Смените пароль. После успешной смены панель удаляет `initial-password.txt`;
-если файл остался, удалите его вручную.
+если файл остался, удалите его вручную. До M4 панели и этого файла ещё нет.
 
 ## 3. Первый запуск и проверка
 
-После I05 `bootstrap.sh` сам запускает юниты. Начиная с I03 их можно проверить
-статически до появления runtime:
+После I05 `bootstrap.sh` сам включает и запускает `tes3mp.service` и backup
+timer; панель остаётся неактивной до M4. Runtime можно проверить отдельно:
+
+```bash
+sudo cat /opt/tes3mp-easy/tes3mp/.tes3mp-install-info
+readlink /opt/tes3mp-easy/tes3mp/server/data/player
+readlink /opt/tes3mp-easy/tes3mp/server/data/banlist.json
+cd /tes3mp-easy/backups/mods
+read -r sha name < current.txt
+printf '%s  %s\n' "$sha" "$name" | sha256sum -c -
+```
+
+Ожидаемо: маркер содержит `TES3MP_VERSION=0.8.1` и sha256 из
+`server/tes3mp-version.txt`; symlinks ведут в `/tes3mp-easy`; `sha256sum -c`
+печатает `OK`. Статическая проверка юнитов:
 
 ```bash
 systemd-analyze verify /etc/systemd/system/tes3mp.service
@@ -120,36 +144,44 @@ systemd-analyze verify /etc/systemd/system/tes3mp-easy-backup.timer
 systemctl cat tes3mp-easy-backup.timer
 ```
 
-До I04 `systemd-analyze` ожидаемо ругается на отсутствующий `ExecStart`; другие
-ошибки недопустимы. Ручной запуск:
+После I05 `tes3mp.service` проходит verify без ошибки об `ExecStart`. Для
+`tes3mp-panel.service` ошибка остаётся ожидаемой до M4, для backup service — до
+M2. Любые синтаксические, dependency- или path-ошибки недопустимы. Ручной
+запуск, если сервер или таймер были остановлены:
 
 ```bash
 sudo systemctl start tes3mp.service
-sudo systemctl start tes3mp-panel.service
 sudo systemctl enable --now tes3mp-easy-backup.timer
+```
 
-sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-  --root /tes3mp-easy --json status
-sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-  --root /tes3mp-easy --json status --unit tes3mp-easy-backup.timer
+Проверка текущего состояния:
+
+```bash
+systemctl is-active tes3mp.service
+systemctl is-enabled tes3mp.service
+systemctl is-active tes3mp-easy-backup.timer
+systemctl is-enabled tes3mp-easy-backup.timer
+journalctl -u tes3mp.service -n 50 --no-pager
 ```
 
 Ожидаемо:
 
-- `status` для `tes3mp.service` — `running`, `healthy`;
-- таймер — `running`, следующий запуск через 5 минут;
+- `tes3mp.service` — `active` и `enabled`;
+- `tes3mp-easy-backup.timer` — `active` и `enabled`, следующий запуск через
+  5 минут;
 - `journalctl -u tes3mp.service -n 50` показывает запуск сервера;
-- публичный `/healthz` отвечает `ok`;
-- `/api/v1/server` отдаёт имя, адрес, порт и `mods_sha256`.
+- до M2 backup service пропускается по `ConditionPathExists`, без `failed`;
+- `ops status`, публичный `/healthz` и `/api/v1/server` появятся после M2/M4.
 
 Проверка ресурсов:
 
 ```bash
 systemctl show tes3mp.service -p MemoryCurrent -p MemoryMax
-systemctl show tes3mp-panel.service -p MemoryCurrent -p MemoryMax
 free -m
 systemd-cgtop -1
 ```
+
+`systemctl show tes3mp-panel.service` имеет смысл только после M4.
 
 ## 4. Сброс пароля панели
 
@@ -172,13 +204,14 @@ sudo cat /tes3mp-easy/panel-data/initial-password.txt
    sudo systemctl stop tes3mp-panel.service
    ```
 
-3. Замените `/opt/tes3mp-easy/bin` и `/opt/tes3mp-easy/tes3mp`, не трогая
-   `/tes3mp-easy`:
+3. Замените release-файлы, не трогая `/tes3mp-easy` и установленный runtime:
 
    ```bash
    sudo rsync -a --delete new-release/bin/ /opt/tes3mp-easy/bin/
-   sudo rsync -a --delete new-release/tes3mp/ /opt/tes3mp-easy/tes3mp/
    ```
+
+   `new-release/tes3mp` не копируйте через `rsync`: runtime TES3MP ставится
+   отдельно из проверенного архива и не входит в release payload.
 
 4. Обновите unit-файлы и rootctl, если они изменились:
 
@@ -198,9 +231,33 @@ sudo cat /tes3mp-easy/panel-data/initial-password.txt
      --root /tes3mp-easy --json doctor
    ```
 
-Игру можно не останавливать, если релиз не меняет ABI TES3MP. Если меняет —
-остановите `tes3mp.service`, обновите runtime и запустите снова; state при
-этом не трогается.
+Игру можно не останавливать, если релиз не меняет ABI TES3MP.
+
+### Обновление TES3MP runtime
+
+Runtime не перезаписывается автоматически: при наличии каталога bootstrap
+сверяет `.tes3mp-install-info` и останавливается при несовпадении. Плановая
+замена:
+
+```bash
+sudo systemctl stop tes3mp.service
+sudo mv /opt/tes3mp-easy/tes3mp /opt/tes3mp-easy/tes3mp.previous
+```
+
+Обновите `server/tes3mp-version.txt` (версия, URL, sha256) из нового релиза и
+запустите `sudo ./bootstrap.sh`. Если загрузка или проверка не удалась, верните
+старый runtime:
+
+```bash
+sudo rm -rf /opt/tes3mp-easy/tes3mp
+sudo mv /opt/tes3mp-easy/tes3mp.previous /opt/tes3mp-easy/tes3mp
+sudo systemctl start tes3mp.service
+```
+
+После успешного bootstrap проверьте маркер и symlinks из §3. Bootstrap сам
+запускает новый runtime; убедитесь, что `systemctl is-active tes3mp.service`
+возвращает `active`, и удалите `tes3mp.previous`. `/tes3mp-easy` при замене
+runtime не меняется: state, конфиги и моды остаются на месте.
 
 ## 6. Моды
 
@@ -375,6 +432,10 @@ sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
 
 Типичные причины:
 
+- runtime отсутствует или неполный →
+  `cat /opt/tes3mp-easy/tes3mp/.tes3mp-install-info` и
+  `readlink /opt/tes3mp-easy/tes3mp/server/data/player`; если маркер или symlink
+  потерян, переустановите runtime по §5 и не удаляйте `/tes3mp-easy`;
 - нет `libluajit-5.1.so.2` → `ldconfig -p | grep luajit`, переустановите пакет;
 - битый `customScripts.lua` → проверьте `mods/scripts/` и пересоберите деплоем;
 - плагин/ESM, который не подходит к текущей сборке → верните предыдущий

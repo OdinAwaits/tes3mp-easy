@@ -19,6 +19,7 @@ func TestSystemdAssetsContainRequiredSettings(t *testing.T) {
 			want: []string{
 				"User=tes3mp",
 				"Group=tes3mp",
+				"Environment=HOME=/tes3mp-easy",
 				"WorkingDirectory=/tes3mp-easy",
 				"ExecStart=/opt/tes3mp-easy/tes3mp/tes3mp-server",
 				"Restart=on-failure",
@@ -30,7 +31,7 @@ func TestSystemdAssetsContainRequiredSettings(t *testing.T) {
 				"ProtectSystem=strict",
 				"PrivateTmp=yes",
 				"ProtectHome=yes",
-				"ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world",
+				"ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/configs",
 				"WantedBy=multi-user.target",
 			},
 		},
@@ -61,6 +62,7 @@ func TestSystemdAssetsContainRequiredSettings(t *testing.T) {
 			want: []string{
 				"Type=oneshot",
 				"User=tes3mp",
+				"ConditionPathExists=/opt/tes3mp-easy/bin/tes3mp-easy-ops",
 				"ExecStart=/opt/tes3mp-easy/bin/tes3mp-easy-ops --root /tes3mp-easy --json backups create --type state --if-running",
 				"TimeoutStartSec=9min",
 				"Environment=GOMAXPROCS=1",

@@ -2,7 +2,7 @@
 
 **Статус:** draft.
 
-**Обновлено:** 2026-10-22.
+**Обновлено:** 2026-10-23.
 
 Документ описывает команды и алгоритмы ops. Нормативные JSON-формы, коды
 выхода, форматы архивов и retention — в `03-contracts.md`; при расхождении
@@ -132,7 +132,7 @@ internal/
   `tes3mp-easy-backup.timer` активен и `enabled`;
 - journald читается, `journalctl -u tes3mp.service -n 1` не требует пароля;
 - `tes3mp-server` и библиотеки релиза на месте; `libluajit-5.1.so.2` находится
-  через `ldconfig -p`; `ldd tes3mp-server` не показывает `not found`;
+  через `ldconfig -p`; `ldd tes3mp-server.x86_64` не показывает `not found`;
 - RAM не меньше 512 MiB, swap не меньше 512 MiB, `vm.swappiness=10`;
 - cgroup-лимиты юнитов соответствуют §3 `02-architecture.md`;
 - свободное место: `warn` меньше 1 GiB, `error` меньше 512 MiB;
@@ -160,13 +160,26 @@ internal/
 
 Состояния: `running`, `stopped`, `starting`, `unhealthy`, `unknown`.
 
-Источник — `systemctl show <unit> --property=ActiveState,SubState,ActiveEnterTimestamp`
-и `systemctl is-active`. `health` = `unhealthy`, если unit в `failed` или
-`is-active` вернул ошибку; иначе `healthy`/`unknown`. Если systemd недоступен —
-exit 6, `service_unavailable`.
+Источник — `systemctl show <unit> --property=ActiveState,SubState,ActiveEnterTimestamp,LastTriggerUSec,LoadState,UnitFileState --timestamp=utc` и `systemctl is-active`.
+Время запрашивается в UTC, `started_at` отдаётся в RFC3339 (`Z`).
 
-Для таймера `state` — `running`, если таймер активен, иначе `stopped`;
-`started_at` — `LastTriggerUSec`, если доступен. Поле `backend` отсутствует.
+Маппинг состояния: `failed` → `unhealthy`; `activating`/`reloading` →
+`starting`; `active` → `running`; `inactive`/`deactivating` → `stopped`;
+`unknown` или пустое значение → `unknown`; `LoadState=error` → `unhealthy`.
+
+`health` = `unhealthy`, если unit в `failed`, `LoadState=error|masked` или
+`is-active` вернул ошибку; `unknown` при неизвестном состоянии; иначе
+`healthy`. Ошибка `is-active` после успешного `show` не меняет `state`, но
+делает `health=unhealthy`. `LoadState=not-found` и недоступный systemd — exit
+6, `service_unavailable`.
+
+Для таймера `state` — `running`, если таймер активен, иначе `stopped`
+(переходные состояния не показываются); `started_at` — `LastTriggerUSec`, если
+доступен, иначе `null`. Для сервиса `started_at` — `ActiveEnterTimestamp`;
+`n/a` превращается в `null`.
+
+`--unit` принимает только `tes3mp.service` (по умолчанию) и
+`tes3mp-easy-backup.timer`; другое имя — exit 2. Поле `backend` отсутствует.
 
 ### `start` / `stop` / `restart`
 
@@ -184,9 +197,13 @@ sudo -n /usr/local/libexec/tes3mp-easy-rootctl restart
 
 `journalctl -u tes3mp.service -n N --no-pager -o cat`.
 
+`--tail N` обязателен: `N` — целое от 1 до 10000. Отсутствующий, нулевой,
+отрицательный или слишком большой `N` — exit 2. Команда не принимает другие
+аргументы и не читает data root.
+
 Без `--json` — просто текст. С `--json` — объект из `03-contracts.md` с
-`data.lines`; панель показывает массив в `<pre>`. Если journald недоступен —
-exit 6.
+`data.lines`; панель показывает массив в `<pre>`. Пустой journal — `lines: []`,
+exit 0. Если journald недоступен — exit 6, `service_unavailable`.
 
 ### `backups list`
 
@@ -436,6 +453,28 @@ tes3mp-easy-ops staff set --player "John Doe" --rank 2
 только в `03-contracts.md` §6. Здесь остаётся то, что делает ops поверх этих
 форматов.
 
+### Baseline от bootstrap
+
+I04 ставит проверенный TES3MP 0.8.1 в `/opt/tes3mp-easy/tes3mp` под `root:root`.
+Версия, URL и sha256 фиксированы в `server/tes3mp-version.txt`; bootstrap
+скачивает архив, сверяет sha256 до распаковки и атомарно переименовывает staging
+в runtime-каталог. Маркер `.tes3mp-install-info` пишется внутри staging до rename
+и хранит те же три значения. Существующий runtime принимается только при
+совпадении маркера и наличии обязательных файлов; иначе bootstrap останавливается
+и не перезаписывает каталог. Для осознанной переустановки каталог удаляют вручную.
+
+Изменяемые пути runtime — symlinks в `/tes3mp-easy`: конфиги, `mods/scripts`,
+`players/`, `world/*`, `requiredDataFiles.json` и `banlist.json`. Базовые
+`tes3mp-server-default.cfg`, `config.lua`, `customScripts.lua`, `banlist.json` и
+`mods/plugins/requiredDataFiles.json` создаются только при отсутствии. Затем
+bootstrap создаёт `mods-init-*`, пишет канонический `current.txt` и при повторном
+запуске принимает только канонический `current.txt` с существующим архивом и
+совпадающим sha256. Поэтому ops всегда стартует с валидным текущим mod-паком,
+даже до первого пользовательского импорта. I05 затем включает и запускает
+`tes3mp.service` и `tes3mp-easy-backup.timer`; до появления ops в M2 тики
+таймера пропускаются по `ConditionPathExists`, а панель остаётся неактивной до
+M4.
+
 ### Потоковая обработка
 
 - `archive/tar`, `compress/gzip` и `io.Copy` с буфером 32–64 KiB.
@@ -463,20 +502,40 @@ require("custom.another")
 
 ## 9. Systemd-адаптер
 
+Пакет `internal/systemd` — единственное место, где ops вызывает systemd,
+journald и rootctl. Команды не собирают argv вручную.
+
 ```go
 type Runner interface {
     Run(ctx context.Context, name string, args ...string) ([]byte, error)
 }
 ```
 
-- Production: `exec.CommandContext(ctx, "systemctl", args...)` для чтения,
-  `journalctl` для логов и `sudo -n /usr/local/libexec/tes3mp-easy-rootctl`
-  для start/stop/restart.
-- Никакого `sh -c` и склейки аргументов в строку.
-- `status`: `systemctl show` + `is-active`; `logs`: `journalctl -u`.
-- Таймаут из `--command-timeout`.
-- В тестах — fake runner, который пишет вызовы и возвращает заготовленный
-  вывод/ошибки. Реальный systemd для unit-тестов не нужен.
+- Production: `ExecRunner` запускает `exec.CommandContext` с `systemctl`,
+  `journalctl` и `sudo -n /usr/local/libexec/tes3mp-easy-rootctl`. Никакого
+  `sh -c` и склейки аргументов в строку.
+- `Client.Show` → `systemctl show <unit> --timestamp=utc` с фиксированным набором
+  свойств: `ActiveState`, `SubState`, `ActiveEnterTimestamp`, `LastTriggerUSec`,
+  `LoadState`, `UnitFileState`; `KEY=VALUE` разбирается в `Properties`.
+- `Client.IsActive` → `systemctl is-active <unit>`. Штатные `inactive`, `failed`
+  и `unknown` без stderr — это `false` без ошибки; недоступность systemd
+  возвращается ошибкой и на уровне команды становится `service_unavailable`.
+- `Client.Logs` → `journalctl -u <unit> -n <tail> --no-pager -o cat`; результат —
+  массив строк без пустого хвоста. Команда принимает `tail` 1..10000.
+- `Client.Control` принимает только `start`, `stop`, `restart` и вызывает
+  `sudo -n /usr/local/libexec/tes3mp-easy-rootctl <verb>`. Имя unit фиксировано
+  в rootctl и через ops не передаётся.
+- Unit-константы: `tes3mp.service`, `tes3mp-panel.service`,
+  `tes3mp-easy-backup.service`, `tes3mp-easy-backup.timer`. Некорректное имя
+  unit или глагол отклоняется до запуска процесса (`ErrInvalidUnit`,
+  `ErrInvalidAction`).
+- `CommandError` хранит команду, argv, exit code, stderr и cause. Текст ошибки
+  пригоден для `--json`, но команды строят машинный код по своему контексту.
+- Таймаут — из `--command-timeout`: команда создаёт `context.WithTimeout` и
+  передаёт его в `Runner`; адаптер не задаёт второй таймаут.
+- В тестах — `internal/systemd/systemdtest.Runner`: записывает каждый вызов,
+  возвращает заготовленный stdout/ошибку и не запускает процессы. Реальный
+  systemd для unit-тестов не нужен; настоящая проверка остаётся в E2E.
 
 ## 10. Тестирование
 

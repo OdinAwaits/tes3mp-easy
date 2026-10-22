@@ -1,7 +1,7 @@
 // Command tes3mp-easy-ops is the administrative CLI for tes3mp-easy.
 //
-// This step implements the process contract: global flags, the JSON envelope,
-// exit codes and argument validation. Command bodies arrive in later steps from
+// This step implements the process contract and the read-only status/logs
+// commands. Remaining command bodies arrive in later steps from
 // docs/v2/04-ops.md.
 package main
 
@@ -16,6 +16,7 @@ import (
 
 	"github.com/Saagilat/tes3mp-easy/internal/contract"
 	"github.com/Saagilat/tes3mp-easy/internal/ops"
+	"github.com/Saagilat/tes3mp-easy/internal/systemd"
 )
 
 const (
@@ -35,10 +36,11 @@ Global flags:
                              timeout for one systemctl/journalctl call (default 2m)
 
 Commands:
-  doctor, status, start, stop, restart, logs, backups, mods, state, staff,
-  config.
+  status [--unit tes3mp.service|tes3mp-easy-backup.timer]
+  logs --tail <n>
+  doctor, start, stop, restart, backups, mods, state, staff, config.
 
-Commands are not implemented yet; they return internal until later steps.
+Other commands are not implemented yet; they return internal until later steps.
 See docs/v2/04-ops.md for the target command set.
 `
 
@@ -70,6 +72,11 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	return runWithClient(args, stdout, stderr,
+		systemd.New(systemd.ExecRunner{}))
+}
+
+func runWithClient(args []string, stdout, stderr io.Writer, client *systemd.Client) int {
 	opts, rest, help, parseErr := parseGlobal(args)
 	if help {
 		fmt.Fprint(stdout, usage)
@@ -96,9 +103,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 				fmt.Sprintf("unknown command %q", command)))
 	}
 
-	return writeError(stdout, stderr, opts.json,
-		ops.NewError(ops.ExitInternal,
-			fmt.Sprintf("command %q is not implemented yet", command)))
+	switch command {
+	case "status":
+		return runStatus(opts, rest[1:], client, stdout, stderr)
+	case "logs":
+		return runLogs(opts, rest[1:], client, stdout, stderr)
+	default:
+		return writeError(stdout, stderr, opts.json,
+			ops.NewError(ops.ExitInternal,
+				fmt.Sprintf("command %q is not implemented yet", command)))
+	}
 }
 
 func writeError(stdout, stderr io.Writer, jsonMode bool, err *ops.Error) int {
@@ -167,8 +181,8 @@ func parseGlobal(args []string) (options, []string, bool, *ops.Error) {
 }
 
 // splitGlobal extracts global flags regardless of whether they appear before
-// or after the command. The remaining arguments stay untouched for the command
-// parser that will be added in later steps.
+// or after the command. The remaining arguments stay untouched for the
+// command parser.
 func splitGlobal(args []string) (global, rest []string, help bool) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]

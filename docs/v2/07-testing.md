@@ -2,7 +2,7 @@
 
 **Статус:** draft.
 
-**Обновлено:** 2026-10-22.
+**Обновлено:** 2026-10-23.
 
 Стратегия проверяет не «счастливый путь», а контракты и отказы. Каждый пункт
 `03-contracts.md` должен иметь тест; каждый failure mode из `02-architecture.md`
@@ -66,7 +66,8 @@ Real-host smoke I02 выполнен на Debian 12 x86_64: `id`, ownership/mode
 drop-in и sysctl drop-in с режимами `0644`, их содержимое и порядок «verify до
 install». Fake `systemd-analyze` покрывает допустимую диагностику
 `Command ... is not executable: No such file or directory` (runtime появится в
-I04–I05) и отказ на любой другой ошибке; fake `systemctl` — `daemon-reload` и
+I04, бинарник ops — в M2, панели — в M4) и отказ на любой другой ошибке; fake
+`systemctl` — `daemon-reload` и
 перезапуск journald, fake `sysctl` — применение `-p`. Отдельно проверяются
 отсутствие `systemd-analyze`/`sysctl`, отсутствие source-файлов, сбой
 `daemon-reload` и `sysctl`, а `test/infra/systemd_test.go` — лимиты памяти,
@@ -76,6 +77,54 @@ Real-host smoke I03 на Debian 12: units установлены `0644 root:root
 `systemd-analyze verify` выдал только ожидаемые ошибки отсутствующих
 `ExecStart`, journald перезапущен, `vm.swappiness=10`, повторный bootstrap не
 изменил содержимое; юниты не запускались.
+
+Для I04 fake-host дополнительно подменяет `apt-get`, `curl` и `chown`, отдаёт
+TES3MP-архив из фикстуры и проверяет: обязательные пакеты, скачивание и
+sha256 до распаковки, вызов `chown -R root:root`, режимы runtime и маркера,
+содержимое `.tes3mp-install-info`, 12 symlinks в data root, режимы базовых
+конфигов и `requiredDataFiles.json`, канонический `mods-init-*`/`current.txt`,
+HOME-каталоги и идемпотентность. Отдельные тесты отклоняют несовпадение
+sha256, неполный или чужой runtime без перезаписи, неканонический
+`current.txt`, symlink вместо `current.txt`, сбой скачивания и `chown`, а также
+symlink/не-regular-file вместо конфига или `requiredDataFiles.json`. Для имён
+архивов проверяются collision-суффикс `-01`, отказ для `-1`/`-010` и
+несуществующей календарной даты.
+
+Для I05 fake `systemctl` дополнительно различает `start`, `enable --now` и
+`is-active --quiet` и умеет вернуть отказ для каждой операции или статус
+`inactive` для выбранного unit. Проверяются: успешный запуск
+`tes3mp.service` и `tes3mp-easy-backup.timer`, их `enable`, отсутствие
+`start`/`enable` для `tes3mp-panel.service` и
+`tes3mp-easy-backup.service`, отказ команды `start`, сервер, вышедший сразу
+после старта, отказ `enable --now` таймера и неактивный таймер. Отдельно
+`systemd_test.go` требует `ConditionPathExists` для ops: до M2 таймер не
+запускает backup service с отсутствующим `ExecStart`. Идемпотентность
+проверяется повторным bootstrap: он вызывает `start`, а не `restart`, поэтому
+не трогает уже работающий сервер.
+
+Ограничение: полный real-host smoke I05 на чистой VM Debian 12/Ubuntu 24.04 не
+выполнялся; fake-host проверяет контракт вызовов systemd. В dev-окружении
+настоящий TES3MP 0.8.1 запускался транзиентным `systemd --user` unit:
+`active`, `25565/udp`, запись `world/` подтверждены. `ProtectSystem=strict`,
+`ProtectHome=yes`, `ReadWritePaths` и системный `tes3mp.service` ещё нужно
+проверить на VM.
+
+Для O01 `internal/systemd` покрыт unit-тестами с
+`internal/systemd/systemdtest.Runner`: проверяются точный argv без shell,
+разбор `systemctl show`, active/inactive/error для `is-active`, `journalctl`
+с хвостовыми и пустыми строками, три глагола rootctl, отказ для неверного
+unit/глагола и отсутствие вызова процесса при ошибке валидации. `ExecRunner`
+проверяется на реальном helper-процессе: stdout, stderr, exit code, отмена по
+context и отказ для имени команды с shell-синтаксисом.
+
+Для O02 CLI `status`/`logs` проверен unit-тестами с тем же fake runner и
+contract-тестами реального бинарника. В contract-тестах `systemctl` и
+`journalctl` подменяются shell-скриптами через `PATH`: проверяются точный argv,
+`--timestamp=utc`, маппинг active/inactive/failed/activating/timer, `started_at`
+в UTC RFC3339, `null` для `n/a`, `is-active` с ошибкой → `health=unhealthy`,
+недоступный systemd/journald → exit 6, `not-found` → exit 6, неверные
+`--unit`/`--tail` → exit 2 без вызова systemd, `lines: []`, отсутствие
+`backend`. `status` и `logs` не читают data root и не берут lock.
 
 ## 3. Фикстуры
 
@@ -197,8 +246,8 @@ testdata/
 | Команда | Обязательные случаи |
 |---|---|
 | `doctor` | ok/warn/error, exit 0/0/10, systemd недоступен, незнакомая ОС, non-x86_64, нет места, битый `current.txt`, разные FS, превышен бюджет |
-| `status` | running/stopped/unhealthy, systemd недоступен, оба unit-а, нет `backend` |
-| `logs` | tail, пустой journal, JSON `lines`, journald недоступен |
+| `status` | running/stopped/starting/unhealthy/unknown, таймер, `started_at`, systemd недоступен, оба unit-а, нет `backend` |
+| `logs` | точный argv, `--tail` 1..10000, пустой journal, JSON `lines`, journald недоступен |
 | `backups list` | пусто, сортировка, `current`, `--sha256`, `--limit`, `--before`, 2016 записей |
 | `backups create` | успех, `--if-running` + stopped, `--if-running` + systemd недоступен (exit 6), `--manual`, нет места, обрыв, `pruned`/`warnings`, имя `state-*` / `state-manual-*` |
 | `mods import` | успех, все ошибки архива, upload не удалён при ошибке, cross-FS |

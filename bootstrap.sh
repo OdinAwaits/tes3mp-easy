@@ -5,8 +5,10 @@
 # I01 implements the read-only preflight. I02 adds the privilege model: system
 # users and groups, the data directory layout, sudoers and the fixed rootctl
 # helper. I03 installs the systemd units, the backup timer, journald limits and
-# the sysctl drop-in. Runtime, initial data and the first service start remain
-# in I04-I05.
+# the sysctl drop-in. I04 installs the verified TES3MP runtime, symlinks its
+# mutable paths into the data root and seeds the canonical base mods archive.
+# I05 enables and starts the game service and backup timer; the panel unit stays
+# inactive until its binary ships in M4.
 #
 # Usage: sudo ./bootstrap.sh [--check] [--root PATH]
 #
@@ -44,6 +46,7 @@ SUDOERS_SOURCE="${TES3MP_EASY_SUDOERS_SOURCE:-$SCRIPT_DIR/sudoers.d/tes3mp-easy}
 SYSTEMD_SOURCE_DIR="${TES3MP_EASY_SYSTEMD_SOURCE:-$SCRIPT_DIR/systemd}"
 JOURNALD_SOURCE="${TES3MP_EASY_JOURNALD_SOURCE:-$SYSTEMD_SOURCE_DIR/journald.conf.d/tes3mp-easy.conf}"
 SYSCTL_SOURCE="${TES3MP_EASY_SYSCTL_SOURCE:-$SCRIPT_DIR/sysctl.d/99-tes3mp-easy.conf}"
+TES3MP_VERSION_FILE="${TES3MP_EASY_VERSION_FILE:-$SCRIPT_DIR/server/tes3mp-version.txt}"
 
 readonly -a UNIT_FILES=(
     tes3mp.service
@@ -65,6 +68,14 @@ JOURNALD_CONFIG_DIR=$(prefixed /etc/systemd/journald.conf.d)
 JOURNALD_CONFIG_DEST="$JOURNALD_CONFIG_DIR/tes3mp-easy.conf"
 SYSCTL_CONFIG_DIR=$(prefixed /etc/sysctl.d)
 SYSCTL_CONFIG_DEST="$SYSCTL_CONFIG_DIR/99-tes3mp-easy.conf"
+OPT_ROOT=$(prefixed /opt/tes3mp-easy)
+TES3MP_RUNTIME_DIR="$OPT_ROOT/tes3mp"
+TES3MP_INSTALL_INFO="$TES3MP_RUNTIME_DIR/.tes3mp-install-info"
+
+# The base mods archive must satisfy the same contract as user uploads, so the
+# metadata contains plain JSON without TES3MP's // comments. Empty CRC lists
+# accept any client copy of the three base ESMs.
+readonly BASE_REQUIRED_DATA='[{"Morrowind.esm":[]},{"Tribunal.esm":[]},{"Bloodmoon.esm":[]}]'
 
 # A nominal 512 MiB VPS reports about 480-500 MiB MemTotal after firmware and
 # kernel reservations; a nominal 7 GiB filesystem reports about 6.3 GiB total.
@@ -130,8 +141,9 @@ usage() {
     cat <<EOF
 Usage: sudo ./bootstrap.sh [OPTIONS]
 
-TES3MP Easy v2 bootstrap. The current stage installs the privilege model and
-can be run repeatedly: existing users, groups and directories are kept.
+TES3MP Easy v2 bootstrap. The current stage installs the host layout and the
+TES3MP runtime, then starts the game service. It can be run repeatedly: existing
+users, groups, directories and a running server are kept.
 
 Options:
   --check        run only the preflight and change nothing
@@ -149,7 +161,14 @@ Installs (I02):
 Installs (I03):
   tes3mp.service, tes3mp-panel.service, tes3mp-easy-backup.service,
   tes3mp-easy-backup.timer, the journald drop-in and vm.swappiness=10.
-  The TES3MP runtime and the first service start are installed by I04-I05.
+
+Installs (I04):
+  the pinned TES3MP runtime under /opt/tes3mp-easy/tes3mp, base configs in
+  configs/, base mods-init-* and backups/mods/current.txt.
+
+Starts (I05):
+  tes3mp.service and tes3mp-easy-backup.timer. The panel unit is installed but
+  remains inactive until its binary is installed in M4.
 
 Exit status:
   0  all checks and installation steps passed (warnings are allowed)
@@ -561,6 +580,443 @@ ensure_dir() {
     pass "directory: $path ($owner:$group $mode)"
 }
 
+install_runtime_packages() {
+    if ! command -v apt-get >/dev/null 2>&1; then
+        abort_install "apt-get is required to install the TES3MP runtime dependencies"
+    fi
+
+    local -x DEBIAN_FRONTEND=noninteractive
+    run_install apt-get update
+    run_install apt-get install -y --no-install-recommends \
+        libluajit-5.1-2 ca-certificates curl tar gzip rsync coreutils
+    pass "packages: TES3MP runtime dependencies installed"
+}
+
+# load_tes3mp_release fills TES3MP_VERSION, TES3MP_URL and TES3MP_SHA256 from
+# server/tes3mp-version.txt. The checksum is mandatory: an unverified download
+# must never be extracted as root.
+load_tes3mp_release() {
+    if [[ ! -r $TES3MP_VERSION_FILE ]]; then
+        abort_install "TES3MP version file not found: $TES3MP_VERSION_FILE"
+    fi
+
+    TES3MP_VERSION=""
+    TES3MP_URL=""
+    TES3MP_SHA256=""
+    local line
+    while IFS= read -r line || [[ -n $line ]]; do
+        line=${line%$'\r'}
+        [[ -z $line || $line == \#* ]] && continue
+        case "$line" in
+            TES3MP_VERSION=*)
+                [[ -z $TES3MP_VERSION ]] || abort_install "duplicate TES3MP_VERSION"
+                TES3MP_VERSION=${line#*=}
+                ;;
+            TES3MP_URL=*)
+                [[ -z $TES3MP_URL ]] || abort_install "duplicate TES3MP_URL"
+                TES3MP_URL=${line#*=}
+                ;;
+            TES3MP_SHA256=*)
+                [[ -z $TES3MP_SHA256 ]] || abort_install "duplicate TES3MP_SHA256"
+                TES3MP_SHA256=${line#*=}
+                ;;
+            *)
+                abort_install "unexpected line in $TES3MP_VERSION_FILE: $line"
+                ;;
+        esac
+    done <"$TES3MP_VERSION_FILE"
+
+    if [[ ! $TES3MP_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        abort_install "TES3MP_VERSION is missing or invalid in $TES3MP_VERSION_FILE"
+    fi
+    if [[ ! $TES3MP_URL =~ ^https://[^[:space:]]+$ && ! $TES3MP_URL =~ ^file://[^[:space:]]+$ ]]; then
+        abort_install "TES3MP_URL is missing or invalid in $TES3MP_VERSION_FILE"
+    fi
+    if [[ ! $TES3MP_SHA256 =~ ^[0-9a-f]{64}$ ]]; then
+        abort_install "TES3MP_SHA256 is missing or invalid in $TES3MP_VERSION_FILE"
+    fi
+}
+
+file_sha256() {
+    local output
+    if ! output=$(sha256sum -- "$1"); then
+        return 1
+    fi
+    printf '%s' "${output%% *}"
+}
+
+runtime_marker_matches() {
+    local version="" url="" sha="" line
+    if [[ ! -f $TES3MP_INSTALL_INFO ]]; then
+        return 1
+    fi
+    while IFS= read -r line || [[ -n $line ]]; do
+        case "$line" in
+            TES3MP_VERSION=*) version=${line#*=} ;;
+            TES3MP_URL=*) url=${line#*=} ;;
+            TES3MP_SHA256=*) sha=${line#*=} ;;
+        esac
+    done <"$TES3MP_INSTALL_INFO"
+
+    [[ $version == "$TES3MP_VERSION" &&
+        $url == "$TES3MP_URL" &&
+        $sha == "$TES3MP_SHA256" ]]
+}
+
+runtime_files_present() {
+    local path
+    for path in \
+        tes3mp-server \
+        tes3mp-server.x86_64 \
+        tes3mp-prelaunch \
+        openmw.cfg \
+        tes3mp-server-default.cfg \
+        server/scripts/config.lua \
+        server/scripts/customScripts.lua \
+        server/scripts/serverCore.lua \
+        server/data/requiredDataFiles.json; do
+        if [[ ! -f $TES3MP_RUNTIME_DIR/$path ]]; then
+            return 1
+        fi
+    done
+    [[ -d $TES3MP_RUNTIME_DIR/lib &&
+        -x $TES3MP_RUNTIME_DIR/tes3mp-server &&
+        -x $TES3MP_RUNTIME_DIR/tes3mp-server.x86_64 ]]
+}
+
+install_tes3mp_runtime() {
+    if [[ -e $TES3MP_RUNTIME_DIR || -L $TES3MP_RUNTIME_DIR ]]; then
+        if ! runtime_marker_matches; then
+            abort_install "$TES3MP_RUNTIME_DIR exists without the expected install marker; remove it before reinstalling"
+        fi
+        if ! runtime_files_present; then
+            abort_install "$TES3MP_RUNTIME_DIR is incomplete; remove it before reinstalling"
+        fi
+        pass "runtime: TES3MP $TES3MP_VERSION already installed"
+        return
+    fi
+
+    ensure_dir "$OPT_ROOT" root root 0755
+
+    local archive="$OPT_ROOT/.tes3mp-$TES3MP_VERSION.tar.gz.$$"
+    local staging="$OPT_ROOT/.tes3mp-$TES3MP_VERSION.$$"
+    local digest
+
+    if ! curl -fsSL --retry 3 -o "$archive" "$TES3MP_URL"; then
+        rm -f -- "$archive"
+        abort_install "cannot download TES3MP $TES3MP_VERSION from $TES3MP_URL"
+    fi
+    if ! digest=$(file_sha256 "$archive"); then
+        rm -f -- "$archive"
+        abort_install "cannot compute sha256 of $archive"
+    fi
+    if [[ $digest != "$TES3MP_SHA256" ]]; then
+        rm -f -- "$archive"
+        abort_install "TES3MP archive checksum mismatch: got $digest, want $TES3MP_SHA256"
+    fi
+    pass "runtime: TES3MP $TES3MP_VERSION archive verified (sha256)"
+
+    rm -rf -- "$staging"
+    if ! mkdir -m 0700 -- "$staging"; then
+        rm -f -- "$archive"
+        abort_install "cannot create runtime staging directory $staging"
+    fi
+    if ! tar -xzf "$archive" --strip-components=1 --no-same-owner -C "$staging"; then
+        rm -rf -- "$staging"
+        rm -f -- "$archive"
+        abort_install "cannot extract TES3MP $TES3MP_VERSION archive"
+    fi
+    rm -f -- "$archive"
+
+    if [[ ! -f $staging/tes3mp-server ||
+        ! -f $staging/tes3mp-server.x86_64 ||
+        ! -d $staging/lib ||
+        ! -f $staging/server/scripts/serverCore.lua ]]; then
+        rm -rf -- "$staging"
+        abort_install "TES3MP archive does not have the expected TES3MP-server layout"
+    fi
+
+    if ! chown -R root:root "$staging"; then
+        rm -rf -- "$staging"
+        abort_install "cannot make the TES3MP runtime root-owned"
+    fi
+    if ! chmod 0755 "$staging" "$staging/tes3mp-server" \
+        "$staging/tes3mp-server.x86_64" "$staging/tes3mp-prelaunch"; then
+        rm -rf -- "$staging"
+        abort_install "cannot set TES3MP runtime executable modes"
+    fi
+
+    # Write the marker while the tree is still private staging. After the
+    # atomic rename, an existing runtime directory always means a complete
+    # install; there is no window where a partial tree lacks the marker.
+    if ! {
+        printf 'TES3MP_VERSION=%s\n' "$TES3MP_VERSION"
+        printf 'TES3MP_URL=%s\n' "$TES3MP_URL"
+        printf 'TES3MP_SHA256=%s\n' "$TES3MP_SHA256"
+    } >"$staging/.tes3mp-install-info"; then
+        rm -rf -- "$staging"
+        abort_install "cannot write the TES3MP install marker"
+    fi
+    if ! chmod 0644 "$staging/.tes3mp-install-info"; then
+        rm -rf -- "$staging"
+        abort_install "cannot set the TES3MP install marker mode"
+    fi
+    # -T makes this a true atomic rename: without it, a runtime directory
+    # appearing between the check and this line would receive the staging tree
+    # as a subdirectory instead of making mv fail.
+    if ! mv -T -- "$staging" "$TES3MP_RUNTIME_DIR"; then
+        rm -rf -- "$staging"
+        abort_install "cannot move the TES3MP runtime into $TES3MP_RUNTIME_DIR"
+    fi
+    pass "runtime: TES3MP $TES3MP_VERSION installed under $TES3MP_RUNTIME_DIR"
+}
+
+# ensure_config_file SOURCE DESTINATION
+ensure_config_file() {
+    local source=$1
+    local destination=$2
+
+    if [[ -L $destination ]]; then
+        abort_install "config path $destination is a symlink; refusing to write through it"
+    fi
+    if [[ -e $destination ]]; then
+        if [[ ! -f $destination ]]; then
+            abort_install "config path $destination is not a regular file"
+        fi
+        pass "config: $destination already exists"
+        return
+    fi
+    if [[ ! -f $source ]]; then
+        abort_install "runtime config source not found: $source"
+    fi
+    run_install install -m 0600 -o tes3mp -g tes3mp "$source" "$destination"
+    pass "config: $destination seeded from the TES3MP runtime"
+}
+
+install_base_configs() {
+    ensure_config_file "$TES3MP_RUNTIME_DIR/tes3mp-server-default.cfg" \
+        "$DATA_ROOT/configs/tes3mp-server-default.cfg"
+    ensure_config_file "$TES3MP_RUNTIME_DIR/server/scripts/config.lua" \
+        "$DATA_ROOT/configs/config.lua"
+    ensure_config_file "$TES3MP_RUNTIME_DIR/server/scripts/customScripts.lua" \
+        "$DATA_ROOT/configs/customScripts.lua"
+
+    local banlist="$DATA_ROOT/configs/banlist.json"
+    if [[ -L $banlist ]]; then
+        abort_install "config path $banlist is a symlink; refusing to write through it"
+    fi
+    if [[ -e $banlist ]]; then
+        if [[ ! -f $banlist ]]; then
+            abort_install "config path $banlist is not a regular file"
+        fi
+        pass "config: $banlist already exists"
+    else
+        local temp="$DATA_ROOT/.staging/banlist.json.$$"
+        if ! printf '{\n  "playerNames": [],\n  "ipAddresses": []\n}\n' >"$temp"; then
+            abort_install "cannot write $temp"
+        fi
+        run_install install -m 0600 -o tes3mp -g tes3mp "$temp" "$banlist"
+        rm -f -- "$temp"
+        pass "config: $banlist created"
+    fi
+}
+
+ensure_base_required_data() {
+    local required="$DATA_ROOT/mods/plugins/requiredDataFiles.json"
+    if [[ -L $required ]]; then
+        abort_install "mods path $required is a symlink; refusing to write through it"
+    fi
+    if [[ -e $required ]]; then
+        if [[ ! -f $required ]]; then
+            abort_install "mods path $required is not a regular file"
+        fi
+        pass "mods: $required already exists"
+        return
+    fi
+
+    local temp="$DATA_ROOT/.staging/requiredDataFiles.json.$$"
+    if ! printf '%s\n' "$BASE_REQUIRED_DATA" >"$temp"; then
+        abort_install "cannot write $temp"
+    fi
+    run_install install -m 0640 -o tes3mp -g tes3mp "$temp" "$required"
+    rm -f -- "$temp"
+    pass "mods: base $required created"
+}
+
+# archive_timestamp_is_valid accepts only a real UTC timestamp in the compact
+# form used by archive names. GNU date normalizes invalid dates, so its rendered
+# result is compared with the input instead of trusting the exit status alone.
+archive_timestamp_is_valid() {
+    local timestamp=$1
+    [[ $timestamp =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]] || return 1
+
+    local date_part=${timestamp%%_*}
+    local time_part=${timestamp#*_}
+    local rendered
+    if ! rendered=$(date -u -d "$date_part ${time_part//-/:}" \
+        '+%Y-%m-%d_%H-%M-%S' 2>/dev/null); then
+        return 1
+    fi
+    [[ $rendered == "$timestamp" ]]
+}
+
+# mods_current_is_valid accepts the exact canonical one-line format used by
+# ops, checks that the archive still exists and verifies its sha256.
+mods_current_is_valid() {
+    local current="$DATA_ROOT/backups/mods/current.txt"
+    if [[ ! -f $current || -L $current ]]; then
+        return 1
+    fi
+    local content=""
+    LC_ALL=C IFS= read -r -N 4097 content <"$current" || true
+    if ((${#content} > 4096)); then
+        return 1
+    fi
+    [[ $content == *$'\n' ]] || return 1
+    content=${content%$'\n'}
+    [[ $content != *$'\n'* ]] || return 1
+
+    local sha name extra
+    read -r sha name extra <<<"$content"
+    [[ -z $extra && $content == "$sha $name" ]] || return 1
+    [[ $sha =~ ^[0-9a-f]{64}$ ]] || return 1
+
+    if [[ $name =~ ^mods(-init)?-([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2})(-(0[1-9]|[1-9][0-9]+))?\.tar\.gz$ ]]; then
+        archive_timestamp_is_valid "${BASH_REMATCH[2]}" || return 1
+    else
+        return 1
+    fi
+    [[ -f $DATA_ROOT/backups/mods/$name && ! -L $DATA_ROOT/backups/mods/$name ]] || return 1
+
+    local digest
+    digest=$(file_sha256 "$DATA_ROOT/backups/mods/$name") || return 1
+    [[ $digest == "$sha" ]]
+}
+
+install_base_mods_archive() {
+    if [[ -e $DATA_ROOT/backups/mods/current.txt ||
+        -L $DATA_ROOT/backups/mods/current.txt ]]; then
+        if ! mods_current_is_valid; then
+            abort_install "$DATA_ROOT/backups/mods/current.txt is not canonical; refusing to overwrite it"
+        fi
+        pass "mods: canonical current.txt already points to a valid archive"
+        return
+    fi
+
+    local timestamp name suffix=1
+    timestamp=$(date -u +%Y-%m-%d_%H-%M-%S)
+    name="mods-init-$timestamp.tar.gz"
+    while [[ -e $DATA_ROOT/backups/mods/$name ]]; do
+        if ((suffix > 999)); then
+            abort_install "cannot allocate a unique mods-init archive name"
+        fi
+        name=$(printf 'mods-init-%s-%02d.tar.gz' "$timestamp" "$suffix")
+        suffix=$((suffix + 1))
+    done
+
+    local staging="$DATA_ROOT/.staging/mods-init.$$"
+    local archive_part="$DATA_ROOT/.staging/$name.part"
+    local current_part="$DATA_ROOT/.staging/current.txt.$$"
+
+    rm -rf -- "$staging"
+    if ! mkdir -p -- "$staging/plugins" "$staging/scripts"; then
+        abort_install "cannot create base mods staging directory"
+    fi
+    if ! install -m 0644 "$DATA_ROOT/mods/plugins/requiredDataFiles.json" \
+        "$staging/plugins/requiredDataFiles.json"; then
+        rm -rf -- "$staging"
+        abort_install "cannot stage requiredDataFiles.json"
+    fi
+    if ! tar -czf "$archive_part" -C "$staging" plugins scripts; then
+        rm -rf -- "$staging"
+        rm -f -- "$archive_part"
+        abort_install "cannot create the base mods archive"
+    fi
+    rm -rf -- "$staging"
+
+    run_install install -m 0640 -o tes3mp -g tes3mp \
+        "$archive_part" "$DATA_ROOT/backups/mods/$name"
+    rm -f -- "$archive_part"
+
+    local digest
+    if ! digest=$(file_sha256 "$DATA_ROOT/backups/mods/$name"); then
+        abort_install "cannot checksum the base mods archive"
+    fi
+    if ! printf '%s %s\n' "$digest" "$name" >"$current_part"; then
+        abort_install "cannot write $current_part"
+    fi
+    run_install install -m 0640 -o tes3mp -g tes3mp \
+        "$current_part" "$DATA_ROOT/backups/mods/.current.txt.$$"
+    run_install mv -f -T -- "$DATA_ROOT/backups/mods/.current.txt.$$" \
+        "$DATA_ROOT/backups/mods/current.txt"
+    rm -f -- "$current_part"
+    pass "mods: created $name and canonical backups/mods/current.txt"
+}
+
+replace_runtime_link() {
+    local link=$1
+    local target=$2
+
+    if [[ -L $link ]]; then
+        if [[ $(readlink -- "$link") == "$target" ]]; then
+            return
+        fi
+        run_install rm -f -- "$link"
+    elif [[ -e $link ]]; then
+        if [[ -d $link ]]; then
+            # The pinned TES3MP archive ships empty data directories with
+            # .gitkeep placeholders. They are root-owned runtime content, not
+            # user data, so replace the whole tree with the data-root symlink.
+            run_install rm -rf -- "$link"
+        else
+            run_install rm -f -- "$link"
+        fi
+    fi
+
+    run_install ln -s -- "$target" "$link"
+    pass "runtime link: $link -> $target"
+}
+
+wire_runtime_to_data_root() {
+    replace_runtime_link "$TES3MP_RUNTIME_DIR/tes3mp-server-default.cfg" \
+        "$DATA_ROOT/configs/tes3mp-server-default.cfg"
+    replace_runtime_link "$TES3MP_RUNTIME_DIR/server/scripts/config.lua" \
+        "$DATA_ROOT/configs/config.lua"
+    replace_runtime_link "$TES3MP_RUNTIME_DIR/server/scripts/customScripts.lua" \
+        "$DATA_ROOT/configs/customScripts.lua"
+    replace_runtime_link "$TES3MP_RUNTIME_DIR/server/scripts/custom" \
+        "$DATA_ROOT/mods/scripts"
+
+    replace_runtime_link "$TES3MP_RUNTIME_DIR/server/data/player" \
+        "$DATA_ROOT/players"
+    replace_runtime_link "$TES3MP_RUNTIME_DIR/server/data/cell" \
+        "$DATA_ROOT/world/cell"
+    replace_runtime_link "$TES3MP_RUNTIME_DIR/server/data/world" \
+        "$DATA_ROOT/world/world"
+    replace_runtime_link "$TES3MP_RUNTIME_DIR/server/data/map" \
+        "$DATA_ROOT/world/map"
+    replace_runtime_link "$TES3MP_RUNTIME_DIR/server/data/recordstore" \
+        "$DATA_ROOT/world/recordstore"
+    replace_runtime_link "$TES3MP_RUNTIME_DIR/server/data/custom" \
+        "$DATA_ROOT/world/custom"
+    replace_runtime_link "$TES3MP_RUNTIME_DIR/server/data/requiredDataFiles.json" \
+        "$DATA_ROOT/mods/plugins/requiredDataFiles.json"
+    replace_runtime_link "$TES3MP_RUNTIME_DIR/server/data/banlist.json" \
+        "$DATA_ROOT/configs/banlist.json"
+}
+
+install_runtime_home() {
+    # tes3mp-prelaunch reads $HOME/.config/openmw before falling back to the
+    # package directory. HOME is /tes3mp-easy in the unit; pre-create the XDG
+    # directories so ConfigurationManager does not need to write under the
+    # read-only systemd mount namespace.
+    ensure_dir "$DATA_ROOT/.config" tes3mp tes3mp 0700
+    ensure_dir "$DATA_ROOT/.config/openmw" tes3mp tes3mp 0700
+    ensure_dir "$DATA_ROOT/.local" tes3mp tes3mp 0700
+    ensure_dir "$DATA_ROOT/.local/share" tes3mp tes3mp 0700
+    ensure_dir "$DATA_ROOT/.local/share/openmw" tes3mp tes3mp 0700
+}
+
 install_privilege_layout() {
     if ! command -v getent >/dev/null 2>&1; then
         abort_install "getent is required to check users and groups"
@@ -629,10 +1085,11 @@ install_privilege_layout() {
 
 # verify_unit_source UNIT
 #
-# The runtime binaries arrive in I04-I05, after this stage. systemd-analyze
-# treats an absent ExecStart target as a verification failure, so before the
-# runtime exists only that exact diagnostic is accepted. Syntax errors,
-# unknown directives and dependency problems still abort the install.
+# This stage runs before I04 installs the TES3MP runtime and before I05 ships
+# the ops/panel binaries. systemd-analyze treats an absent ExecStart target as
+# a verification failure, so before the target exists only that exact
+# diagnostic is accepted. Syntax errors, unknown directives and dependency
+# problems still abort the install.
 verify_unit_source() {
     local unit=$1
     local unit_name=${unit##*/}
@@ -656,9 +1113,9 @@ verify_unit_source() {
         [[ -z $line ]] && continue
         if [[ -n $expected_exec &&
             $line == *": Command $expected_exec is not executable: No such file or directory" ]]; then
-            # Expected until the matching runtime binary is installed in
-            # I04-I05. A typo in ExecStart, a wrong binary for this unit or
-            # any other diagnostic still fails verification.
+            # Expected until the matching binary is installed by I04 or I05.
+            # A typo in ExecStart, a wrong binary for this unit or any other
+            # diagnostic still fails verification.
             saw_pending=1
             continue
         fi
@@ -730,6 +1187,29 @@ install_systemd_layout() {
     pass "sysctl: applied $SYSCTL_CONFIG_DEST"
 }
 
+start_runtime_services() {
+    # The panel binary does not exist until M4. Enabling it here would install a
+    # unit that enters a restart loop, so only the game and the timer are
+    # started. `enable` makes both survive a reboot; `start` is deliberately not
+    # `restart`, so rerunning the installer never disconnects players.
+    run_install systemctl --no-ask-password enable tes3mp.service
+    pass "service: tes3mp.service enabled for boot"
+
+    run_install systemctl --no-ask-password start tes3mp.service
+    if ! systemctl --no-ask-password is-active --quiet tes3mp.service; then
+        abort_install "tes3mp.service is not active; inspect journalctl -u tes3mp.service"
+    fi
+    pass "service: tes3mp.service active"
+
+    run_install systemctl --no-ask-password enable --now tes3mp-easy-backup.timer
+    if ! systemctl --no-ask-password is-active --quiet tes3mp-easy-backup.timer; then
+        abort_install "tes3mp-easy-backup.timer is not active"
+    fi
+    pass "timer: tes3mp-easy-backup.timer enabled and active"
+
+    info "panel: tes3mp-panel.service remains inactive until its binary ships in M4"
+}
+
 main() {
     parse_args "$@"
 
@@ -758,7 +1238,19 @@ main() {
     install_privilege_layout
     info "Installing the I03 systemd units, journald limits and sysctl"
     install_systemd_layout
-    info "Bootstrap stage I03 complete: users, directories, rootctl, sudoers, units, journald and sysctl are in place."
+    info "Installing the I04 TES3MP runtime and base data"
+    load_tes3mp_release
+    install_runtime_packages
+    install_tes3mp_runtime
+    install_base_configs
+    ensure_base_required_data
+    install_base_mods_archive
+    wire_runtime_to_data_root
+    install_runtime_home
+    info "Bootstrap stage I04 complete: TES3MP $TES3MP_VERSION, configs and base mods-init archive are in place."
+    info "Starting the I05 TES3MP service and backup timer"
+    start_runtime_services
+    info "Bootstrap stage I05 complete: TES3MP $TES3MP_VERSION is running."
 }
 
 main "$@"
