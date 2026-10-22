@@ -25,6 +25,14 @@ last_trigger=${FAKE_SYSTEMD_LAST_TRIGGER:-Thu 2026-10-22 11:55:00 UTC}
 unitfile=${FAKE_SYSTEMD_UNIT_FILE_STATE:-enabled}
 
 case "$1" in
+--version)
+	if [ "$mode" = "unavailable" ]; then
+		printf '%s\n' 'Failed to connect to bus: No such file or directory' >&2
+		exit 1
+	fi
+	printf '%s\n' 'systemd 255 (255.4-1ubuntu8)'
+	printf '%s\n' '+PAM +AUDIT'
+	;;
 show)
 	if [ "$mode" = "unavailable" ]; then
 		printf '%s\n' 'Failed to connect to bus: No such file or directory' >&2
@@ -62,6 +70,17 @@ is-active)
 esac
 `
 
+const fakeUname = `#!/bin/sh
+set -eu
+
+if [ "$#" -ne 1 ] || [ "$1" != "-m" ]; then
+	printf 'unexpected uname call: %s\n' "$*" >&2
+	exit 99
+fi
+
+printf '%s\n' "${FAKE_UNAME_M:-x86_64}"
+`
+
 const fakeJournalctl = `#!/bin/sh
 set -eu
 
@@ -88,8 +107,12 @@ func writeFakeBin(dir string) error {
 		[]byte(fakeSystemctl), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "journalctl"),
-		[]byte(fakeJournalctl), 0o755)
+	if err := os.WriteFile(filepath.Join(dir, "journalctl"),
+		[]byte(fakeJournalctl), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "uname"),
+		[]byte(fakeUname), 0o755)
 }
 
 func readFakeCalls(t *testing.T, path string) [][]string {

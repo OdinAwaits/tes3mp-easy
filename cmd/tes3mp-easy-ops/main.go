@@ -1,7 +1,7 @@
 // Command tes3mp-easy-ops is the administrative CLI for tes3mp-easy.
 //
-// This step implements the process contract and the read-only status/logs
-// commands. Remaining command bodies arrive in later steps from
+// This step implements the process contract and the read-only doctor, status
+// and logs commands. Remaining command bodies arrive in later steps from
 // docs/v2/04-ops.md.
 package main
 
@@ -36,9 +36,10 @@ Global flags:
                              timeout for one systemctl/journalctl call (default 2m)
 
 Commands:
+  doctor
   status [--unit tes3mp.service|tes3mp-easy-backup.timer]
   logs --tail <n>
-  doctor, start, stop, restart, backups, mods, state, staff, config.
+  start, stop, restart, backups, mods, state, staff, config.
 
 Other commands are not implemented yet; they return internal until later steps.
 See docs/v2/04-ops.md for the target command set.
@@ -104,6 +105,8 @@ func runWithClient(args []string, stdout, stderr io.Writer, client *systemd.Clie
 	}
 
 	switch command {
+	case "doctor":
+		return runDoctor(opts, rest[1:], client, stdout, stderr)
 	case "status":
 		return runStatus(opts, rest[1:], client, stdout, stderr)
 	case "logs":

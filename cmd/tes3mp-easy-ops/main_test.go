@@ -136,10 +136,10 @@ func TestRunUnimplementedCommand(t *testing.T) {
 	t.Run("human", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 
-		if got := run([]string{"doctor"}, &stdout, &stderr); got != 1 {
-			t.Fatalf("run(doctor) = %d, want 1", got)
+		if got := run([]string{"start"}, &stdout, &stderr); got != 1 {
+			t.Fatalf("run(start) = %d, want 1", got)
 		}
-		if !strings.Contains(stderr.String(), `command "doctor" is not implemented`) {
+		if !strings.Contains(stderr.String(), `command "start" is not implemented`) {
 			t.Fatalf("stderr = %q, want not-implemented error", stderr.String())
 		}
 		if stdout.Len() != 0 {
@@ -150,11 +150,11 @@ func TestRunUnimplementedCommand(t *testing.T) {
 	t.Run("json", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 
-		if got := run([]string{"doctor", "--json"}, &stdout, &stderr); got != 1 {
-			t.Fatalf("run(doctor --json) = %d, want 1", got)
+		if got := run([]string{"start", "--json"}, &stdout, &stderr); got != 1 {
+			t.Fatalf("run(start --json) = %d, want 1", got)
 		}
 		assertJSONError(t, stdout.String(), ops.ExitInternal,
-			`command "doctor" is not implemented`)
+			`command "start" is not implemented`)
 		if stderr.Len() != 0 {
 			t.Fatalf("stderr = %q, want empty in JSON mode", stderr.String())
 		}
@@ -170,13 +170,13 @@ func TestRunAcceptsGlobalFlags(t *testing.T) {
 			name: "before command",
 			args: []string{
 				"--root", "/tmp/root", "--dry-run", "--lock-timeout", "1s",
-				"--command-timeout", "2s", "doctor",
+				"--command-timeout", "2s", "start",
 			},
 		},
 		{
 			name: "after command",
 			args: []string{
-				"doctor", "--root=/tmp/root", "--dry-run=true",
+				"start", "--root=/tmp/root", "--dry-run=true",
 				"--lock-timeout=1s", "--command-timeout=2s",
 			},
 		},
@@ -243,8 +243,8 @@ func TestRunJSONModeAfterParseError(t *testing.T) {
 func TestRunJSONFalseUsesHumanOutput(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
-	if got := run([]string{"--json=false", "doctor"}, &stdout, &stderr); got != 1 {
-		t.Fatalf("run(--json=false doctor) = %d, want 1", got)
+	if got := run([]string{"--json=false", "start"}, &stdout, &stderr); got != 1 {
+		t.Fatalf("run(--json=false start) = %d, want 1", got)
 	}
 	if !strings.Contains(stderr.String(), "not implemented") {
 		t.Fatalf("stderr = %q, want not-implemented error", stderr.String())

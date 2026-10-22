@@ -63,7 +63,10 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
 - O02 закрыт: `status` и `logs` подключены к CLI и адаптеру, `Show` запрашивает
   время в UTC; contract-тесты запускают реальный бинарник с fake
   `systemctl`/`journalctl` через `PATH`.
-- Следующая задача — O03 (`doctor` core).
+- O03 закрыт: `doctor` проверяет root/layout, OS, arch, systemd, unit-ы и диск,
+  отдаёт `data.checks` и exit 10 без объекта `error`; точные владельцы/режимы и
+  остальные проверки — O04.
+- Следующая задача — O04 (`doctor` deep).
 
 Схема веток на момент старта:
 
@@ -419,8 +422,8 @@ state-бэкап. `tes3mp.service` и таймер включаются в ав�
 |---|---|---|---|
 | O01 | done | Systemd/journald adapter | интерфейс + fake для тестов |
 | O02 | done | `status` и `logs` | состояния unit и журнал |
-| O03 | planned | `doctor` core | root, OS, arch, systemd, units, диск |
-| O04 | planned | `doctor` deep | current, конфиги, архивы, бюджеты |
+| O03 | done | `doctor` core | root, OS, arch, systemd, units, диск |
+| O04 | planned | `doctor` deep | владельцы/режимы, current, конфиги, архивы, бюджеты |
 | O05 | planned | `backups list` | пагинация, сортировка, `--sha256` |
 | O06 | planned | Contract-тесты read-команд | реальный бинарник на temp-root |
 
@@ -460,6 +463,27 @@ context, отсутствие shell).
 Тесты: unit-тесты маппинга/таймстемпов/флагов и contract-тесты реального
 бинарника с fake `systemctl`/`journalctl` в `PATH` (точный argv, JSON-поля,
 `lines: []`, коды выхода, отсутствие `backend`).
+
+### O03 — `doctor` core (done)
+
+Сделано: добавлен пакет `internal/doctor` и CLI-команда `doctor`. Проверки
+`root`, `os`, `arch`, `systemd`, `units`, `disk` идут в стабильном порядке.
+`root` требует читаемый каталог, шесть каталогов данных без symlink и доступ
+на запись к игровым каталогам; `os` принимает Debian 12+/Ubuntu 24.04+, старую
+или незнакомую ОС помечает `warn`; `arch` требует `x86_64`; `systemd` читает
+`systemctl --version`; `units` проверяет оба service и активный/enabled timer;
+`disk` даёт `warn` ниже 1 GiB и `error` ниже 512 MiB. `systemd.Client` получил
+`Version`.
+
+Ошибки: любая проверка со статусом `error` даёт exit 10, но конверт остаётся
+`ok: true` без объекта `error`; `warn` — exit 0; неверные аргументы — exit 2 до
+вызова systemd. `doctor` не берёт lock и ничего не пишет в root. Точные
+владельцы/режимы и остальные проверки из `04-ops.md` оставлены O04.
+
+Тесты: unit-тесты всех статусов и порогов, а также contract-тесты реального
+бинарника с fake `systemctl`/`uname` в `PATH` и `TES3MP_EASY_OS_RELEASE` для
+`/etc/os-release`; проверены точный argv, отсутствие записи в root и
+data-only-форма ошибки.
 
 ## 7. M3 — ops мутации
 

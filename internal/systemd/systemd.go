@@ -175,6 +175,26 @@ func (c *Client) Show(ctx context.Context, unit string) (Properties, error) {
 	return properties, nil
 }
 
+// Version returns the first line of systemctl --version, for example
+// "systemd 261 (261.2-1-arch)". It is used by doctor to distinguish a working
+// systemd from a host where systemctl is missing or unusable.
+func (c *Client) Version(ctx context.Context) (string, error) {
+	out, err := c.run(ctx, "systemctl", "--version")
+	if err != nil {
+		return "", err
+	}
+
+	line, _, _ := strings.Cut(string(out), "\n")
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", errors.New("systemd: systemctl --version returned no version")
+	}
+	if !strings.HasPrefix(line, "systemd ") {
+		return "", fmt.Errorf("systemd: unexpected systemctl --version output %q", line)
+	}
+	return line, nil
+}
+
 // IsActive reports whether systemctl considers unit active. A clean
 // inactive/unknown state is not an error; a systemd failure is.
 func (c *Client) IsActive(ctx context.Context, unit string) (bool, error) {

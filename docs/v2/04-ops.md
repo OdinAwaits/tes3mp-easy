@@ -150,6 +150,27 @@ internal/
 Результат — список проверок в форме `doctor` из `03-contracts.md` §4; схема
 здесь не дублируется.
 
+В O03 реализованы первые шесть проверок; порядок в `data.checks` стабилен:
+
+- `root` — `--root` существует, является каталогом и читается; есть
+  `configs/`, `players/`, `world/`, `mods/`, `backups/`, `panel-data/`;
+  каталоги игровых данных не являются symlink и доступны на запись текущему
+  процессу. Точные владельцы и режимы из §4 `02-architecture.md` добавит O04;
+- `os` — `/etc/os-release` читается и разбирается; Debian 12+ и Ubuntu 24.04+
+  дают `ok`, другая ОС или старая версия — `warn`, отсутствие файла или
+  `ID`/`VERSION_ID` — `error`;
+- `arch` — `uname -m` равен `x86_64`, иначе `error`;
+- `systemd` — `systemctl --version` читается и начинается с `systemd`;
+- `units` — `tes3mp.service` и `tes3mp-panel.service` установлены
+  (`LoadState=loaded`) и не в `failed`; `tes3mp-easy-backup.timer` активен и
+  `enabled`;
+- `disk` — свободное место на файловой системе `--root`: `warn` меньше 1 GiB,
+  `error` меньше 512 MiB.
+
+Остальные пункты списка выше (`journald`, runtime, память, cgroup, current,
+конфиги, архивы и бюджеты) относятся к O04. `doctor` не берёт lock и не
+изменяет data root.
+
 `doctor` возвращает 0, если нет `error` (предупреждения допустимы), и 10
 (`checks_failed`), если есть хотя бы одна ошибка. Код 2 зарезервирован за
 неверными аргументами.

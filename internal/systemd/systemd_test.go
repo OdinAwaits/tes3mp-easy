@@ -80,6 +80,49 @@ func TestClientShow(t *testing.T) {
 	}})
 }
 
+func TestClientVersion(t *testing.T) {
+	args := []string{"--version"}
+	runner := systemdtest.New()
+	runner.Respond("systemctl", args,
+		"systemd 255 (255.4-1ubuntu8)\n+PAM +AUDIT\n", nil)
+
+	version, err := systemd.New(runner).Version(context.Background())
+	if err != nil {
+		t.Fatalf("Version: %v", err)
+	}
+	if version != "systemd 255 (255.4-1ubuntu8)" {
+		t.Fatalf("version = %q", version)
+	}
+	assertCalls(t, runner.Calls(), []systemdtest.Call{{
+		Name: "systemctl",
+		Args: args,
+	}})
+}
+
+func TestClientVersionRejectsMalformedOutput(t *testing.T) {
+	for _, output := range []string{"", "\n", "not systemd\n"} {
+		runner := systemdtest.New()
+		runner.Respond("systemctl", []string{"--version"}, output, nil)
+
+		_, err := systemd.New(runner).Version(context.Background())
+		if err == nil {
+			t.Fatalf("Version(%q) error = nil, want error", output)
+		}
+	}
+}
+
+func TestClientVersionPropagatesCommandError(t *testing.T) {
+	args := []string{"--version"}
+	commandErr := commandError("systemctl", args, 1, "systemd is not running")
+	runner := systemdtest.New()
+	runner.Respond("systemctl", args, "", commandErr)
+
+	_, err := systemd.New(runner).Version(context.Background())
+	if !errors.Is(err, commandErr) {
+		t.Fatalf("Version error = %v, want command error", err)
+	}
+}
+
 func TestClientShowMalformedOutput(t *testing.T) {
 	runner := systemdtest.New()
 	runner.Respond("systemctl", showArgs(systemd.UnitBackupTimer),
