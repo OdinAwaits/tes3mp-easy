@@ -1,3 +1,7 @@
+> **Legacy / не руководство к действию.** Старый bash-клиент заменён
+> `tes3mp-easy-client`. Актуально — [`docs/v2/06-client.md`](../v2/06-client.md)
+> и [`docs/v2/08-runbook.md`](../v2/08-runbook.md).
+
 # Player Guide
 
 ## Prerequisites
