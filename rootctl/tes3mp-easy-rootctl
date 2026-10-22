@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# tes3mp-easy-rootctl - fixed systemctl helper for tes3mp.service.
+#
+# The helper accepts exactly one verb: start, stop or restart. The unit name is
+# fixed and cannot be supplied by the caller. It is installed as root:tes3mp
+# 0750 and is reachable from tes3mp only through the sudoers rule in
+# /etc/sudoers.d/tes3mp-easy.
+set -eu
+
+readonly SYSTEMCTL=/bin/systemctl
+readonly UNIT=tes3mp.service
+
+usage() {
+    printf 'Usage: tes3mp-easy-rootctl start|stop|restart\n' >&2
+}
+
+if [ "$#" -ne 1 ]; then
+    usage
+    exit 2
+fi
+
+case "$1" in
+    start | stop | restart) ;;
+    *)
+        usage
+        exit 2
+        ;;
+esac
+
+exec "$SYSTEMCTL" "$1" "$UNIT"

@@ -62,6 +62,10 @@ timedatectl
    sudo ./bootstrap.sh --check
    ```
 
+   В I02 `bootstrap.sh` выполняет preflight и ставит только пользователей,
+   группы, каталоги, rootctl и sudoers. Полный список ниже — целевое состояние
+   после I03–I05.
+
 Bootstrap:
 
 - проверяет Debian/Ubuntu, x86_64, systemd, RAM/swap/диск;
@@ -165,7 +169,7 @@ sudo cat /tes3mp-easy/panel-data/initial-password.txt
    ```bash
    sudo install -m 0644 new-release/systemd/*.service /etc/systemd/system/
    sudo install -m 0644 new-release/systemd/*.timer /etc/systemd/system/
-   sudo install -m 0750 new-release/rootctl/tes3mp-easy-rootctl \
+   sudo install -o root -g tes3mp -m 0750 new-release/rootctl/tes3mp-easy-rootctl \
      /usr/local/libexec/tes3mp-easy-rootctl
    sudo systemctl daemon-reload
    ```
@@ -412,8 +416,8 @@ sudo /usr/local/libexec/tes3mp-easy-rootctl restart
 `rootctl` принимает только `start`, `stop`, `restart` и всегда работает с
 `tes3mp.service`. Если ops возвращает `service_unavailable`:
 
-- проверьте, что `/usr/local/libexec/tes3mp-easy-rootctl` существует и
-  исполняется;
+- проверьте, что `/usr/local/libexec/tes3mp-easy-rootctl` существует,
+  принадлежит `root:tes3mp` и имеет режим `0750`;
 - проверьте `/etc/sudoers.d/tes3mp-easy` через `sudo visudo -c`;
 - проверьте, что `systemctl` отвечает: `systemctl is-system-running`.
 

@@ -1,0 +1,5 @@
+# Managed by tes3mp-easy bootstrap. Do not edit by hand.
+tes3mp-panel ALL=(tes3mp) NOPASSWD: /opt/tes3mp-easy/bin/tes3mp-easy-ops
+tes3mp ALL=(root) NOPASSWD: /usr/local/libexec/tes3mp-easy-rootctl start, \
+    /usr/local/libexec/tes3mp-easy-rootctl stop, \
+    /usr/local/libexec/tes3mp-easy-rootctl restart

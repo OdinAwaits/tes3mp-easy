@@ -2,9 +2,9 @@
 #
 # bootstrap.sh — TES3MP Easy v2 bootstrap.
 #
-# I01 implements the read-only preflight. Installation stages (users, units,
-# runtime, initial backups) are added by I02-I05. Running this script now only
-# verifies the host and never changes it.
+# I01 implements the read-only preflight. I02 adds the privilege model: system
+# users and groups, the data directory layout, sudoers and the fixed rootctl
+# helper. Systemd units, runtime, initial data and the panel start in I03-I05.
 #
 # Usage: sudo ./bootstrap.sh [--check] [--root PATH]
 #
@@ -12,6 +12,42 @@ set -Eeuo pipefail
 export LC_ALL=C
 
 readonly DEFAULT_ROOT="/tes3mp-easy"
+
+INSTALL_ROOT="${TES3MP_EASY_INSTALL_ROOT:-}"
+if [[ -n $INSTALL_ROOT ]]; then
+    while [[ $INSTALL_ROOT == */ && $INSTALL_ROOT != "/" ]]; do
+        INSTALL_ROOT=${INSTALL_ROOT%/}
+    done
+    if [[ $INSTALL_ROOT == "/" ]]; then
+        INSTALL_ROOT=""
+    elif [[ $INSTALL_ROOT != /* ]]; then
+        printf 'bootstrap: TES3MP_EASY_INSTALL_ROOT must be absolute\n' >&2
+        exit 2
+    fi
+fi
+
+SCRIPT_PATH=${BASH_SOURCE[0]}
+if [[ $SCRIPT_PATH == */* ]]; then
+    SCRIPT_DIR=${SCRIPT_PATH%/*}
+else
+    SCRIPT_DIR=.
+fi
+SCRIPT_DIR=$(cd -- "$SCRIPT_DIR" >/dev/null 2>&1 && pwd)
+
+# These source paths are environment-overridable so the installer can be tested
+# without touching the host. Production runs use the files shipped in the
+# release tree.
+ROOTCTL_SOURCE="${TES3MP_EASY_ROOTCTL_SOURCE:-$SCRIPT_DIR/rootctl/tes3mp-easy-rootctl}"
+SUDOERS_SOURCE="${TES3MP_EASY_SUDOERS_SOURCE:-$SCRIPT_DIR/sudoers.d/tes3mp-easy}"
+
+prefixed() {
+    printf '%s%s' "$INSTALL_ROOT" "$1"
+}
+
+SUDOERS_DIR=$(prefixed /etc/sudoers.d)
+SUDOERS_DEST="$SUDOERS_DIR/tes3mp-easy"
+LIBEXEC_DIR=$(prefixed /usr/local/libexec)
+ROOTCTL_DEST="$LIBEXEC_DIR/tes3mp-easy-rootctl"
 
 # A nominal 512 MiB VPS reports about 480-500 MiB MemTotal after firmware and
 # kernel reservations; a nominal 7 GiB filesystem reports about 6.3 GiB total.
@@ -77,21 +113,26 @@ usage() {
     cat <<EOF
 Usage: sudo ./bootstrap.sh [OPTIONS]
 
-TES3MP Easy v2 bootstrap preflight. The current stage is read-only and can be
-run repeatedly.
+TES3MP Easy v2 bootstrap. The current stage installs the privilege model and
+can be run repeatedly: existing users, groups and directories are kept.
 
 Options:
-  --check        run only the preflight (currently the default)
-  --root PATH    data root to validate (default $DEFAULT_ROOT)
+  --check        run only the preflight and change nothing
+  --root PATH    data root to validate and create (default $DEFAULT_ROOT)
   -h, --help     show this help and exit
 
 Checks:
   root privileges, Debian 12+/Ubuntu 24.04+, x86_64, systemd,
   RAM, swap and free disk.
 
+Installs (I02):
+  users and groups tes3mp/tes3mp-panel, the data directory layout,
+  /usr/local/libexec/tes3mp-easy-rootctl and /etc/sudoers.d/tes3mp-easy.
+  Systemd units and the runtime are installed by later stages.
+
 Exit status:
-  0  all checks passed (warnings are allowed)
-  1  one or more preflight checks failed
+  0  all checks and installation steps passed (warnings are allowed)
+  1  a preflight check or an installation step failed
   2  invalid command line
 EOF
 }
@@ -136,6 +177,13 @@ parse_args() {
         printf 'bootstrap: --root must be an absolute path: %q\n' "$DATA_ROOT" >&2
         exit 2
     fi
+    if [[ $DATA_ROOT == "/" ]]; then
+        printf 'bootstrap: --root must not be /\n' >&2
+        exit 2
+    fi
+    while [[ $DATA_ROOT == */ ]]; do
+        DATA_ROOT=${DATA_ROOT%/}
+    done
 }
 
 # version_ge REQUIRED ACTUAL returns success when ACTUAL >= REQUIRED.
@@ -432,6 +480,132 @@ print_summary() {
     fi
 }
 
+abort_install() {
+    printf '%s[fail]%s %s\n' "$C_RED" "$C_RESET" "$*" >&2
+    printf '%sInstallation failed.%s\n' "$C_RED" "$C_RESET" >&2
+    exit 1
+}
+
+run_install() {
+    if ! "$@"; then
+        abort_install "command failed: $*"
+    fi
+}
+
+ensure_group() {
+    local name=$1
+
+    if getent group "$name" >/dev/null 2>&1; then
+        pass "group: $name already exists"
+        return
+    fi
+
+    run_install groupadd --system "$name"
+    pass "group: $name created"
+}
+
+# ensure_user USER PRIMARY_GROUP SUPPLEMENTARY_GROUP
+ensure_user() {
+    local user=$1
+    local primary_group=$2
+    local supplementary_group=$3
+
+    if getent passwd "$user" >/dev/null 2>&1; then
+        pass "user: $user already exists"
+    else
+        run_install useradd --system \
+            --gid "$primary_group" \
+            --groups "$supplementary_group" \
+            --home-dir /nonexistent \
+            --no-create-home \
+            --shell /usr/sbin/nologin \
+            "$user"
+        pass "user: $user created"
+    fi
+
+    # -aG is idempotent: it adds groups if missing and keeps existing ones. The
+    # primary group is included so a pre-existing account with a different
+    # primary group still ends up in the required group.
+    run_install usermod -aG "$primary_group,$supplementary_group" "$user"
+}
+
+# ensure_dir PATH OWNER GROUP MODE
+ensure_dir() {
+    local path=$1
+    local owner=$2
+    local group=$3
+    local mode=$4
+
+    run_install install -d -m "$mode" -o "$owner" -g "$group" "$path"
+    pass "directory: $path ($owner:$group $mode)"
+}
+
+install_privilege_layout() {
+    if ! command -v getent >/dev/null 2>&1; then
+        abort_install "getent is required to check users and groups"
+    fi
+
+    ensure_group tes3mp
+    ensure_group tes3mp-panel
+
+    if ! getent group systemd-journal >/dev/null 2>&1; then
+        abort_install "group systemd-journal is missing"
+    fi
+
+    ensure_user tes3mp tes3mp systemd-journal
+    ensure_user tes3mp-panel tes3mp-panel tes3mp
+
+    ensure_dir "$DATA_ROOT" root root 0755
+    ensure_dir "$DATA_ROOT/configs" tes3mp tes3mp 0700
+
+    local subdir
+    for subdir in players world mods backups; do
+        ensure_dir "$DATA_ROOT/$subdir" tes3mp tes3mp 0750
+    done
+
+    for subdir in cell world map recordstore custom; do
+        ensure_dir "$DATA_ROOT/world/$subdir" tes3mp tes3mp 0750
+    done
+    for subdir in plugins scripts; do
+        ensure_dir "$DATA_ROOT/mods/$subdir" tes3mp tes3mp 0750
+    done
+    for subdir in mods state; do
+        ensure_dir "$DATA_ROOT/backups/$subdir" tes3mp tes3mp 0750
+    done
+
+    ensure_dir "$DATA_ROOT/panel-data" tes3mp-panel tes3mp 0750
+    ensure_dir "$DATA_ROOT/panel-data/tls" tes3mp-panel tes3mp 0700
+    ensure_dir "$DATA_ROOT/panel-data/uploads" tes3mp-panel tes3mp 2770
+    ensure_dir "$DATA_ROOT/.locks" tes3mp tes3mp 0700
+    ensure_dir "$DATA_ROOT/.staging" tes3mp tes3mp 0700
+
+    if [[ ! -f $ROOTCTL_SOURCE ]]; then
+        abort_install "rootctl source not found: $ROOTCTL_SOURCE"
+    fi
+    ensure_dir "$LIBEXEC_DIR" root root 0755
+    # sudo checks that the invoking user can execute the command before it
+    # elevates. root:tes3mp 0750 keeps the helper root-owned while allowing the
+    # only account with a sudoers rule to execute it.
+    run_install install -m 0750 -o root -g tes3mp "$ROOTCTL_SOURCE" "$ROOTCTL_DEST"
+    pass "rootctl: $ROOTCTL_DEST (root:tes3mp 0750)"
+
+    if [[ ! -f $SUDOERS_SOURCE ]]; then
+        abort_install "sudoers source not found: $SUDOERS_SOURCE"
+    fi
+    if ! command -v visudo >/dev/null 2>&1; then
+        abort_install "visudo is required to validate sudoers"
+    fi
+    ensure_dir "$SUDOERS_DIR" root root 0750
+
+    # Validate before replacing the live file so a syntax error cannot lock out
+    # the panel or the runtime account.
+    if ! visudo -cf "$SUDOERS_SOURCE" >/dev/null; then
+        abort_install "visudo rejected $SUDOERS_SOURCE"
+    fi
+    run_install install -m 0440 -o root -g root "$SUDOERS_SOURCE" "$SUDOERS_DEST"
+    pass "sudoers: $SUDOERS_DEST"
+}
+
 main() {
     parse_args "$@"
 
@@ -453,9 +627,12 @@ main() {
 
     if [[ $CHECK_ONLY == true ]]; then
         info "Preflight complete (--check). No changes were made."
-    else
-        info "Preflight complete. Installation stages are not implemented yet (I02-I05)."
+        return
     fi
+
+    info "Installing the I02 privilege model"
+    install_privilege_layout
+    info "Bootstrap stage I02 complete: users, directories, rootctl and sudoers are in place."
 }
 
 main "$@"

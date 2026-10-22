@@ -142,10 +142,12 @@ tes3mp ALL=(root) NOPASSWD: /usr/local/libexec/tes3mp-easy-rootctl start, \
     /usr/local/libexec/tes3mp-easy-rootctl restart
 ```
 
-`rootctl` — root-owned скрипт или бинарник `0750`, который принимает ровно
-один аргумент `start|stop|restart`, не принимает имя юнита и вызывает
-`/bin/systemctl <verb> tes3mp.service` без shell. Произвольный `systemctl`,
-`sh -c`, путь или дополнительный аргумент отклоняются.
+`rootctl` — root-owned скрипт или бинарник `root:tes3mp 0750`, который
+принимает ровно один аргумент `start|stop|restart`, не принимает имя юнита и
+вызывает `/bin/systemctl <verb> tes3mp.service` без shell. Группа `tes3mp`
+нужна для execute-бита: sudo проверяет доступность команды вызывающему
+пользователю до повышения прав. Произвольный `systemctl`, `sh -c`, путь или
+дополнительный аргумент отклоняются.
 
 Почему так: панель не работает под root, игровой сервер не получает права
 управлять systemd, а ops не получает произвольный root-shell. Компромисс —

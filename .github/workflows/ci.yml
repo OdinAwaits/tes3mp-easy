@@ -21,7 +21,12 @@ jobs:
           cache: true
 
       - name: Check shell syntax
-        run: bash -n bootstrap.sh
+        run: |
+          bash -n bootstrap.sh
+          sh -n rootctl/tes3mp-easy-rootctl
+
+      - name: Validate sudoers
+        run: sudo visudo -cf sudoers.d/tes3mp-easy
 
       - name: Check formatting
         run: test -z "$(gofmt -l .)"

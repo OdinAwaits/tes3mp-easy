@@ -45,9 +45,21 @@ OS-матрица: Debian 12 и Ubuntu 24.04, x86_64, systemd. Другие ОС
 
 `test/infra` запускает настоящий `bootstrap.sh` с подменёнными `/etc/os-release`,
 `/proc`, системным каталогом systemd и командами `id`, `uname`, `df`,
-`systemctl`. Проверяются успех, предупреждения, каждый отказ (root, ОС, arch,
-systemd, RAM, swap, диск), границы порогов и то, что повторный запуск не меняет
-ни одного файла.
+`systemctl`, `getent`, `groupadd`, `useradd`, `usermod`, `install`, `visudo`.
+Проверяются успех, предупреждения, каждый отказ (root, ОС, arch, systemd, RAM,
+swap, диск), границы порогов и то, что `--check` не меняет ни одного файла.
+
+Для I02 дополнительно проверяются создание групп/пользователей, layout и режимы
+каталогов, установка `rootctl` (`root:tes3mp 0750`) и sudoers (валидация
+`visudo -cf` до записи), отказы при отсутствии `systemd-journal` и при
+невалидном sudoers, а также идемпотентность: второй запуск не вызывает
+`useradd`/`groupadd` и не меняет дерево. `rootctl_test.go` запускает копию
+скрипта с fake `systemctl` и проверяет три разрешённых глагола, отказ для
+пустого/лишнего/неизвестного аргумента и проброс кода `systemctl`.
+
+Real-host smoke I02 выполнен на Debian 12 x86_64: `id`, ownership/modes,
+`visudo -c`, `tes3mp-panel` → ops от `tes3mp`, `tes3mp` → rootctl; `status` и
+лишний аргумент отклоняются.
 
 ## 3. Фикстуры
 
@@ -306,6 +318,8 @@ testdata/
 
 ```bash
 bash -n bootstrap.sh
+sh -n rootctl/tes3mp-easy-rootctl
+sudo visudo -cf sudoers.d/tes3mp-easy
 go test ./...
 go test -race ./...
 go vet ./...

@@ -25,14 +25,17 @@ func (r result) combined() string {
 }
 
 type fakeHost struct {
-	t          *testing.T
-	dir        string
-	dataRoot   string
-	osRelease  string
-	procRoot   string
-	systemdRun string
-	bin        string
-	env        map[string]string
+	t           *testing.T
+	dir         string
+	dataRoot    string
+	installRoot string
+	stateDir    string
+	commandLog  string
+	osRelease   string
+	procRoot    string
+	systemdRun  string
+	bin         string
+	env         map[string]string
 }
 
 func requireBash(t *testing.T) {
@@ -45,14 +48,21 @@ func requireBash(t *testing.T) {
 	}
 }
 
-func bootstrapPath(t *testing.T) string {
+func projectPath(t *testing.T, parts ...string) string {
 	t.Helper()
 
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	path := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "bootstrap.sh"))
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	return filepath.Join(append([]string{root}, parts...)...)
+}
+
+func bootstrapPath(t *testing.T) string {
+	t.Helper()
+
+	path := projectPath(t, "bootstrap.sh")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("bootstrap.sh not found at %s: %v", path, err)
 	}
@@ -74,6 +84,9 @@ func newFakeHost(t *testing.T) *fakeHost {
 		env:        make(map[string]string),
 	}
 	h.dataRoot = filepath.Join(base, "data", "tes3mp-easy")
+	h.installRoot = filepath.Join(base, "install")
+	h.stateDir = filepath.Join(base, "state")
+	h.commandLog = filepath.Join(base, "commands.log")
 
 	for _, dir := range []string{
 		h.procRoot,
@@ -81,11 +94,16 @@ func newFakeHost(t *testing.T) *fakeHost {
 		h.systemdRun,
 		h.bin,
 		h.dataRoot,
+		h.installRoot,
+		filepath.Join(h.stateDir, "groups"),
+		filepath.Join(h.stateDir, "users"),
+		filepath.Join(h.stateDir, "members"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
+	h.writeFile(filepath.Join(h.stateDir, "groups", "systemd-journal"), "", 0o644)
 
 	h.writeOS("debian", "12")
 	h.writePID1("systemd")
@@ -93,6 +111,11 @@ func newFakeHost(t *testing.T) *fakeHost {
 	h.setSwap(512)
 	h.setDisk(8192, 7168)
 	h.writeCommands()
+	h.env["TES3MP_EASY_INSTALL_ROOT"] = h.installRoot
+	h.env["TES3MP_EASY_ROOTCTL_SOURCE"] = projectPath(t, "rootctl", "tes3mp-easy-rootctl")
+	h.env["TES3MP_EASY_SUDOERS_SOURCE"] = projectPath(t, "sudoers.d", "tes3mp-easy")
+	h.env["TES3MP_FAKE_STATE_DIR"] = h.stateDir
+	h.env["TES3MP_FAKE_COMMAND_LOG"] = h.commandLog
 
 	return h
 }
@@ -161,6 +184,171 @@ if [ "${1:-}" = "--version" ]; then
     exit 0
 fi
 exit 0
+`, 0o755)
+	h.writeFile(filepath.Join(h.bin, "getent"), `#!/bin/sh
+state=${TES3MP_FAKE_STATE_DIR:?}
+kind=${1:-}
+name=${2:-}
+case "$kind" in
+    group)
+        [ -f "$state/groups/$name" ] || exit 2
+        printf '%s:x:999:\n' "$name"
+        ;;
+    passwd)
+        [ -f "$state/users/$name" ] || exit 2
+        printf '%s:x:999:999::/nonexistent:/usr/sbin/nologin\n' "$name"
+        ;;
+    *)
+        exit 2
+        ;;
+esac
+`, 0o755)
+	h.writeFile(filepath.Join(h.bin, "groupadd"), `#!/bin/sh
+state=${TES3MP_FAKE_STATE_DIR:?}
+name=
+for arg in "$@"; do
+    case "$arg" in
+        --system) ;;
+        *) name=$arg ;;
+    esac
+done
+[ -n "$name" ] || exit 2
+[ ! -e "$state/groups/$name" ] || exit 9
+: >"$state/groups/$name"
+printf 'groupadd name=%s\n' "$name" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+`, 0o755)
+	h.writeFile(filepath.Join(h.bin, "useradd"), `#!/bin/sh
+state=${TES3MP_FAKE_STATE_DIR:?}
+primary=
+supplementary=
+user=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --gid)
+            primary=$2
+            shift 2
+            ;;
+        --groups)
+            supplementary=$2
+            shift 2
+            ;;
+        --home-dir | --shell)
+            shift 2
+            ;;
+        --system | --no-create-home)
+            shift
+            ;;
+        *)
+            user=$1
+            shift
+            ;;
+    esac
+done
+[ -n "$user" ] || exit 2
+[ ! -e "$state/users/$user" ] || exit 9
+printf '%s:x:999:999::/nonexistent:/usr/sbin/nologin\n' "$user" >"$state/users/$user"
+printf 'useradd user=%s primary=%s supplementary=%s\n' \
+    "$user" "$primary" "$supplementary" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+`, 0o755)
+	h.writeFile(filepath.Join(h.bin, "usermod"), `#!/bin/sh
+state=${TES3MP_FAKE_STATE_DIR:?}
+group=
+user=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -aG)
+            group=$2
+            shift 2
+            ;;
+        *)
+            user=$1
+            shift
+            ;;
+    esac
+done
+[ -n "$group" ] && [ -n "$user" ] || exit 2
+command -p mkdir -p "$state/members"
+members="$state/members/$user"
+command -p touch "$members"
+if ! command -p grep -qx "$group" "$members"; then
+    printf '%s\n' "$group" >>"$members"
+fi
+printf 'usermod user=%s groups=%s\n' "$user" "$group" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+`, 0o755)
+	h.writeFile(filepath.Join(h.bin, "install"), `#!/bin/sh
+set -eu
+mode=
+owner=
+group=
+isdir=0
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -d)
+            isdir=1
+            shift
+            ;;
+        -m)
+            mode=$2
+            shift 2
+            ;;
+        -o)
+            owner=$2
+            shift 2
+            ;;
+        -g)
+            group=$2
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            printf 'fake install: unsupported option %s\n' "$1" >&2
+            exit 2
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+[ -n "$mode" ] || {
+    printf 'fake install: missing mode\n' >&2
+    exit 2
+}
+if [ "$isdir" -eq 1 ]; then
+    for path in "$@"; do
+        command -p mkdir -p "$path"
+        command -p chmod "$mode" "$path"
+        printf 'install -d owner=%s group=%s mode=%s path=%s\n' \
+            "$owner" "$group" "$mode" "$path" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+    done
+else
+    [ "$#" -eq 2 ] || {
+        printf 'fake install: expected source and destination\n' >&2
+        exit 2
+    }
+    src=$1
+    dest=$2
+    command -p mkdir -p "$(command -p dirname "$dest")"
+    command -p rm -f "$dest"
+    command -p cp "$src" "$dest"
+    command -p chmod "$mode" "$dest"
+    printf 'install owner=%s group=%s mode=%s src=%s dest=%s\n' \
+        "$owner" "$group" "$mode" "$src" "$dest" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+fi
+`, 0o755)
+	h.writeFile(filepath.Join(h.bin, "visudo"), `#!/bin/sh
+file=
+for arg in "$@"; do
+    file=$arg
+done
+[ -n "$file" ] && [ -f "$file" ] || exit 1
+if [ "${TES3MP_FAKE_VISUDO_FAIL:-0}" = "1" ]; then
+    printf 'syntax error in fake sudoers\n' >&2
+    exit 1
+fi
+printf 'visudo file=%s\n' "$file" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
 `, 0o755)
 }
 
@@ -237,7 +425,7 @@ func (h *fakeHost) setMachine(machine string) {
 	h.env["TES3MP_FAKE_MACHINE"] = machine
 }
 
-func TestBootstrapPreflightPasses(t *testing.T) {
+func TestBootstrapPreflightPassesAndInstalls(t *testing.T) {
 	h := newFakeHost(t)
 	got := h.run(t)
 
@@ -254,9 +442,93 @@ func TestBootstrapPreflightPasses(t *testing.T) {
 		"swap: 512 MiB total",
 		"disk: 7168 MiB free of 8192 MiB",
 		"Preflight passed: 7 checks, 0 warning(s), 0 error(s).",
-		"Installation stages are not implemented yet",
+		"Installing the I02 privilege model",
+		"group: tes3mp created",
+		"group: tes3mp-panel created",
+		"user: tes3mp created",
+		"user: tes3mp-panel created",
+		"rootctl: " + filepath.Join(h.installRoot, "usr/local/libexec/tes3mp-easy-rootctl"),
+		"sudoers: " + filepath.Join(h.installRoot, "etc/sudoers.d/tes3mp-easy"),
+		"Bootstrap stage I02 complete",
 	} {
 		assertContains(t, got.stdout, want)
+	}
+
+	for _, dir := range []struct {
+		path   string
+		perm   fs.FileMode
+		setgid bool
+	}{
+		{h.dataRoot, 0o755, false},
+		{filepath.Join(h.dataRoot, "configs"), 0o700, false},
+		{filepath.Join(h.dataRoot, "players"), 0o750, false},
+		{filepath.Join(h.dataRoot, "world"), 0o750, false},
+		{filepath.Join(h.dataRoot, "world", "cell"), 0o750, false},
+		{filepath.Join(h.dataRoot, "world", "world"), 0o750, false},
+		{filepath.Join(h.dataRoot, "world", "map"), 0o750, false},
+		{filepath.Join(h.dataRoot, "world", "recordstore"), 0o750, false},
+		{filepath.Join(h.dataRoot, "world", "custom"), 0o750, false},
+		{filepath.Join(h.dataRoot, "mods"), 0o750, false},
+		{filepath.Join(h.dataRoot, "mods", "plugins"), 0o750, false},
+		{filepath.Join(h.dataRoot, "mods", "scripts"), 0o750, false},
+		{filepath.Join(h.dataRoot, "backups"), 0o750, false},
+		{filepath.Join(h.dataRoot, "backups", "mods"), 0o750, false},
+		{filepath.Join(h.dataRoot, "backups", "state"), 0o750, false},
+		{filepath.Join(h.dataRoot, "panel-data"), 0o750, false},
+		{filepath.Join(h.dataRoot, "panel-data", "tls"), 0o700, false},
+		{filepath.Join(h.dataRoot, "panel-data", "uploads"), 0o770, true},
+		{filepath.Join(h.dataRoot, ".locks"), 0o700, false},
+		{filepath.Join(h.dataRoot, ".staging"), 0o700, false},
+		{filepath.Join(h.installRoot, "usr/local/libexec"), 0o755, false},
+		{filepath.Join(h.installRoot, "etc/sudoers.d"), 0o750, false},
+	} {
+		assertPathMode(t, dir.path, dir.perm, dir.setgid)
+	}
+	assertPathMode(t, filepath.Join(h.installRoot, "usr/local/libexec/tes3mp-easy-rootctl"), 0o750, false)
+	assertPathMode(t, filepath.Join(h.installRoot, "etc/sudoers.d/tes3mp-easy"), 0o440, false)
+
+	logData, err := os.ReadFile(h.commandLog)
+	if err != nil {
+		t.Fatalf("read command log: %v", err)
+	}
+	log := string(logData)
+	for _, want := range []string{
+		"groupadd name=tes3mp",
+		"groupadd name=tes3mp-panel",
+		"useradd user=tes3mp primary=tes3mp supplementary=systemd-journal",
+		"useradd user=tes3mp-panel primary=tes3mp-panel supplementary=tes3mp",
+		"usermod user=tes3mp groups=tes3mp,systemd-journal",
+		"usermod user=tes3mp-panel groups=tes3mp-panel,tes3mp",
+		"install -d owner=tes3mp group=tes3mp mode=0700 path=" + filepath.Join(h.dataRoot, "configs"),
+		"install -d owner=tes3mp-panel group=tes3mp mode=2770 path=" + filepath.Join(h.dataRoot, "panel-data/uploads"),
+		"install owner=root group=tes3mp mode=0750 src=" + projectPath(t, "rootctl", "tes3mp-easy-rootctl"),
+		"install owner=root group=root mode=0440 src=" + projectPath(t, "sudoers.d", "tes3mp-easy"),
+		"visudo file=" + projectPath(t, "sudoers.d", "tes3mp-easy"),
+	} {
+		assertContains(t, log, want)
+	}
+
+	sudoers, err := os.ReadFile(filepath.Join(h.installRoot, "etc/sudoers.d/tes3mp-easy"))
+	if err != nil {
+		t.Fatalf("read installed sudoers: %v", err)
+	}
+	assertContains(t, string(sudoers), "tes3mp-panel ALL=(tes3mp) NOPASSWD: /opt/tes3mp-easy/bin/tes3mp-easy-ops")
+	assertContains(t, string(sudoers), "tes3mp ALL=(root) NOPASSWD: /usr/local/libexec/tes3mp-easy-rootctl start")
+}
+
+func assertPathMode(t *testing.T, path string, perm fs.FileMode, setgid bool) {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != perm {
+		t.Fatalf("%s mode = %04o, want %04o", path, got, perm)
+	}
+	gotSetgid := info.Mode()&fs.ModeSetgid != 0
+	if gotSetgid != setgid {
+		t.Fatalf("%s setgid = %v, want %v", path, gotSetgid, setgid)
 	}
 }
 
@@ -311,6 +583,54 @@ func TestBootstrapHelpAndUsage(t *testing.T) {
 
 		assertExit(t, got, 2)
 		assertContains(t, got.stderr, "must be an absolute path")
+	})
+
+	t.Run("root filesystem", func(t *testing.T) {
+		h := newFakeHost(t)
+		got := h.run(t, "--root=/")
+
+		assertExit(t, got, 2)
+		assertContains(t, got.stderr, "must not be /")
+	})
+
+	t.Run("relative install root", func(t *testing.T) {
+		h := newFakeHost(t)
+		h.env["TES3MP_EASY_INSTALL_ROOT"] = "relative"
+
+		got := h.run(t)
+
+		assertExit(t, got, 2)
+		assertContains(t, got.stderr, "TES3MP_EASY_INSTALL_ROOT must be absolute")
+	})
+}
+
+func TestBootstrapInstallFailures(t *testing.T) {
+	t.Run("systemd-journal group missing", func(t *testing.T) {
+		h := newFakeHost(t)
+		if err := os.Remove(filepath.Join(h.stateDir, "groups", "systemd-journal")); err != nil {
+			t.Fatalf("remove systemd-journal state: %v", err)
+		}
+
+		got := h.run(t)
+
+		assertExit(t, got, 1)
+		assertContains(t, got.stderr, "group systemd-journal is missing")
+		assertContains(t, got.stderr, "Installation failed.")
+	})
+
+	t.Run("visudo rejects the rule", func(t *testing.T) {
+		h := newFakeHost(t)
+		h.env["TES3MP_FAKE_VISUDO_FAIL"] = "1"
+
+		got := h.run(t)
+
+		assertExit(t, got, 1)
+		assertContains(t, got.stderr, "syntax error in fake sudoers")
+		assertContains(t, got.stderr, "visudo rejected")
+		assertContains(t, got.stderr, "Installation failed.")
+		if _, err := os.Stat(filepath.Join(h.installRoot, "etc/sudoers.d/tes3mp-easy")); !os.IsNotExist(err) {
+			t.Fatalf("sudoers file exists after visudo rejection (stat err = %v)", err)
+		}
 	})
 }
 
@@ -487,25 +807,55 @@ func TestBootstrapReportsAllFailures(t *testing.T) {
 	}
 }
 
-func TestBootstrapIsIdempotent(t *testing.T) {
+func TestBootstrapInstallIsIdempotent(t *testing.T) {
 	h := newFakeHost(t)
-	before := snapshotTree(t, h.dir)
 
 	first := h.run(t)
-	second := h.run(t)
-
 	assertExit(t, first, 0)
+	if first.stderr != "" {
+		t.Fatalf("first stderr = %q, want empty", first.stderr)
+	}
+
+	before := snapshotInstalledState(t, h)
+	if err := os.Remove(h.commandLog); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("clear command log: %v", err)
+	}
+
+	second := h.run(t)
 	assertExit(t, second, 0)
-	if first.stderr != "" || second.stderr != "" {
-		t.Fatalf("stderr = %q / %q, want empty", first.stderr, second.stderr)
+	if second.stderr != "" {
+		t.Fatalf("second stderr = %q, want empty", second.stderr)
 	}
-	if first.stdout != second.stdout {
-		t.Fatalf("repeated run changed output:\nfirst:\n%s\nsecond:\n%s",
-			first.stdout, second.stdout)
+
+	after := snapshotInstalledState(t, h)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("repeated install changed files:\nbefore=%#v\nafter=%#v", before, after)
 	}
-	if after := snapshotTree(t, h.dir); !reflect.DeepEqual(before, after) {
-		t.Fatalf("preflight changed files:\nbefore=%#v\nafter=%#v", before, after)
+
+	logData, err := os.ReadFile(h.commandLog)
+	if err != nil {
+		t.Fatalf("read command log: %v", err)
 	}
+	for _, unexpected := range []string{"groupadd ", "useradd "} {
+		if strings.Contains(string(logData), unexpected) {
+			t.Fatalf("second run repeated %q:\n%s", unexpected, logData)
+		}
+	}
+	assertContains(t, second.stdout, "group: tes3mp already exists")
+	assertContains(t, second.stdout, "user: tes3mp already exists")
+	assertContains(t, second.stdout, "user: tes3mp-panel already exists")
+}
+
+func snapshotInstalledState(t *testing.T, h *fakeHost) map[string]fileSnapshot {
+	t.Helper()
+
+	snapshot := make(map[string]fileSnapshot)
+	for _, root := range []string{h.dataRoot, h.installRoot, h.stateDir} {
+		for rel, entry := range snapshotTree(t, root) {
+			snapshot[root+"\x00"+rel] = entry
+		}
+	}
+	return snapshot
 }
 
 type fileSnapshot struct {
