@@ -4,25 +4,35 @@
 
 **Обновлено:** 2026-10-22.
 
-Документ описывает целевую схему и заменяет старую архитектуру с `nginx` +
-`export`. Нормативные форматы и коды — в `03-contracts.md`.
+Документ описывает целевую нативную схему на systemd. Нормативные форматы,
+retention и коды — в `03-contracts.md`. Контейнерный запуск в v2 не
+поддерживается, хотя Docker технически влезает в 512 MiB (см. §9): нативная
+схема выбрана ради запаса и узкой модели привилегий. Если нативная схема не
+пройдёт E2E, вариант с контейнерами проектируется отдельно в другой ветке.
+
+Целевая платформа — Debian 12+/Ubuntu 24.04+ x86_64 с systemd; другие ОС —
+best-effort и не входят в MVP.
 
 ## 1. Схема
 
 ```text
-                                  VPS
+                                  VPS, 1 vCPU
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                                                                         │
-│  Игрок ──UDP 25565──────────────► tes3mp ──пишет──► players/ world/     │
-│                                      ▲                                  │
-│                                      │ читает configs/ mods/            │
+│  Игрок ──UDP 25565──────────────► tes3mp.service ──пишет──► players/     │
+│                                      ▲                       world/      │
+│                                      │ читает configs/ mods/             │
 │                                      │                                  │
 │  Клиент игрока ──HTTPS 443──┐        │                                  │
-│  Браузер админа ──HTTPS 443─┼──► panel ──exec──► ops ──► files          │
-│  Браузер игрока ──HTTPS 443─┘        │             │                    │
-│                                      │             └──► docker compose  │
+│  Браузер админа ──HTTPS 443─┼──► panel.service ──sudo──► ops ──► files   │
+│  Браузер игрока ──HTTPS 443─┘        │                    │              │
+│                                      │                    └──► rootctl   │
+│                                      │                         │        │
+│                                      │                         ▼        │
+│                                      │                  systemctl        │
+│                                      │                  tes3mp.service   │
 │                                      │                                  │
-│  backup (тот же образ) ──exec──► ops ──пишет──► backups/               │
+│  backup.timer ──5 мин──► backup.service ──exec──► ops ──пишет──► backups/ │
 │                                                                         │
 │  /tes3mp-easy/{configs,players,world,mods,backups,panel-data}           │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -30,63 +40,140 @@
 
 Ключевая идея: панель — единственная точка входа для админа и клиента, но
 единственный **административный писатель** — `ops`. Панель не трогает
-`players/`, `world/`, `mods/`, `configs/` и `backups/` напрямую.
+`players/`, `world/`, `mods/`, `configs/` и `backups/` напрямую. Игровой сервер
+и таймер бэкапов живут в отдельных systemd-юнитах и не зависят от панели.
 
 ## 2. Компоненты
 
 | Компонент | Где | Роль | Что пишет |
 |---|---|---|---|
-| `tes3mp` | VPS, Docker | Игровой сервер, UDP 25565 | `players/`, `world/` во время игры |
-| `panel` | VPS, Docker, :80/:443 | HTTPS-панель, публичный API, админка | `panel-data/` |
-| `backup` | VPS, Docker | Планировщик state-бэкапов | через `ops` в `backups/` |
-| `ops` | Внутри образа `panel`/`backup`, CLI | Все административные операции | `configs/`, `players/`, `world/`, `mods/`, `backups/`, `.locks/` |
+| `tes3mp.service` | VPS, systemd, UDP 25565 | Игровой сервер | `players/`, `world/` во время игры |
+| `tes3mp-panel.service` | VPS, systemd, :80/:443 | HTTPS-панель, публичный API, админка | `panel-data/` |
+| `tes3mp-easy-backup.timer` | VPS, systemd | Запускает бэкап каждые 5 минут | — |
+| `tes3mp-easy-backup.service` | VPS, systemd, oneshot | Один запуск `ops backups create` | через `ops` в `backups/` |
+| `tes3mp-easy-ops` | CLI, `/opt/tes3mp-easy/bin` | Все административные операции | `configs/`, `players/`, `world/`, `mods/`, `backups/`, `.locks/` |
+| `tes3mp-easy-rootctl` | root-helper, `/usr/local/libexec` | Фиксированные `start/stop/restart tes3mp.service` | — |
 | `tes3mp-easy-client` | ПК игрока | Мастер установки, моды, запуск | свою рабочую папку |
-| Docker Compose | VPS | Запуск трёх сервисов | — |
+| systemd | VPS | Запуск, ресурсы, журнал, таймеры | journald |
 
-`panel` и `backup` используют один Docker-образ: в нём лежат
-`tes3mp-easy-panel` и `tes3mp-easy-ops`. Разница только в команде запуска.
-Это меньше движущихся частей, чем отдельный образ для бэкапов.
+Панель и ops — разные процессы. Панель вызывает ops только фиксированным
+набором команд; ops не умеет HTTP и не читает пароль панели.
 
-## 3. Контейнеры и монтирования
+## 3. Systemd-юниты и лимиты
 
-### `tes3mp`
+| Unit | User | Память | Дополнительно |
+|---|---|---|---|
+| `tes3mp.service` | `tes3mp` | `MemoryHigh=384M`, `MemoryMax=448M` | `OOMScoreAdjust=-500`, `Restart=on-failure` |
+| `tes3mp-panel.service` | `tes3mp-panel` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=64MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE` |
+| `tes3mp-easy-backup.service` | `tes3mp` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=64MiB`, `Nice=19`, `IOSchedulingClass=idle`, `OOMScoreAdjust=+500` |
+| `tes3mp-easy-backup.timer` | — | — | `OnBootSec=2min`, `OnUnitActiveSec=5min`, `AccuracySec=30s` |
 
-- порт `25565/udp`;
-- монтирует `configs/`, `players/`, `world/`, `mods/`, `container-data/`;
-- запускается от того пользователя, от которого сейчас работает;
-- не получает Docker socket.
+`tes3mp-easy-backup.service` — `Type=oneshot` с `TimeoutStartSec=9min`.
+Если предыдущий запуск ещё активен, systemd не запускает второй экземпляр;
+следующий тик произойдёт после завершения текущего. `--if-running` внутри
+ops дополнительно пропускает бэкап, если игра остановлена.
 
-### `panel`
+`tes3mp.service`:
 
-- порты `80/tcp` (ACME + redirect) и `443/tcp`;
-- монтирует `/tes3mp-easy` (rw) — чтобы читать бэкапы и передавать пути ops;
-- монтирует `/var/run/docker.sock` (rw) — ops управляет compose;
-- монтирует `panel-data/` (rw) — пароль, TLS, загрузки;
-- наружу не отдаёт Docker socket и не выполняет произвольные команды.
+- `WorkingDirectory=/tes3mp-easy`;
+- `ExecStart=/opt/tes3mp-easy/tes3mp/tes3mp-server`;
+- `Restart=on-failure`, `RestartSec=5s`;
+- `ProtectSystem=strict`, `PrivateTmp=yes`, `ProtectHome=yes`;
+- `ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world`;
+- `SupplementaryGroups=systemd-journal` юниту не нужен: сервер пишет
+  stdout/stderr; группа `systemd-journal` у пользователя `tes3mp` нужна только
+  для `ops logs`;
+- порт `25565/udp`, без `CAP_NET_BIND_SERVICE` (непривилегированный порт).
 
-### `backup`
+`tes3mp-panel.service`:
 
-- тот же образ, команда `tes3mp-easy-ops backup loop --interval 5m --if-running`;
-- монтирует `/tes3mp-easy` (rw) — читает state, пишет бэкапы;
-- монтирует `/var/run/docker.sock` (ro) — только чтобы узнать, запущен ли
-  `tes3mp`;
-- не слушает порты и не имеет HTTP-интерфейса.
+- `WorkingDirectory=/opt/tes3mp-easy`;
+- `ExecStart=/opt/tes3mp-easy/bin/tes3mp-easy-panel`;
+- `AmbientCapabilities=CAP_NET_BIND_SERVICE`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE`;
+- `ProtectSystem=strict`, `PrivateTmp=yes`, `ProtectHome=yes`;
+- `ReadWritePaths=/tes3mp-easy/panel-data`;
+- `ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/mods`;
+- `ReadWritePaths=/tes3mp-easy/backups /tes3mp-easy/configs /tes3mp-easy/.locks /tes3mp-easy/.staging`;
+  эти пути нужны дочернему `ops`, который панель запускает через `sudo`:
+  mount namespace с `ProtectSystem=strict` наследуется, а Unix-права не дают
+  панели писать туда напрямую;
+- `NoNewPrivileges=no` — иначе не сработает узкий `sudo`; граница безопасности —
+  не этот флаг, а точные правила sudoers и root-helper;
+- `Restart=on-failure`, `RestartSec=3s`.
 
-Почему отдельный `backup`, а не планировщик в панели: если панель упала или её
-перезапускают, бэкапы должны продолжать идти. Это не «лишний сервис», это
-маленький процесс с одной задачей.
+`tes3mp-easy-backup.service` не получает прав root и не управляет юнитами:
+ему достаточно прочитать состояние (`systemctl is-active`) и записать архив от
+пользователя `tes3mp`.
 
-## 4. Layout на VPS
+## 4. Пользователи, группы и sudoers
+
+| Пользователь | Группы | Владеет | Может |
+|---|---|---|---|
+| `tes3mp` | `tes3mp`, `systemd-journal` | `configs/`, `players/`, `world/`, `mods/`, `backups/`, `.locks/`, `.staging/` | играть, писать state, вызывать rootctl |
+| `tes3mp-panel` | `tes3mp-panel`, `tes3mp` | `panel-data/` | читать `backups/`, `players/` и `mods/`, запускать ops от `tes3mp` |
+| `root` | — | `/opt`, `/etc/systemd`, `/usr/local/libexec` | установка и аварийное восстановление |
+
+Права:
+
+- `/tes3mp-easy` — `root:root 0755`;
+- `configs/` — `tes3mp:tes3mp 0700`, файлы `0600`: панель не читает их
+  напрямую, только через `ops`;
+- `players/`, `world/`, `mods/`, `backups/` — `tes3mp:tes3mp 0750`, файлы
+  `0640`;
+- `panel-data/` — `tes3mp-panel:tes3mp 0750`;
+- `panel-data/auth.json`, `panel-data/initial-password.txt` — `0600`;
+- `panel-data/tls/` — `0700`, файлы `0600`;
+- `panel-data/uploads/` — `tes3mp-panel:tes3mp 2770`, файлы `0640`; группа
+  `tes3mp` должна иметь write, иначе `ops` не сможет сделать rename upload в
+  `backups/mods/`;
+- `.locks/`, `.staging/` — `tes3mp:tes3mp 0700`.
+
+`tes3mp-panel` входит в группу `tes3mp` для чтения `backups/`, `players/` и
+`mods/`; `uploads/` — узкое исключение с group-write, нужное для rename.
+Панель не имеет Unix-прав писать в игровые каталоги; `ops`, запущенный от
+`tes3mp`, имеет.
+
+Sudoers — два узких правила:
 
 ```text
-/tes3mp-easy/
-├── docker-compose.yml
-├── .env
+tes3mp-panel ALL=(tes3mp) NOPASSWD: /opt/tes3mp-easy/bin/tes3mp-easy-ops
+tes3mp ALL=(root) NOPASSWD: /usr/local/libexec/tes3mp-easy-rootctl start, \
+    /usr/local/libexec/tes3mp-easy-rootctl stop, \
+    /usr/local/libexec/tes3mp-easy-rootctl restart
+```
+
+`rootctl` — root-owned скрипт или бинарник `0750`, который принимает ровно
+один аргумент `start|stop|restart`, не принимает имя юнита и вызывает
+`/bin/systemctl <verb> tes3mp.service` без shell. Произвольный `systemctl`,
+`sh -c`, путь или дополнительный аргумент отклоняются.
+
+Почему так: панель не работает под root, игровой сервер не получает права
+управлять systemd, а ops не получает произвольный root-shell. Компромисс —
+`sudo` внутри панели; он ограничен точным путём ops и точными аргументами
+rootctl.
+
+## 5. Layout на VPS
+
+```text
+/opt/tes3mp-easy/                 # неизменяемые файлы релиза, root:root
+├── bin/
+│   ├── tes3mp-easy-ops
+│   └── tes3mp-easy-panel
+├── tes3mp/
+│   ├── tes3mp-server
+│   └── lib/                      # библиотеки из релиза TES3MP
+├── systemd/
+├── sudoers.d/
+├── rootctl/
+│   └── tes3mp-easy-rootctl
+└── bootstrap.sh
+
+/tes3mp-easy/                     # данные; сам каталог root:root 0755
 ├── configs/
 │   ├── tes3mp-server-default.cfg
 │   ├── config.lua
 │   ├── banlist.json
-│   └── customScripts.lua        # генерируется ops, read-only
+│   └── customScripts.lua         # генерируется ops, read-only
 ├── players/
 ├── world/
 │   ├── cell/
@@ -100,85 +187,91 @@
 ├── backups/
 │   ├── mods/
 │   │   ├── current.txt
-│   │   └── *.tar.gz
+│   │   ├── mods-init-*.tar.gz
+│   │   └── mods-*.tar.gz
 │   └── state/
-│       └── *.tar.gz
-├── panel-data/
+│       ├── state-*.tar.gz
+│       ├── state-manual-*.tar.gz
+│       └── state-predeploy-*.tar.gz
+├── panel-data/                   # tes3mp-panel:tes3mp
 │   ├── auth.json
 │   ├── initial-password.txt
 │   ├── tls/
-│   └── uploads/                # временные загрузки модов
-├── .staging/                   # распаковка и подмена, чистится ops
-├── .locks/
-│   └── ops.lock
-└── container-data/              # данные самого TES3MP, как сейчас
+│   └── uploads/                  # временные загрузки модов
+├── .staging/                     # распаковка и подмена, чистится ops
+└── .locks/
+    └── ops.lock
 ```
 
 `panel-data/uploads` — единственное место, куда панель пишет пользовательские
 файлы. После успешного `ops mods import` панель удаляет временный файл.
+Uploads и `backups/` обязаны быть на одной файловой системе: `mods import`
+делает rename, а не копирование. Это проверяет `doctor`.
 
-## 5. Кто чем владеет
+Системные файлы:
 
-| Путь | Владелец | Панель | Ops | TES3MP |
-|---|---|---|---|---|
-| `configs/` | ops | read | write | read |
-| `players/` | tes3mp + ops | read | write при restore/staff | write |
-| `world/` | tes3mp + ops | read | write при restore | write |
-| `mods/` | ops | read | write | read |
-| `backups/` | ops | read | write | — |
-| `panel-data/` | panel | write | — | — |
-| `panel-data/uploads/` | panel | write | read | — |
-| `.locks/` | ops | — | write | — |
-
-«Панель читает» означает: для отображения списков и скачивания файлов. Любая
-мутация идёт через ops.
+- `/etc/systemd/system/tes3mp.service`;
+- `/etc/systemd/system/tes3mp-panel.service`;
+- `/etc/systemd/system/tes3mp-easy-backup.service` и `.timer`;
+- `/etc/sudoers.d/tes3mp-easy`;
+- `/usr/local/libexec/tes3mp-easy-rootctl`;
+- `/etc/systemd/journald.conf.d/tes3mp-easy.conf` с `SystemMaxUse=100M`,
+  `RuntimeMaxUse=32M`;
+- `/etc/sysctl.d/99-tes3mp-easy.conf` с `vm.swappiness=10`.
 
 ## 6. Потоки
 
 ### Админ входит в панель
 
 ```text
-Браузер ──HTTPS──► panel
+Браузер ──HTTPS──► tes3mp-panel.service
   GET /admin/login
   POST /admin/login (пароль)
-  panel проверяет Argon2id-хеш в panel-data/auth.json
-  panel ставит HttpOnly/Secure/SameSite cookie + CSRF-токен
+  панель проверяет Argon2id-хеш в panel-data/auth.json
+  панель ставит HttpOnly/Secure/SameSite cookie + CSRF-токен
 ```
 
 ### Статус и управление сервером
 
 ```text
 Браузер ──POST /admin/server/restart──► panel
-  panel ──exec──► ops restart --json
-  ops ──docker compose restart tes3mp──► Docker
+  panel ──sudo -u tes3mp──► ops restart --json
+  ops ──sudo rootctl restart──► systemctl restart tes3mp.service
   ops возвращает JSON
   panel показывает результат и обновляет статус
 ```
+
+Чтение статуса не требует root: `ops status` вызывает `systemctl show` и
+`systemctl is-active`, а `logs` читает journald через группу
+`systemd-journal`.
 
 ### Загрузка и деплой модов
 
 ```text
 Браузер ──multipart upload──► panel
-  panel пишет panel-data/uploads/<uuid>.tar.gz
-  panel ──exec──► ops mods import --file ... --json
-  ops проверяет архив, CRC, пути; кладёт в backups/mods/import-*.tar.gz
+  panel стримит в panel-data/uploads/<uuid>.tar.gz (MaxBytesReader, 512 MiB)
+  panel ──sudo -u tes3mp──► ops mods import --file ... --json
+  ops проверяет архив, CRC, пути; rename в backups/mods/mods-*.tar.gz
   panel показывает список и предлагает Deploy
 
 Браузер ──POST /admin/mods/deploy──► panel
-  panel ──exec──► ops mods deploy --archive ... --json
-  ops делает state-бэкап, останавливает tes3mp, распаковывает в staging,
-  меняет mods/, генерирует customScripts.lua и current.txt, запускает tes3mp
+  panel ──sudo -u tes3mp──► ops mods deploy --archive ... --json
+  ops делает state-predeploy, останавливает tes3mp, распаковывает в staging,
+  меняет mods/, генерирует customScripts.lua и current.txt, запускает tes3mp,
+  если он работал до операции (и не указан --no-restart)
 ```
 
 ### State-бэкап и восстановление
 
 ```text
-backup ──каждые 5 минут──► ops backup loop (внутри: createStateBackupLocked)
-  ops: lock → проверка диска → tar.gz во временный файл → rename
+tes3mp-easy-backup.timer ──каждые 5 минут──► tes3mp-easy-backup.service
+  ops backups create --type state --if-running
+  lock → проверка диска → потоковый tar.gz во временный файл → fsync → rename
+  → retention → JSON с pruned/warnings
 
-Браузер ──POST /admin/state/deploy──► panel ──exec──► ops state deploy --archive ...
-  ops: lock → проверка архива → stop → staging → подмена players/ и world/ →
-       start → при ошибке вернуть старые каталоги
+Браузер ──POST /admin/state/deploy──► panel ──sudo -u tes3mp──► ops state deploy
+  ops: lock → проверка архива → state-predeploy → stop → staging → подмена
+       players/ и world/ → start, если был запущен → при ошибке вернуть старые
 ```
 
 ### Клиент игрока
@@ -187,7 +280,7 @@ backup ──каждые 5 минут──► ops backup loop (внутри: c
 Клиент ──GET /api/v1/server──────────► panel  (имя, адрес, статус, mods_sha256)
 Клиент ──GET /api/v1/mods/current────► panel  (имя архива, sha256, размер, url)
 Клиент ──GET /api/v1/mods/current/archive──► panel ──read──► backups/mods/*.tar.gz
-Клиент ──UDP 25565──────────────────► tes3mp
+Клиент ──UDP 25565──────────────────► tes3mp.service
 ```
 
 Пароль сервера в публичном API не отдаётся. Админ передаёт его игроку
@@ -198,56 +291,124 @@ backup ──каждые 5 минут──► ops backup loop (внутри: c
 - **Публично:** главная страница, список и скачивание бэкапов, текущий архив
   модов, информация о сервере (без пароля).
 - **Только с паролем:** всё под `/admin/*` и `/api/v1/admin/*`.
-- **Docker socket — это root.** Его получают только `panel` и `backup`, и
-  только потому, что ops управляет compose. Панель не превращает HTTP-запрос в
-  произвольную команду: обработчики вызывают фиксированный набор ops-команд.
+- **Нет прямого доступа к управлению хостом.** Панель не получает root,
+  сокет управления или произвольный `systemctl`.
 - **Никакого `sh -c`.** Ops запускает процессы через `exec.Command` с
   аргументами-массивом. Пути и имена проверяются до передачи.
+- **Sudo — только два правила.** Панель может запускать только ops от
+  `tes3mp`; ops может запускать только rootctl с тремя глаголами. Никакого
+  произвольного `systemctl`, shell или пути.
 - **Path traversal.** Все имена архивов и игроков проверяются: только
   `filepath.Base`, без `/`, `\`, `..` и NUL. Распаковка tar запрещает
   абсолютные пути, `..`, symlink и hardlink.
 - **TLS.** Панель не работает по голому HTTP для админки. Целевой режим —
-  сертификат Let's Encrypt по IP; self-signed — аварийный режим с явным
+  сертификат Let’s Encrypt по IP; self-signed — аварийный режим с явным
   предупреждением.
 - **CSRF и сессии.** Все изменяющие запросы — с CSRF-токеном. Cookie:
   `HttpOnly`, `Secure`, `SameSite=Strict`.
 - **Rate limit.** Логин и публичные скачивания ограничены по IP.
-- **Загрузки.** Ограничение размера, проверка gzip/tar до распаковки,
-  ограничение на количество и суммарный размер файлов.
+- **Загрузки.** `MaxBytesReader` 512 MiB, потоковая запись, проверка gzip/tar
+  до распаковки, лимиты записей и распакованного размера.
+- **Journald.** `SystemMaxUse=100M`, `RuntimeMaxUse=32M`; логи не могут занять
+  диск и вытеснить state.
 
 ## 8. Что происходит при сбоях
 
 | Сбой | Поведение |
 |---|---|
-| Панель упала | `tes3mp` и `backup` продолжают работать; бэкапы идут |
-| `backup` упал | Панель показывает предупреждение; кнопка «создать бэкап» работает через ops |
-| Docker недоступен | Панель отдаёт 503 и понятную ошибку, не делает вид, что всё хорошо |
-| Кривой архив модов | `ops mods import` отклоняет до записи в `mods/` |
-| Ошибка при деплое state | Ops возвращает старые `players/` и `world/`, запускает сервер |
+| Панель упала | `tes3mp.service` и таймер бэкапов продолжают работать |
+| Бэкап упал | Панель показывает предупреждение; ручной `backups create` работает |
+| systemd недоступен | Панель отдаёт 503 `service_unavailable`, не изображает «running» |
+| Кривой архив модов | `ops mods import` отклоняет до записи в `backups/mods/`; `mods deploy` — до подмены `mods/` |
+| Ошибка при деплое state | Ops возвращает старые `players/` и `world/` и прежнее состояние сервера |
 | Мало места | Ops проверяет диск до упаковки/распаковки и возвращает `no_space` |
+| Бюджет бэкапов превышен | Retention удаляет кандидатов; месячные не трогает, возвращает `warn` |
 | Одновременные операции | `.locks/ops.lock`: вторая мутация ждёт или получает `locked` |
 | Питание/падение в момент записи | Временный файл + rename; недописанный архив не становится `current` |
 
-## 9. Порядок миграции
+## 9. Ресурсный бюджет
 
-1. **Контракты и тесты.** Зафиксировать JSON-формат ops, коды выхода, layout
-   архивов; собрать фикстуры и parity-тесты против текущих bash-скриптов.
-2. **Ops, только чтение.** `doctor`, `status`, `backups list`; панель ещё нет.
-3. **Ops, мутации.** `mods import/deploy`, `state deploy`, `staff set`,
-   `config get/set`, `backups create`; тесты с temp-root и fake Docker.
-4. **Панель MVP.** Авторизация, статус, логи, бэкапы, моды, state, конфиги,
+### RAM и CPU
+
+Целевая VM: **1 vCPU, 512–640 MiB RAM, 512 MiB swap, 7 GiB NVMe**.
+
+| Потребитель | Обычно | Лимит |
+|---|---|---|
+| Базовая ОС, systemd, journald | 80–120 MiB | — |
+| `tes3mp.service` | 250–380 MiB | `MemoryHigh=384M`, `MemoryMax=448M` |
+| `tes3mp-panel.service` | 25–45 MiB | `MemoryHigh=48M`, `MemoryMax=64M` |
+| `tes3mp-easy-backup.service` | 15–40 MiB | `MemoryHigh=48M`, `MemoryMax=64M` |
+| Page cache | по остатку | вытесняется |
+
+- `GOMAXPROCS=1` у панели и backup-сервиса: на одном vCPU больше не нужно.
+- `GOMEMLIMIT=64MiB` заставляет Go-процессы агрессивнее собирать мусор, а не
+  раздувать RSS.
+- `tes3mp` получает `OOMScoreAdjust=-500`, панель и backup — `+500`: при
+  нехватке памяти ядро убивает вспомогательные процессы, а не игру.
+- `vm.swappiness=10`: swap — страховка от OOM, а не рабочая память.
+- 512 MiB — минимум; 640 MiB рекомендуется, если на сервере одновременно
+  работают панель, импорт модов и игроки. При 512 MiB пики панели и backup не
+  должны совпадать; `MemoryHigh` их притормаживает.
+- Игровые значения по умолчанию: `maximumPlayers=8`, `maxClientsPerIP=3`.
+  Для 2–5 друзей этого достаточно.
+
+Для сравнения, Docker-вариант (игра в контейнере, панель нативная) на тестовой
+VM Debian 12, 1 vCPU, 542 MiB, Docker 20.10 (замер 2026-10-22) занимал:
+`dockerd` 47.9 MiB, `containerd` 19.8 MiB, shim 11.9 MiB, игра 8.3 MiB
+(idle, без игроков), панель 14.2 MiB; итого 148 MiB used и 394 MiB available,
+`/var/lib/docker` — 211 MiB. Это доказывает, что Docker не исключён бюджетом
+512 MiB. Нативная схема экономит ~80 MiB RAM и ~200 MiB диска, а главное — не
+даёт панели `docker.sock`. Под игровой нагрузкой потребление игры растёт,
+поэтому для Docker практический минимум — 640 MiB, комфортно — 1 GiB; для
+нативной схемы остаётся 512/640.
+
+### Диск
+
+| Статья | Бюджет |
+|---|---|
+| ОС, пакеты, runtime TES3MP | 1.35 GiB |
+| Живые `players/` + `world/` | 0.5 GiB |
+| Живые `mods/` (распакованные) | 1.0 GiB |
+| Staging/upload (пик — больший из двух) | 1.0 GiB |
+| `backups/state` | 1.0 GiB |
+| `backups/mods` | 0.5 GiB |
+| `panel-data` (auth, TLS) | 0.05 GiB |
+| journald | 0.1 GiB |
+| Свободный резерв | 0.5 GiB |
+| **Пик** | **~6.0 GiB из 7** |
+
+- Upload (512 MiB) и staging (1 GiB) не обязаны существовать одновременно:
+  импорт заканчивается до деплоя, а upload удаляется после импорта.
+- `doctor` предупреждает при свободном месте меньше 1 GiB и считает ошибкой
+  меньше 512 MiB.
+- Сжатые state-архивы крошечные (типично ~100 KB), поэтому 1 GiB — это
+  несколько тысяч точек; месячные архивы не удаляются по возрасту.
+- Если месячные архивы сами превысили 1 GiB, retention не удаляет их;
+  `doctor` показывает `warn`, а админ копирует историю на другую машину.
+- `mods import` не копирует между файловыми системами: upload и `backups/`
+  должны быть на одном mount, иначе `doctor` — `error`, а импорт —
+  `invalid_argument`.
+
+## 10. Порядок работ
+
+1. **Контракты и фикстуры.** `03-contracts.md`, архивы, retention-сценарии,
+   JSON и коды выхода.
+2. **Инфраструктура.** `bootstrap.sh`, пользователи, sudoers, rootctl,
+   systemd-юниты, journald, sysctl, runtime TES3MP, проверка зависимостей.
+3. **Ops, только чтение.** `doctor`, `status`, `logs`, `backups list` с
+   пагинацией.
+4. **Ops, мутации.** `mods import/deploy`, `state deploy`, `staff set`,
+   `config get/set`, `backups create` + retention; тесты с temp-root и
+   fake systemd/journalctl.
+5. **Панель MVP.** Авторизация, статус, логи, бэкапы, моды, state, конфиги,
    staff; панель вызывает только ops.
-5. **Клиент MVP.** Мастер, Morrowind, TES3MP, моды, шрифты, запуск; может
-   разрабатываться параллельно с панелью на моках API.
-6. **Вырезание старого.** Убрать `nginx`, `export`, старые bash-скрипты
-   администрирования; оставить bootstrap и аварийные команды.
-7. **Перенос `package.sh`.** Go-пакейджер с parity-тестами; shell-версия
-   остаётся референсом до полного совпадения.
+6. **Клиент MVP.** Мастер, Morrowind, TES3MP, моды, шрифты, запуск.
+7. **Упаковка.** Go-пакейджер, релизный tar, bootstrap с нуля.
 
-На время миграции старые скрипты могут лежать в `legacy/`, но панель и клиент
-не должны от них зависеть.
+В v2 нет перехода со старой схемы: чистая установка, новые архивы, новые
+имена. `bootstrap.sh` не переносит старую установку и не читает её файлы.
 
-## 10. Non-goals архитектуры
+## 11. Non-goals архитектуры
 
 - мультитенантность и несколько серверов на панель;
 - HA, репликация, внешняя БД;
@@ -255,4 +416,5 @@ backup ──каждые 5 минут──► ops backup loop (внутри: c
 - plugin API для панели;
 - хранение игровых данных в облаке;
 - управление сервером из клиента;
-- произвольный доступ к файлам через панель.
+- произвольный доступ к файлам через панель;
+- контейнерный рантайм (Docker — только Plan B) и альтернативные backend-ы.

@@ -5,8 +5,8 @@
 **Обновлено:** 2026-10-22.
 
 Документ описывает команды и алгоритмы ops. Нормативные JSON-формы, коды
-выхода и форматы архивов — в `03-contracts.md`; при расхождении прав 03.
-Ops заменяет ad-hoc bash-скрипты из `server/scripts/`.
+выхода, форматы архивов и retention — в `03-contracts.md`; при расхождении
+прав 03. Ops заменяет ad-hoc bash-скрипты.
 
 ## 1. Зачем отдельный CLI
 
@@ -18,18 +18,15 @@ staff rank.
 Почему CLI, а не библиотека внутри панели:
 
 - **Тестируемость.** Ops можно запустить с `--root` на временной папке и
-  fake-Docker, без HTTP и без настоящего сервера.
+  fake systemd/journalctl, без HTTP и без настоящего сервера.
 - **Аварийный доступ.** Если панель не поднимается, админ заходит по SSH и
-  делает `docker compose run --rm panel tes3mp-easy-ops status`.
-- **Один писатель.** И панель, и `backup`, и человек используют один и тот же
-  код и один lock.
+  делает `tes3mp-easy-ops --root /tes3mp-easy --json status`.
+- **Один писатель.** Панель, таймер и человек используют один и тот же код и
+  один lock.
 - **Контракт.** JSON и коды выхода стабильны; панель не зависит от внутренних
   Go-типов.
 - **Границы.** Ops не знает про HTTP, пароли и UI. Панель не знает, как
   устроен tar.
-
-Позже, если подпроцессы станут неудобны, панель сможет импортировать пакеты
-ops напрямую. Контракт при этом останется.
 
 ## 2. Где лежит
 
@@ -37,10 +34,12 @@ ops напрямую. Контракт при этом останется.
 cmd/
   tes3mp-easy-ops/       # main
   tes3mp-easy-panel/     # main, отдельный документ
+  tes3mp-easy-rootctl/   # root-helper, фиксированные start/stop/restart
 internal/
   ops/                   # команды и сценарии
   archive/               # tar.gz, requiredDataFiles.json, current.txt
-  docker/                # обёртка над docker compose
+  systemd/               # обёртка над systemctl/journalctl/rootctl
+  retention/             # buckets, бюджеты, pruning
   config/                # чтение/запись cfg, lua, banlist
   lock/                  # flock
   atomicfile/            # temp + rename
@@ -56,38 +55,36 @@ internal/
 
 | Флаг | По умолчанию | Смысл |
 |---|---|---|
-| `--root` | `/tes3mp-easy` | Корень данных и compose-файла |
-| `--compose-file` | `$root/docker-compose.yml` | Compose-файл |
-| `--project` | `tes3mp` | Имя compose-проекта |
-| `--json` | выкл | Только JSON в stdout, логи в stderr |
+| `--root` | `/tes3mp-easy` | Корень данных |
+| `--json` | выкл | Только JSON в stdout, логи в stderr/journald |
 | `--dry-run` | выкл | Проверить и показать план, ничего не менять |
 | `--lock-timeout` | `30s` | Сколько ждать lock |
-| `--command-timeout` | `2m` | Таймаут одной docker-команды; долгие операции могут задавать больший |
+| `--command-timeout` | `2m` | Таймаут одной systemctl/journalctl-команды |
 
-`--root` и `--compose-file` нужны для тестов и для нестандартных установок.
-В контейнере значения по умолчанию совпадают с текущим layout.
+`--root` нужен для тестов и нестандартных установок. В production он совпадает
+с `/tes3mp-easy`.
 
 ### Команды
 
 | Команда | Что делает |
 |---|---|
-| `doctor [--json]` | Проверяет root, права, compose, Docker, диск, конфиги, `current.txt` |
-| `status [--service tes3mp или backup] [--json]` | Состояние сервиса |
-| `start` / `stop` / `restart` | Управляет `tes3mp` через compose |
-| `logs --tail N` | Отдаёт последние N строк логов `tes3mp` |
-| `backups list --type mods\|state` | Список архивов, размер, mtime, current |
-| `backups create --type state [--if-running]` | Создаёт state-бэкап |
+| `doctor [--json]` | Проверяет root, права, systemd, journald, runtime, память, диск, конфиги, `current.txt`, retention-бюджеты |
+| `status [--unit tes3mp.service\|tes3mp-easy-backup.timer] [--json]` | Состояние unit |
+| `start` / `stop` / `restart` | Управляет `tes3mp.service` через rootctl |
+| `logs --tail N` | Отдаёт последние N строк journald для `tes3mp.service` |
+| `backups list --type mods\|state [--limit 200] [--before <name>] [--sha256]` | Страница архива с курсором |
+| `backups create --type state [--manual] [--if-running]` | Создаёт state-бэкап и применяет retention |
 | `mods import --file <path>` | Проверяет и импортирует архив модов |
-| `mods deploy (--current\|--latest\|--archive <name>)` | Деплоит моды |
-| `state deploy (--latest\|--archive <name>)` | Восстанавливает state |
+| `mods deploy (--current\|--latest\|--archive <name>) [--no-restart]` | Деплоит моды |
+| `state deploy (--latest\|--archive <name>) [--no-restart]` | Восстанавливает state |
 | `staff set --player <name> --rank 0..3` | Меняет `settings.staffRank` |
 | `config get --file server\|config\|banlist` | Отдаёт структурированные настройки |
 | `config set --file ... --key ... --value ...` | Меняет одну настройку |
-| `backup loop --interval 5m [--if-running]` | Бесконечный планировщик для сервиса `backup` |
 
-Команды `mods deploy` и `state deploy` по умолчанию останавливают и запускают
-сервер. Флаг `--no-restart` оставляет сервер остановленным после операции;
-он не отменяет остановку перед подменой файлов.
+Команды `mods deploy` и `state deploy` останавливают сервер перед подменой
+файлов. Если он был запущен, после успеха они запускают его снова; если был
+остановлен — оставляют остановленным. Флаг `--no-restart` оставляет сервер
+остановленным и в первом случае; он не отменяет остановку перед подменой.
 
 ## 4. JSON и коды выхода
 
@@ -108,11 +105,11 @@ internal/
 
 - Реализация: `flock`/`syscall.Flock` на файле; lock живёт, пока жив процесс.
 - `--lock-timeout 30s`: по истечении — exit 4, `locked`.
-- Читающие команды (`status`, `backups list`, `doctor`) lock не берут: архивы
-  пишутся через temp + rename и не видны частично.
+- Читающие команды (`status`, `logs`, `backups list`, `doctor`) lock не берут:
+  архивы пишутся через temp + rename и не видны частично.
 - `--dry-run` берёт shared lock и ничего не пишет.
 - Внутренние операции не вызывают публичную команду повторно: `mods deploy`
-  делает state-бэкап через `createStateBackupLocked`, а `backup loop` — через
+  делает state-бэкап через `createStateBackupLocked`, а timer-запуск — через
   ту же внутреннюю функцию. Иначе `flock` в том же процессе даст deadlock.
 
 Любая запись файла — это temp-файл в том же каталоге, `fsync`, `rename`.
@@ -124,14 +121,31 @@ internal/
 
 Проверяет:
 
-- `--root` существует и доступен на запись;
-- есть `configs/`, `players/`, `world/`, `mods/`, `backups/`;
-- `docker compose version` работает, socket доступен;
-- свободное место больше порога (например, 2 ГБ + 2× размер state);
-- `backups/mods/current.txt` указывает на существующий архив, sha256 совпадает;
-- `requiredDataFiles.json` читается;
+- `--root` существует и читается; каталоги, в которые пишет `tes3mp`, доступны
+  ему на запись; владельцы и режимы совпадают с §4 `02-architecture.md`;
+- есть `configs/`, `players/`, `world/`, `mods/`, `backups/`, `panel-data/`;
+- `/etc/os-release` — Debian 12+ или Ubuntu 24.04+; незнакомая ОС — `warn`,
+  отсутствие файла — `error`;
+- `uname -m` — `x86_64`; другая архитектура — `error`;
+- `systemctl` работает, версия systemd читается; не-systemd — `error`;
+- `tes3mp.service` и `tes3mp-panel.service` установлены и не в `failed`;
+  `tes3mp-easy-backup.timer` активен и `enabled`;
+- journald читается, `journalctl -u tes3mp.service -n 1` не требует пароля;
+- `tes3mp-server` и библиотеки релиза на месте; `libluajit-5.1.so.2` находится
+  через `ldconfig -p`; `ldd tes3mp-server` не показывает `not found`;
+- RAM не меньше 512 MiB, swap не меньше 512 MiB, `vm.swappiness=10`;
+- cgroup-лимиты юнитов соответствуют §3 `02-architecture.md`;
+- свободное место: `warn` меньше 1 GiB, `error` меньше 512 MiB;
+- `panel-data/uploads` и `backups/` на одной файловой системе (`stat.Dev`);
+- `backups/state` и `backups/mods` в пределах бюджета 1 GiB / 512 MiB;
+- `backups/mods/current.txt` канонический, указывает на существующий архив,
+  sha256 совпадает;
+- `requiredDataFiles.json` читается и соответствует `mods/plugins/` (кроме трёх
+  базовых ESM, которых в `mods/plugins/` нет);
+- state-архивы (последний и несколько случайных) имеют вложенную структуру;
 - конфиги парсятся, `customScripts.lua` соответствует `mods/scripts/`;
-- нет осиротевших `.part`, `.old-*`, `.staging/` и старых lock-файлов.
+- нет осиротевших `.part`, `.old-*`, `.staging/` и старых lock-файлов;
+- journald-капы `SystemMaxUse=100M`, `RuntimeMaxUse=32M`.
 
 Результат — список проверок:
 
@@ -142,7 +156,7 @@ internal/
     "status": "warn",
     "checks": [
       {"name": "root", "status": "ok"},
-      {"name": "disk", "status": "warn", "message": "меньше 5 ГБ свободно"}
+      {"name": "disk", "status": "warn", "message": "свободно меньше 1 ГиБ"}
     ]
   }
 }
@@ -158,53 +172,64 @@ internal/
 {
   "ok": true,
   "data": {
-    "service": "tes3mp",
+    "unit": "tes3mp.service",
     "state": "running",
     "health": "healthy",
-    "started_at": "2026-10-22T12:00:00Z",
-    "compose_project": "tes3mp"
+    "started_at": "2026-10-22T12:00:00Z"
   }
 }
 ```
 
 Состояния: `running`, `stopped`, `starting`, `unhealthy`, `unknown`.
-Источник — `docker compose ps --format json`. Если Docker недоступен — exit 6.
 
-Для панели дополнительно можно запросить `ops status --service backup`, но
-основной статус — `tes3mp`.
+Источник — `systemctl show <unit> --property=ActiveState,SubState,ActiveEnterTimestamp`
+и `systemctl is-active`. `health` = `unhealthy`, если unit в `failed` или
+`is-active` вернул ошибку; иначе `healthy`/`unknown`. Если systemd недоступен —
+exit 6, `service_unavailable`.
+
+Для таймера `state` — `running`, если таймер активен, иначе `stopped`;
+`started_at` — `LastTriggerUSec`, если доступен. Поле `backend` отсутствует.
 
 ### `start` / `stop` / `restart`
 
 ```text
-docker compose -f <compose> -p <project> up -d tes3mp
-docker compose -f <compose> -p <project> stop tes3mp
-docker compose -f <compose> -p <project> restart tes3mp
+sudo -n /usr/local/libexec/tes3mp-easy-rootctl start
+sudo -n /usr/local/libexec/tes3mp-easy-rootctl stop
+sudo -n /usr/local/libexec/tes3mp-easy-rootctl restart
 ```
 
-`start` идемпотентен. `stop` ждёт завершения. `restart` не пересоздаёт
-контейнер без необходимости. Ошибки Docker → exit 6.
+`start` идемпотентен. `stop` ждёт завершения. `restart` не пересоздаёт unit.
+Ошибки systemd/rootctl/прав → exit 6, `service_unavailable`. Ops не вызывает
+`systemctl` напрямую для этих трёх глаголов; только через rootctl.
 
 ### `logs`
 
-`docker compose logs --tail N --no-color tes3mp`. Без `--json` — просто текст.
-С `--json` — всегда `{"lines": ["...", "..."]}`; панель показывает массив в
-`<pre>`.
+`journalctl -u tes3mp.service -n N --no-pager -o cat`.
+
+Без `--json` — просто текст. С `--json` — объект из `03-contracts.md` с
+`data.lines`; панель показывает массив в `<pre>`. Если journald недоступен —
+exit 6.
 
 ### `backups list`
 
 Читает `backups/mods/*.tar.gz` или `backups/state/*.tar.gz`, сортирует по
 mtime (новые сверху). По умолчанию не считает sha256 — это дорого на больших
-архивах. Флаг `--sha256` добавляет хеш.
+архивах. Флаг `--sha256` добавляет хеш только для текущей страницы.
+
+- `--limit` 1..500, по умолчанию 200;
+- `--before <name>` — следующие элементы строго старше курсора;
+- `next_before` — последний элемент страницы, если страница заполнена.
 
 ```json
 {
   "ok": true,
   "data": {
     "type": "mods",
-    "current": "import-2026-10-22_12-00-00.tar.gz",
+    "current": "mods-2026-10-22_12-00-00.tar.gz",
     "items": [
-      {"name": "import-2026-10-22_12-00-00.tar.gz", "size": 123456, "mtime": "...", "current": true}
-    ]
+      {"name": "mods-2026-10-22_12-00-00.tar.gz", "size": 123456, "mtime": "...", "current": true}
+    ],
+    "next_before": null
   }
 }
 ```
@@ -212,19 +237,29 @@ mtime (новые сверху). По умолчанию не считает sha
 ### `backups create`
 
 1. Берёт lock.
-2. Проверяет диск (2× размер state).
-3. Создаёт staging-копию state: `players/`, `world/{cell,world,map,recordstore,custom}/`,
-   `requiredDataFiles.json`, `current.txt`.
-4. Пишет `backups/state/export-YYYY-MM-DD_HH-MM-SS.tar.gz.part`.
-5. `fsync` + `rename` в `.tar.gz`.
-6. Возвращает имя, размер, sha256.
+2. Если `--if-running`: `systemctl is-active tes3mp.service`; не `active` →
+   `skipped=true`, `reason=not_running`, exit 0. Если `systemctl` недоступен —
+   exit 6, `service_unavailable`, а не skipped.
+3. Проверяет диск: свободно меньше 512 MiB → `no_space`; меньше 1 GiB →
+   warning, но продолжает.
+4. Открывает `backups/state/<name>.tar.gz.part` и пишет потоково: gzip.Writer →
+   tar.Writer → файлы. Без промежуточной копии state и без буфера в памяти.
+   Порядок: `players/`, `world/cell/`, `world/world/`, `world/map/`,
+   `world/recordstore/`, `world/custom/`, `requiredDataFiles.json`,
+   `current.txt`.
+5. `fsync` файла и каталога, `rename` в `.tar.gz`.
+6. Применяет retention и бюджеты; возвращает `archive`, `size`, `sha256`,
+   `pruned`, `warnings`. При `skipped=true` полей `archive`, `size`, `sha256`
+   нет, возвращаются `reason`, `pruned`, `warnings`.
 
-`--if-running`: если `tes3mp` не `running`, вернуть `{"skipped": true}` и exit 0.
-Это режим для `backup loop`, чтобы не плодить одинаковые архивы на стоящем
-сервере.
+Имя: `state-*` для таймера, `state-manual-*` при `--manual`. Внутренний вызов
+для деплоя создаёт `state-predeploy-*`.
 
-Имя: `export-...` для планировщика, `manual-...` для кнопки в панели. Оба
-варианта валидны для `state deploy`.
+Бэкап снимается с живого сервера и не является транзакционным snapshot: файл,
+который TES3MP пишет в этот момент, может попасть в архив в промежуточном
+состоянии. При типичных ~100 KB и 5-минутном интервале это приемлемый
+recovery point; для гарантированно согласованного архива остановите сервер
+или сделайте `state-predeploy` через deploy-операцию.
 
 ### `mods import`
 
@@ -233,32 +268,38 @@ Ops не доверяет ни имени, ни содержимому.
 
 Проверки:
 
-- gzip и tar читаются, размер в пределах лимита;
-- нет абсолютных путей, `..`, symlink, hardlink, устройств;
+- upload и `backups/mods` на одной файловой системе (`stat.Dev`), иначе
+  `invalid_argument`;
+- gzip и tar читаются потоково, размер в пределах 512 MiB, записей ≤ 50 000,
+  распаковано ≤ 1 GiB;
+- нет абсолютных путей, `..`, symlink, hardlink, устройств, NUL;
 - верхний уровень — только `plugins/` и `scripts/`;
 - `plugins/requiredDataFiles.json` существует и парсится как массив объектов;
 - `requiredDataFiles.json` в корне архива — ошибка `archive_invalid`;
-- каждый плагин из JSON есть в `plugins/`, расширение из белого списка;
+- каждый плагин из JSON есть в `plugins/`, кроме трёх базовых ESM: они в архив
+  не входят и проверяются клиентом по Morrowind; расширение — из белого списка;
 - оригинальные `Morrowind.esm`/`Tribunal.esm`/`Bloodmoon.esm` отсутствуют в
   `plugins/`;
-- CRC32 (IEEE) каждого плагина совпадает с `0x...` в JSON;
+- CRC32 (IEEE) каждого плагина из архива совпадает с `0x...` в JSON; CRC
+  базовых ESM в архиве не проверяется;
 - `scripts/` содержит только `.lua` (без вложенных каталогов);
 - нет дубликатов имён.
 
 При успехе архив переименовывается в
-`backups/mods/import-YYYY-MM-DD_HH-MM-SS.tar.gz`; если upload и `backups/`
-на разных файловых системах, используется copy + fsync + rename, а не
-частичная запись. `current.txt` **не** меняется. При ошибке исходный upload
-не удаляется: панель сама решает, когда чистить `panel-data/uploads`.
+`backups/mods/mods-YYYY-MM-DD_HH-MM-SS.tar.gz`; копирования между файловыми
+системами нет. `current.txt` **не** меняется. При ошибке исходный upload не
+удаляется: панель сама решает, когда чистить `panel-data/uploads`.
 
 ```json
 {
   "ok": true,
   "data": {
-    "archive": "import-2026-10-22_12-00-00.tar.gz",
+    "archive": "mods-2026-10-22_12-00-00.tar.gz",
     "sha256": "...",
     "plugins": 12,
-    "scripts": 2
+    "scripts": 2,
+    "pruned": [],
+    "warnings": []
   }
 }
 ```
@@ -266,71 +307,75 @@ Ops не доверяет ни имени, ни содержимому.
 ### `mods deploy`
 
 Аргумент: `--current` (взять из `current.txt`), `--latest` (самый новый
-`import-*`/`init-*`) или `--archive <name>`.
+`mods-*`/`mods-init-*`) или `--archive <name>`.
 
 Порядок:
 
 1. Взять lock.
-2. Найти и проверить архив.
+2. Найти и проверить архив; для `--current` `current.txt` обязан быть
+   каноническим, иначе `archive_invalid`.
 3. Проверить диск: state-бэкап + распаковка + запас.
-4. Сделать state-бэкап текущего состояния через `createStateBackupLocked`
-   (внутренняя функция, не повторный вызов `backups create`), чтобы был откат.
-5. Остановить `tes3mp`.
+4. Сделать `state-predeploy-*` через `createStateBackupLocked`, чтобы был
+   откат.
+5. Запомнить, был ли сервер запущен; остановить `tes3mp.service` через
+   rootctl.
 6. Распаковать `plugins/` и `scripts/` в
-   `/tes3mp-easy/.staging/mods-<id>/`.
-7. Проверить распакованное ещё раз (пути, файлы, CRC).
+   `/tes3mp-easy/.staging/mods-<id>/` потоково, с теми же лимитами.
+7. Проверить распакованное ещё раз (пути, файлы, CRC плагинов из архива;
+   базовые ESM в архиве отсутствуют).
 8. Подменить `mods/plugins` и `mods/scripts` через rename; старые каталоги
    оставить как `mods/plugins.old-<id>` до успеха.
 9. Сгенерировать `configs/customScripts.lua` из `mods/scripts/*.lua`
    (отсортировано, `require("custom.<name>")`).
 10. Записать `backups/mods/current.txt` в формате `<sha256> <filename>`.
-11. Запустить `tes3mp` (если не `--no-restart`).
+11. Запустить `tes3mp.service`, если он был запущен и не указан
+    `--no-restart`.
 12. Удалить `.old-*` и staging.
 
 Если шаг 8–11 упал: вернуть старые `mods/`, старый `current.txt`, старый
-`customScripts.lua`, запустить сервер, вернуть ошибку. Это не «автоматический
-откат вообще всего», а завершение одной транзакции деплоя.
+`customScripts.lua`, запустить сервер, если он работал до операции и не указан
+`--no-restart`, и вернуть ошибку. Это не «автоматический откат вообще всего», а
+завершение одной транзакции деплоя.
 
 `--no-restart` оставляет сервер остановленным. Если сервер был остановлен до
 операции, ops оставляет его остановленным; если работал — запускает после
-успешного деплоя. В MVP панель всегда деплоит на работающем сервере, а
+успешного деплоя. Штатный сценарий панели — деплой на работающем сервере;
 `--no-restart` нужен для аварийного режима.
 
 ### `state deploy`
 
+`--latest` выбирает самый новый `state-*` или `state-manual-*` и **не**
+рассматривает `state-predeploy-*`: это внутренние точки отката, их
+восстанавливают только явным `--archive`.
+
 Порядок:
 
 1. Взять lock.
-2. Проверить архив: tar читается, нет опасных путей, есть `players/` и
-   ожидаемые каталоги `world/`.
-3. Проверить диск.
-4. Остановить `tes3mp`.
-5. Распаковать в `/tes3mp-easy/.staging/state-<id>/`, разложив плоские
-   `cell/`, `world/`, `map/`, `recordstore/`, `custom/` из архива в
-   `world/<name>/`; рядом — `players/`, `requiredDataFiles.json`,
-   `current.txt`.
-6. Переименовать текущие `players` → `players.old-<id>`, `world` →
+2. Проверить архив: tar читается, нет опасных путей, есть ровно
+   `players/`, `world/{cell,world,map,recordstore,custom}/`,
+   `requiredDataFiles.json`, `current.txt`; иначе `archive_invalid`.
+3. Проверить `current.txt` внутри архива: канонический формат, sha256,
+   существующий архив модов; сравнить с текущим `backups/mods/current.txt`.
+4. Проверить диск.
+5. Сделать `state-predeploy-*`.
+6. Остановить `tes3mp.service`.
+7. Распаковать в `/tes3mp-easy/.staging/state-<id>/` с той же вложенной
+   структурой; плоские каталоги не раскладываются и не принимаются.
+8. Переименовать текущие `players` → `players.old-<id>`, `world` →
    `world.old-<id>`.
-7. Переименовать staging-каталоги на их место.
-8. Запустить `tes3mp`.
-9. При успехе удалить `.old-*`; при ошибке вернуть старые каталоги и запустить
-   сервер.
-
-Важно: текущая реализация `deploy_state.sh` сначала удаляет state, а потом
-распаковывает. Здесь порядок обратный: сначала полностью подготовили новое,
-потом заменили. Если архив битый или места не хватило, текущее состояние
-остаётся на месте.
+9. Переименовать staging-каталоги на их место.
+10. Запустить `tes3mp.service`, если он был запущен и не указан
+    `--no-restart`.
+11. При успехе удалить `.old-*`; при ошибке вернуть старые каталоги и
+    запустить сервер, если он работал до операции и не указан `--no-restart`.
 
 `requiredDataFiles.json` и `current.txt` из архива должны соответствовать
 модам, с которыми делался бэкап. Ops не подменяет моды:
 
 - если `current.txt` указывает на другой архив, чем текущий
   `backups/mods/current.txt`, — `archive_invalid` и подмены нет;
-- если `current.txt` в legacy-формате (только `sha256`), ops ищет архив модов
-  по хэшу; не нашёл — `archive_invalid`;
-- если `current.txt` отсутствует (очень старый state), восстановление идёт с
-  предупреждением, `mods_archive` = `null`;
-- `--force` в MVP нет: лучше остановиться, чем смешать несовместимые CRC.
+- если `current.txt` отсутствует или в старом формате — `archive_invalid`;
+- `--force` в MVP нет: лучше остановиться, чем смешать файлы с разными CRC.
 
 ### `staff set`
 
@@ -339,7 +384,8 @@ tes3mp-easy-ops staff set --player "John Doe" --rank 2
 ```
 
 - Имя проверяется: непустое, без `/`, `\`, `..`, NUL, не `.`/`..`.
-- Файл: `players/<name>.json`.
+- Файл: `players/<name>.json`. Если файла нет — exit 3, `not_found`; ops не
+  создаёт нового игрока.
 - `settings.staffRank` = 0..3 (0 none, 1 moderator, 2 admin, 3 owner).
 - Перед записью делается `players/<name>.json.bak-<timestamp>`.
 - Запись атомарная; при ошибке JSON не портится.
@@ -347,8 +393,7 @@ tes3mp-easy-ops staff set --player "John Doe" --rank 2
 - Сервер не перезапускает: панель показывает баннер «нужен рестарт».
 
 Полный state-бэкап перед сменой ранга не нужен: это один маленький JSON, и
-рядом остаётся `.bak`. Это осознанное отличие от старого скрипта, который
-паковал `players/` и `world/`.
+рядом остаётся `.bak`.
 
 ### `config get` / `config set`
 
@@ -372,31 +417,60 @@ tes3mp-easy-ops staff set --player "John Doe" --rank 2
 - строка `config.key = value` заменяется построчно, комментарии сохраняются;
 - перед записью — `.bak-<timestamp>`;
 - запись атомарная;
+- возвращает `restart_required`; сервер не перезапускает — это делает панель или
+  админ;
 - `customScripts.lua` через `config set` менять нельзя — он генерируется.
 
 Ошибка валидации → exit 9, `config_invalid`. Панель показывает её рядом с
 полем, а не общую «500».
 
-### `backup loop`
+## 7. Retention
 
-```text
-tes3mp-easy-ops backup loop --interval 5m --if-running
-```
+Алгоритм вызывается после `backups create`, `mods import` и создания
+`state-predeploy-*`, а также доступен `doctor` как проверка размера.
+Нормативная таблица — `03-contracts.md` §6.7.
 
-- Тикер каждые `--interval` (минимум 1m).
-- На каждом тике вызывает `createStateBackupLocked` с семантикой
-  `--if-running`, а не публичную команду через subprocess.
-- Lock занят → пишет в stderr и пропускает тик, не падает.
-- `SIGTERM`/`SIGINT` — корректный выход.
-- Retention по умолчанию выключен: архивы не удаляются. `doctor` предупреждает
-  о диске; позже добавим `--retention-days`.
+1. Прочитать архивы и их mtime.
+2. Защитить самый новый state-архив, текущий mods-архив, `current.txt` и все
+   месячные представители.
+3. Для автоматических `state-<timestamp>`: архивы 0–7 дней не трогать;
+   для 7–365 дней оставить последний за день; для 1–3 лет — последний за
+   ISO-неделю; для старше 3 лет — последний за месяц. Остальные — кандидаты.
+4. Для `state-manual-*` оставить 5 новейших, для `state-predeploy-*` — 2.
+5. Для `mods-<timestamp>` (кроме `mods-init-*`) оставить 5 новейших, для
+   `mods-init-*` — 2.
+6. Удалить кандидатов, затем проверить бюджеты `backups/state` 1 GiB и
+   `backups/mods` 512 MiB и свободный резерв 512 MiB.
+7. Если бюджеты превышены, включить pressure pruning:
+   - автоматические `state-<timestamp>` старше 24 часов, не последние за день;
+   - дневные представители, самые старые первыми;
+   - недельные представители, самые старые первыми.
+8. Месячные не удалять никогда. Если после pressure pruning бюджет всё ещё
+   превышен, вернуть `warnings`, но не удалять месячные.
 
-## 7. Архивы и генерация
+Удаление — `os.Remove` + `fsync` каталога. Ошибка удаления не отменяет уже
+созданный архив: имя попадает в `warnings`, а не в `pruned`, и `doctor`
+покажет проблему.
+
+## 8. Архивы и генерация
 
 Форматы `mods` и `state`, `requiredDataFiles.json`, `current.txt` и лимиты —
 только в `03-contracts.md` §6. Здесь остаётся то, что делает ops поверх этих
 форматов.
 
+### Потоковая обработка
+
+- `archive/tar`, `compress/gzip` и `io.Copy` с буфером 32–64 KiB.
+- Никаких `bytes.Buffer` для архива, `io.ReadAll` для upload или
+  промежуточной копии state.
+- `io.LimitReader` на gzip/tar и на каждый файл; счётчики записей и
+  распакованного размера.
+- Временный файл в целевом каталоге; `fsync` файла и каталога; `rename`.
+- `mods import` делает rename upload → `backups/mods/`; cross-filesystem
+  копирования нет.
+- `state` пишется прямо из `players/` и `world/`, без staging-копии.
+- `tar` детерминированный: сортировка путей, mtime из файлов, uid/gid 0, без
+  лишних заголовков. Байт-в-байт совпадение с GNU tar не цель.
 
 ### `customScripts.lua`
 
@@ -409,13 +483,7 @@ require("custom.another")
 
 Порядок — лексикографический. Файл read-only для панели.
 
-### Детерминированность
-
-Go-пакейджер пишет tar с фиксированным порядком, `mtime` из исходных файлов,
-uid/gid 0, без лишних заголовков. Байт-в-байт совпадение с GNU tar не цель;
-parity-тест сравнивает **содержимое** и метаданные после распаковки.
-
-## 8. Docker-адаптер
+## 9. Systemd-адаптер
 
 ```go
 type Runner interface {
@@ -423,68 +491,48 @@ type Runner interface {
 }
 ```
 
-- Production: `exec.CommandContext(ctx, "docker", args...)`, без `sh -c`.
-- Compose-вызовы: `docker compose -f <file> -p <project> ...`.
-- `status`: `compose ps --format json`; парсим и JSON-массив, и JSON-lines
-  (разные версии Compose).
-- `logs`: `compose logs --tail N --no-color`.
+- Production: `exec.CommandContext(ctx, "systemctl", args...)` для чтения,
+  `journalctl` для логов и `sudo -n /usr/local/libexec/tes3mp-easy-rootctl`
+  для start/stop/restart.
+- Никакого `sh -c` и склейки аргументов в строку.
+- `status`: `systemctl show` + `is-active`; `logs`: `journalctl -u`.
 - Таймаут из `--command-timeout`.
 - В тестах — fake runner, который пишет вызовы и возвращает заготовленный
-  вывод/ошибки. Никакой реальный Docker для unit-тестов не нужен.
+  вывод/ошибки. Реальный systemd для unit-тестов не нужен.
 
-## 9. Тестирование
+## 10. Тестирование
 
-| Уровень | Что проверяет | Docker |
+| Уровень | Что проверяет | systemd |
 |---|---|---|
-| Unit | tar, CRC, `requiredDataFiles.json`, `current.txt`, config, pathguard, lock | нет |
+| Unit | tar, CRC, `requiredDataFiles.json`, `current.txt`, retention, config, pathguard, lock | нет |
 | Contract | запуск бинарника с `--root` и `--json`, коды выхода, envelope | fake |
-| Integration | compose lifecycle, mods/state deploy на temp-root | да, отдельный проект |
-| Parity | ops vs текущие `package.sh`/`deploy_*.sh` на фикстурах | нет |
-| Failure | битый архив, path traversal, lock, нет места, Docker error, rollback | fake |
-| Acceptance | сценарий админа на чистой VM | да |
+| Integration | lifecycle на temp-root, mods/state deploy | fake + temp-root |
+| Fault | битый архив, path traversal, lock, нет места, systemd error, rollback | fake |
+| E2E | чистая VM: установка, вход, бэкап, восстановление, клиент | настоящий |
+| Docs | ссылки, отсутствие дублированных схем | нет |
 
 Ключевые фикстуры:
 
-- пустой state;
+- пустой state с обязательными каталогами;
 - state с игроками и всеми пятью world-каталогами;
+- state с плоскими каталогами (должен падать);
+- state без `current.txt` и без `requiredDataFiles.json`;
+- `current.txt` только с sha256;
 - моды с CRC и без;
 - архив с `../evil`, абсолютным путём, symlink;
 - `current.txt`, указывающий на отсутствующий файл;
 - конфиги с комментариями и нестандартным порядком ключей.
 
 Temp-root: каждый тест создаёт `t.TempDir()`, кладёт туда `configs/`,
-`players/`, `world/`, `mods/`, `backups/` и compose-заглушку. Это позволяет
+`players/`, `world/`, `mods/`, `backups/` и fake systemd. Это позволяет
 проверять почти всё без VPS.
-
-## 10. Миграция со старых скриптов
-
-| Сейчас | Куда переходит |
-|---|---|
-| `server/scripts/deploy_mods.sh` | `ops mods deploy` |
-| `server/scripts/import_mods.sh` | `ops mods import` |
-| `server/scripts/deploy_state.sh` | `ops state deploy` |
-| `server/scripts/set-staff-rank.sh` | `ops staff set` |
-| `server/scripts/list-backups.sh` | `ops backups list` |
-| `server/scripts/package.sh` | `internal/archive` (target), shell-адаптер на переходный период |
-| `server/docker/export_server.sh` | `ops backup loop` + панель |
-| `nginx` | панель |
-| `server/scripts/install.sh` | bootstrap + compose |
-
-Что чиним по дороге:
-
-- `deploy_state.sh` не удаляет state до успешной распаковки;
-- нет хардкода `/tes3mp-easy` — есть `--root`;
-- нет `jq`/`rhash` — JSON и CRC32 на Go;
-- нет хрупкого `docker ps --filter` — `compose ps`;
-- нет `set -e`-ловушек с частичными изменениями;
-- все ошибки — структурированные, с кодом.
 
 ## 11. Non-goals ops
 
 - HTTP-сервер, auth, HTML;
-- планировщик с UI;
+- планировщик с UI — расписание задаёт systemd timer;
 - управление клиентом;
 - несколько серверов/проектов в одном запуске;
 - произвольные shell-команды;
-- удаление бэкапов по расписанию (пока);
-- миграция старых клиентских конфигов.
+- удаление месячных бэкапов;
+- переход со старых форматов и клиентских конфигов.

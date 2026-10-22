@@ -4,426 +4,506 @@
 
 **Обновлено:** 2026-10-22.
 
-Runbook для админа: установка, повседневные операции и аварийные действия.
-Панель — основной интерфейс; SSH нужен для bootstrap, диагностики и
-восстановления, когда панель недоступна.
+Runbook для нативной установки на Debian/Ubuntu x86_64 с systemd. Все
+команды — от пользователя с sudo. Если не сказано иное, `ROOT=/tes3mp-easy`,
+`OPS=/opt/tes3mp-easy/bin/tes3mp-easy-ops`.
 
 ## 1. Требования
 
-- VPS с Linux x86_64, 2+ ГБ RAM, 20+ ГБ диска (лучше больше под state).
-- Docker Engine 24+ и Compose v2.
-- Открытые порты:
-  - `80/tcp` — ACME HTTP-01 и redirect;
-  - `443/tcp` — панель;
-  - `25565/udp` — TES3MP;
-  - `22/tcp` — SSH, желательно ограниченный по IP.
-- Домен не обязателен: целевой режим — сертификат Let's Encrypt по IP.
-  Если Let's Encrypt по IP недоступен в вашей среде, используйте домен;
-  self-signed — только временный аварийный режим.
+- Debian 12+ или Ubuntu 24.04+ x86_64 с systemd;
+- 1 vCPU;
+- 512 MiB RAM минимум, 640 MiB рекомендуется;
+- 512 MiB swap;
+- 7 GiB NVMe/SSD;
+- открытые `25565/udp`, `80/tcp`, `443/tcp`;
+- root/sudo и доступ по SSH;
+- время синхронизировано (systemd-timesyncd).
 
-## 2. Первая установка
+Это бюджет нативной схемы. Docker-вариант технически влезает в 512 MiB
+(замер — в `02-architecture.md` §9), но под нагрузкой оставляет меньше запаса:
+для него практический минимум — 640 MiB, комфортно — 1 GiB. Другие ОС —
+best-effort, не MVP.
 
-1. Установить Docker (пример для Debian/Ubuntu; для другого дистрибутива —
-   официальная инструкция Docker):
+Проверка:
 
-   ```bash
-   curl -fsSL https://get.docker.com | sh
-   sudo usermod -aG docker "$USER"
-   ```
+```bash
+nproc
+free -m
+swapon --show
+df -h /
+systemctl --version
+timedatectl
+```
 
-   Перелогиниться, чтобы группа применилась.
+Если RAM 512 MiB, не запускайте одновременно импорт модов и тяжёлые
+операции; `MemoryHigh` притормозит панель/backup, но игру не спасёт от
+нехватки памяти.
 
-2. Скачать релиз в `/tes3mp-easy` (архив содержит `docker-compose.yml`,
-   образы/теги и `.env.example`):
+## 2. Установка
 
-   ```bash
-   sudo mkdir -p /tes3mp-easy
-   sudo chown "$USER":"$USER" /tes3mp-easy
-   cd /tes3mp-easy
-   # распаковать релизный архив сюда
-   cp .env.example .env
-   ```
-
-3. Заполнить `.env`:
-
-   ```dotenv
-   TES3MP_EASY_ROOT=/tes3mp-easy
-   TES3MP_PUBLIC_HOST=203.0.113.10
-   TES3MP_PUBLIC_PORT=25565
-   TES3MP_PANEL_URL=https://203.0.113.10
-   TES3MP_SERVER_NAME=Morrowind with friends
-   ```
-
-   `TES3MP_PUBLIC_HOST` — адрес, который увидят игроки. Это не обязательно IP
-   клиента. Пароль сервера задаётся в панели, не в `.env`.
-
-4. Запустить:
+1. Распакуйте релиз в `/opt/tes3mp-easy`:
 
    ```bash
-   docker compose up -d
-   docker compose ps
-   docker compose logs -f panel
+   sudo mkdir -p /opt/tes3mp-easy
+   sudo tar -xzf tes3mp-easy-v2.tar.gz -C /opt/tes3mp-easy --strip-components=1
+   sudo chown -R root:root /opt/tes3mp-easy
    ```
 
-5. Взять первый пароль:
+2. Запустите bootstrap:
 
    ```bash
-   cat /tes3mp-easy/panel-data/initial-password.txt
+   cd /opt/tes3mp-easy
+   sudo ./bootstrap.sh
    ```
 
-   Файл имеет права `0600`, создаётся только при первом запуске и исчезает
-   после смены пароля.
+Bootstrap:
 
-6. Открыть `https://<IP>/`, войти, сменить пароль.
+- проверяет Debian/Ubuntu, x86_64, systemd, RAM/swap/диск;
+- ставит пакеты: `libluajit-5.1-2`, `ca-certificates`, `curl`, `tar`,
+  `gzip`, `rsync`;
+- создаёт пользователей `tes3mp` и `tes3mp-panel`, группы, каталоги и права;
+- ставит `tes3mp.service`, `tes3mp-panel.service`,
+  `tes3mp-easy-backup.service`, `tes3mp-easy-backup.timer`;
+- ставит `/usr/local/libexec/tes3mp-easy-rootctl` и
+  `/etc/sudoers.d/tes3mp-easy`;
+- настраивает journald (`SystemMaxUse=100M`, `RuntimeMaxUse=32M`) и
+  `vm.swappiness=10`;
+- создаёт `mods-init-*`, `current.txt`, `customScripts.lua`;
+- генерирует первый пароль панели;
+- запускает `tes3mp.service`, `tes3mp-panel.service`,
+  `tes3mp-easy-backup.timer`.
 
-7. Проверить:
+3. Проверьте:
 
    ```bash
-   docker compose exec panel tes3mp-easy-ops \
+   sudo systemctl status tes3mp.service --no-pager
+   sudo systemctl status tes3mp-panel.service --no-pager
+   sudo systemctl status tes3mp-easy-backup.timer --no-pager
+   sudo systemctl list-timers tes3mp-easy-backup.timer
+   sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
      --root /tes3mp-easy --json doctor
    ```
 
-   `status` должен быть `ok` или `warn`; `error` — повод не запускать игроков.
+`doctor` должен вернуть `status=ok` (допустим `warn` по месту) и exit 0.
 
-## 3. Первый вход и базовая настройка
-
-- Сразу сменить пароль: `/admin/password`.
-- Проверить имя сервера, порт, `maximumPlayers`, пароль сервера в
-  `/admin/config/server`.
-- Загрузить мод-пак в `/admin/mods` и нажать Deploy.
-- Создать первый state-бэкап в `/admin/state`.
-- Убедиться, что `backup` работает: `docker compose ps` и
-  `docker compose logs backup`.
-- Проверить публичную страницу `/backups` без логина.
-- Проверить, что порт `25565/udp` доступен снаружи.
-
-## 4. Повседневные операции
-
-| Задача | Где | Команда/действие |
-|---|---|---|
-| Статус | панель | дашборд, обновление каждые 5 с |
-| Логи | панель | `/admin/logs`, tail 200 |
-| Старт/стоп/рестарт | панель | кнопки на дашборде |
-| Ручной state-бэкап | панель | `/admin/state` → «Создать бэкап» |
-| Загрузить/задеплоить моды | панель | `/admin/mods` |
-| Откатить моды | панель | Rollback (деплой предыдущего) |
-| Восстановить state | панель | `/admin/state` → «Восстановить» |
-| Сменить ранг | панель | `/admin/staff` |
-| Сменить конфиг | панель | `/admin/config` |
-
-SSH-эквиваленты:
-
-```bash
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json status
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json logs --tail 200
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json backups list --type state
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json backups create --type state
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json mods deploy --latest
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json state deploy --archive export-2026-10-22_12-00-00.tar.gz
-```
-
-Мутации не запускать параллельно: второй процесс получит `locked` и код 4.
-
-## 5. TLS
-
-- Панель слушает `:80` и `:443`.
-- `:80` нужен для ACME HTTP-01 и редиректа на HTTPS. Не закрывайте его
-  файрволом, иначе выпуск сертификата не пройдёт.
-- Сертификаты: `/tes3mp-easy/panel-data/tls/cert.pem` и `key.pem`, права
-  `0600`.
-- Проверка:
-
-  ```bash
-  openssl x509 -in /tes3mp-easy/panel-data/tls/cert.pem -noout -subject -dates
-  curl -Iv https://203.0.113.10/healthz
-  ```
-
-- Логи ACME:
-
-  ```bash
-  docker compose logs panel | grep -i -E 'acme|tls|certificate'
-  ```
-
-- Если выпуск не удался, панель стартует с self-signed. Это аварийный режим:
-  браузер покажет предупреждение, клиент — ошибку «сертификат не доверен».
-  Не отключайте проверку TLS в клиенте; импортируйте `cert.pem` в хранилище
-  ОС или почините выпуск.
-- Для IP-сертификата Let's Encrypt может требовать короткоживущий сертификат
-  и перевыпуск. Панель обновляет его автоматически; после смены сертификата
-  клиенту не нужно ничего делать, кроме доверия цепочке.
-
-## 6. Бэкапы
-
-### Что где лежит
-
-```text
-/tes3mp-easy/backups/
-├── mods/
-│   ├── current.txt
-│   ├── import-*.tar.gz
-│   └── init-*.tar.gz
-└── state/
-    ├── export-*.tar.gz       # автоматические
-    └── manual-*.tar.gz       # кнопка в панели
-```
-
-- `export-*` создаёт `backup` каждые 5 минут, если сервер запущен.
-- `manual-*` создаёт админ.
-- `current.txt` в `backups/mods/` указывает, какой мод-пак активен.
-- Архивы state содержат копию `current.txt` и `requiredDataFiles.json` на
-  момент бэкапа.
-
-### Проверить бэкапы
-
-```bash
-docker compose exec panel tes3mp-easy-ops \
-  --root /tes3mp-easy --json backups list --type state
-docker compose exec panel tes3mp-easy-ops \
-  --root /tes3mp-easy --json backups list --type mods
-```
-
-### Скачать
-
-Публично: `https://<IP>/backups`, без логина. Это осознанное решение; не
-храните там ничего, кроме игровых данных.
-
-### Восстановить state
-
-1. Убедиться, что активный мод-пак совпадает с тем, с которым сделан state.
-   Если нет — сначала задеплоить нужные моды.
-2. В панели: `/admin/state` → «Восстановить» → подтвердить.
-3. Или через SSH:
+4. Откройте `https://<IP>/`, войдите с временным паролем:
 
    ```bash
-   docker compose exec panel tes3mp-easy-ops \
-     --root /tes3mp-easy --json state deploy \
-     --archive export-2026-10-22_12-00-00.tar.gz
+   sudo cat /tes3mp-easy/panel-data/initial-password.txt
    ```
 
-4. Проверить `status`, `doctor`, зайти игроком.
+Смените пароль. После успешной смены панель удаляет `initial-password.txt`;
+если файл остался, удалите его вручную.
 
-`state deploy` не удаляет текущее состояние до успешной распаковки. Если
-операция упала, ops возвращает старые `players/` и `world/` и запускает
-сервер. Если сервер не поднялся — смотрите `panel.log` и
-`docker compose logs tes3mp`.
-
-### Правило 3-2-1
-
-Один VPS с бэкапами — это не бэкап. Раз в неделю копируйте `backups/` на
-другую машину:
+## 3. Первый запуск и проверка
 
 ```bash
-rsync -av --delete /tes3mp-easy/backups/ user@backup-host:/srv/tes3mp-easy-backups/
+sudo systemctl start tes3mp.service
+sudo systemctl start tes3mp-panel.service
+sudo systemctl enable --now tes3mp-easy-backup.timer
+
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json status
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json status --unit tes3mp-easy-backup.timer
 ```
 
-Публичные ссылки на бэкапы не заменяют офсайт-копию: если VPS умер, панель
-тоже недоступна.
+Ожидаемо:
 
-## 7. Аварийные сценарии
+- `status` для `tes3mp.service` — `running`, `healthy`;
+- таймер — `running`, следующий запуск через 5 минут;
+- `journalctl -u tes3mp.service -n 50` показывает запуск сервера;
+- публичный `/healthz` отвечает `ok`;
+- `/api/v1/server` отдаёт имя, адрес, порт и `mods_sha256`.
 
-### 7.1. Панель не открывается
+Проверка ресурсов:
 
 ```bash
-docker compose ps
-docker compose logs --tail 200 panel
-curl -vk https://127.0.0.1/healthz
+systemctl show tes3mp.service -p MemoryCurrent -p MemoryMax
+systemctl show tes3mp-panel.service -p MemoryCurrent -p MemoryMax
+free -m
+systemd-cgtop -1
 ```
 
-- контейнер `panel` не запущен → `docker compose up -d panel`;
-- порт 443 занят → `ss -lntp | grep -E ':80|:443'`;
-- сертификат сломан → смотрите §5, временно можно зайти по HTTP на `:80`
-  (редирект), но не оставляйте так;
-- панель падает при старте → `docker compose logs panel`, проверьте права на
-  `panel-data/` и валидность `auth.json`.
-
-### 7.2. Забыт пароль
-
-Канонический способ:
+## 4. Сброс пароля панели
 
 ```bash
-docker compose exec panel tes3mp-easy-panel reset-password
-cat /tes3mp-easy/panel-data/initial-password.txt
+sudo systemctl stop tes3mp-panel.service
+sudo -u tes3mp-panel /opt/tes3mp-easy/bin/tes3mp-easy-panel reset-password
+sudo systemctl start tes3mp-panel.service
+sudo cat /tes3mp-easy/panel-data/initial-password.txt
 ```
 
-Если панель не запущена:
+Панель останавливается, чтобы не было двух писателей `auth.json`. Игра и
+таймер бэкапов при этом продолжают работать.
+
+## 5. Обновление
+
+1. Скачайте новый релиз и распакуйте в отдельный каталог.
+2. Остановите панель:
+
+   ```bash
+   sudo systemctl stop tes3mp-panel.service
+   ```
+
+3. Замените `/opt/tes3mp-easy/bin` и `/opt/tes3mp-easy/tes3mp`, не трогая
+   `/tes3mp-easy`:
+
+   ```bash
+   sudo rsync -a --delete new-release/bin/ /opt/tes3mp-easy/bin/
+   sudo rsync -a --delete new-release/tes3mp/ /opt/tes3mp-easy/tes3mp/
+   ```
+
+4. Обновите unit-файлы и rootctl, если они изменились:
+
+   ```bash
+   sudo install -m 0644 new-release/systemd/*.service /etc/systemd/system/
+   sudo install -m 0644 new-release/systemd/*.timer /etc/systemd/system/
+   sudo install -m 0750 new-release/rootctl/tes3mp-easy-rootctl \
+     /usr/local/libexec/tes3mp-easy-rootctl
+   sudo systemctl daemon-reload
+   ```
+
+5. Запустите панель и проверьте:
+
+   ```bash
+   sudo systemctl start tes3mp-panel.service
+   sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+     --root /tes3mp-easy --json doctor
+   ```
+
+Игру можно не останавливать, если релиз не меняет ABI TES3MP. Если меняет —
+остановите `tes3mp.service`, обновите runtime и запустите снова; state при
+этом не трогается.
+
+## 6. Моды
+
+### Через панель
+
+`/admin/mods` → «Загрузить архив» → выбрать `.tar.gz` (до 512 MiB) → дождаться
+импорта → «Deploy». Панель сама вызовет ops и перезапустит сервер, если он
+был запущен.
+
+### Через CLI
 
 ```bash
-docker compose run --rm panel tes3mp-easy-panel reset-password
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json mods import \
+  --file /tes3mp-easy/panel-data/uploads/<uuid>.tar.gz
+
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json mods deploy --latest
 ```
 
-Fallback, если команда недоступна в вашей сборке:
+Проверка:
 
 ```bash
-docker compose stop panel
-rm -f /tes3mp-easy/panel-data/auth.json
-rm -f /tes3mp-easy/panel-data/initial-password.txt
-docker compose up -d panel
-cat /tes3mp-easy/panel-data/initial-password.txt
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json backups list --type mods --limit 10
+sudo cat /tes3mp-easy/backups/mods/current.txt
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json restart
 ```
 
-Панель сгенерирует новый временный пароль и потребует смену при входе.
-TLS-сертификаты, загрузки и бэкапы не затрагиваются.
+`mods import` не включает моды, только кладёт архив. `mods deploy` делает
+`state-predeploy-*`, останавливает сервер, распаковывает в staging, меняет
+`mods/`, генерирует `customScripts.lua`, пишет `current.txt` и запускает
+сервер, если он работал до операции. При ошибке возвращает старые файлы.
 
-### 7.3. Docker не отвечает
+Если `mods import` вернул `archive_invalid`, архив не попал в `backups/mods`:
+проверьте `plugins/requiredDataFiles.json`, CRC, пути и отсутствие базовых ESM
+в архиве, затем повторите импорт. Если упал `mods deploy`, ops вернул старые
+`mods/` и `current.txt`; сервер остаётся в прежнем состоянии.
+
+## 7. State: создать и восстановить
+
+Создать вручную:
 
 ```bash
-systemctl status docker
-journalctl -u docker --no-pager -n 200
-docker info
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json backups create --type state --manual
 ```
 
-- Docker не запущен → `systemctl start docker`, затем `docker compose up -d`;
-- нет места → §7.5;
-- socket недоступен пользователю → проверьте группу `docker` и права;
-- после перезагрузки хоста compose-сервисы должны подняться сами
-  (`restart: unless-stopped`).
-
-### 7.4. Автобэкапы не идут
+Список:
 
 ```bash
-docker compose ps backup
-docker compose logs --tail 200 backup
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json doctor
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json backups list --type state --limit 20
 ```
 
-- `backup` не запущен → `docker compose up -d backup`;
-- `tes3mp` остановлен, а `--if-running` включён → это нормально, бэкапов нет;
-- lock занят → в логе `locked`, следующий тик пройдёт;
-- нет места → §7.5;
-- контейнер в цикле перезапуска → смотрите `docker compose logs backup`.
-
-### 7.5. Мало места
+Восстановить:
 
 ```bash
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json state deploy --archive state-manual-2026-10-22_12-00-00.tar.gz
+```
+
+Или `--latest`. Перед восстановлением ops создаёт `state-predeploy-*` и
+останавливает сервер. После успеха сервер запускается, если работал до
+операции; при ошибке старые `players/` и `world/` и прежнее состояние сервера
+возвращаются.
+
+Если state-архив ссылается на другой мод-пак:
+
+```text
+error.code = archive_invalid
+message: current.txt points to mods-..., current is mods-...
+```
+
+Сначала задеплойте нужный мод-пак, затем повторите `state deploy`.
+
+## 8. Retention и диск
+
+Проверить размеры:
+
+```bash
+du -sh /tes3mp-easy/backups/state /tes3mp-easy/backups/mods \
+       /tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/mods
 df -h /tes3mp-easy
-du -sh /tes3mp-easy/backups/mods /tes3mp-easy/backups/state
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json doctor
 ```
 
-- `doctor` покажет `warn`/`error` и свободное место;
-- удалять старые архивы можно только вручную по SSH; в MVP панель не умеет
-  удалять бэкапы;
-- сначала скопируйте архивы на другую машину, потом удаляйте самые старые;
-- не удаляйте `backups/mods/current.txt` и архив, на который он указывает;
-- не удаляйте `players/`, `world/`, `configs/`, `mods/` — это живые данные.
+Бюджеты: `backups/state` 1 GiB, `backups/mods` 512 MiB, свободный резерв
+512 MiB. `doctor` предупреждает, если свободно меньше 1 GiB, и возвращает
+`error`, если меньше 512 MiB.
 
-Пример безопасной очистки (оставить 10 самых новых state-архивов):
+Retention работает автоматически после `backups create`, `mods import` и
+создания `state-predeploy-*`:
+
+- 0–7 дней — все автоматические 5-минутные;
+- 7–365 дней — последний за день;
+- 1–3 года — последний за ISO-неделю;
+- старше 3 лет — последний за месяц, навсегда;
+- ручные — 5, predeploy — 2, моды — 5, `mods-init` — 2 новейших и текущий,
+  если он старше.
+
+Месячные архивы не удаляются автоматически никогда. Если они сами превышают
+1 GiB, `doctor` показывает `warn`; освободите место или увеличьте диск.
+Удалять месячные вручную можно только после копирования на другую машину и
+проверки, что копия читается.
+
+Посмотреть, что съедает место:
 
 ```bash
-cd /tes3mp-easy/backups/state
-ls -1t *.tar.gz | tail -n +11 | xargs -r rm --
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json backups list --type state --limit 20
+sudo du -h /tes3mp-easy/backups/state/*.tar.gz | sort -h | tail -20
 ```
 
-Перед `rm` проверьте список без удаления (`ls -1t *.tar.gz | tail -n +11`).
+## 9. Мало места
 
-### 7.6. Битый архив или неудачный deploy
+1. Проверьте:
 
-- `mods import` вернул `archive_invalid` → архив не попал в `backups/mods/`,
-  текущие моды не тронуты; проверьте CRC и структуру.
-- `mods deploy` упал → ops вернул старые `mods/`, `current.txt` и
-  `customScripts.lua`; проверьте `doctor` и `docker compose logs tes3mp`.
-- `state deploy` упал → ops вернул старые `players/` и `world/`; проверьте
-  `.staging/` и `.old-*` (ops чистит их сам, но после kill -9 могут остаться).
-- Если остались `.old-*`, не удаляйте их до проверки, что сервер работает.
+   ```bash
+   df -h /tes3mp-easy
+   du -sh /tes3mp-easy/* | sort -h
+   sudo journalctl --disk-usage
+   ```
 
-### 7.7. Сервер не стартует
+2. Остановите таймер, чтобы новые архивы не усугубляли ситуацию:
+
+   ```bash
+   sudo systemctl stop tes3mp-easy-backup.timer
+   ```
+
+3. Освободите безопасное:
+
+   ```bash
+   sudo find /tes3mp-easy/.staging -mindepth 1 -maxdepth 1 -type d -print
+   sudo journalctl --vacuum-size=50M
+   sudo apt clean
+   ```
+
+   `.staging` можно чистить, только если нет активного `ops` (проверьте
+   `pgrep -a tes3mp-easy-ops`). Незавершённые `.part` удаляйте только после
+   проверки, что `ops` не работает.
+
+4. Если места всё ещё нет:
+
+   - скопируйте `backups/state` и `backups/mods` на другую машину
+     (`rsync -a --exclude "*.part"`);
+   - проверьте копию (`tar -tzf` для нескольких архивов);
+   - только после этого удаляйте старые архивы вручную;
+   - месячные удаляйте последними и только при крайней необходимости;
+   - `current.txt` и текущий `mods-*` не удаляйте никогда.
+
+5. Запустите таймер снова и проверьте `doctor`:
+
+   ```bash
+   sudo systemctl start tes3mp-easy-backup.timer
+   sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+     --root /tes3mp-easy --json doctor
+   ```
+
+`no_space` от ops — это не повод удалять state вслепую. Сначала копия, потом
+удаление.
+
+
+## 10. Игра не запускается или падает
 
 ```bash
-docker compose ps tes3mp
-docker compose logs --tail 200 tes3mp
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json doctor
+sudo systemctl status tes3mp.service --no-pager
+sudo journalctl -u tes3mp.service -n 200 --no-pager
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json doctor
 ```
 
-- проверьте `configs/customScripts.lua` и наличие скриптов в `mods/scripts/`;
-- проверьте, что `requiredDataFiles.json` соответствует `mods/plugins/`;
-- проверьте `configs/tes3mp-server-default.cfg` на валидный порт и пароль;
-- если недавно меняли state — восстановите предыдущий архив;
-- если недавно меняли моды — сделайте rollback.
+Типичные причины:
 
-### 7.8. Потеря VPS / переезд
+- нет `libluajit-5.1.so.2` → `ldconfig -p | grep luajit`, переустановите пакет;
+- битый `customScripts.lua` → проверьте `mods/scripts/` и пересоберите деплоем;
+- плагин/ESM, который не подходит к текущей сборке → верните предыдущий
+  `state-predeploy-*` или предыдущий `mods-*`;
+- нехватка памяти → `dmesg | tail`, `systemctl show tes3mp.service -p MemoryCurrent`;
+- занят порт → `ss -lunp | grep 25565`.
 
-1. На новом VPS установить Docker и распаковать релиз в `/tes3mp-easy`.
-2. Скопировать с офсайт-копии:
-   - `backups/` (обязательно);
-   - `configs/` (если не хотите настраивать заново);
-   - `panel-data/` (если хотите сохранить пароль и TLS; иначе будет новый
-     пароль и новый сертификат).
-3. `docker compose up -d`.
-4. Проверить `doctor`.
-5. Восстановить моды:
-   - `mods import --file <последний import-*.tar.gz>`;
-   - `mods deploy --archive <имя>`;
-   - если архивы уже лежат в `backups/mods/`, импорт не нужен, достаточно
-     `mods deploy`.
-6. Восстановить state:
-   - `state deploy --archive <последний export-*.tar.gz>`;
-   - если `current.txt` внутри архива указывает на моды, которых нет, ops
-     откажется; сначала деплойте нужные моды.
-7. Проверить `status`, `doctor`, публичные бэкапы и вход игрока.
-
-### 7.9. Аварийный доступ без панели
+Если сервер циклически падает после деплоя:
 
 ```bash
-cd /tes3mp-easy
-docker compose run --rm panel \
-  tes3mp-easy-ops --root /tes3mp-easy --json doctor
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json mods deploy --archive <previous-mods-archive>
 ```
 
-`run --rm` поднимает одноразовый контейнер из того же образа. Если панель
-жива, используйте `exec` — это быстрее.
-
-## 8. Обновление и откат
-
-- Обновление: скачать новый релиз, остановить `panel` и `backup`, поднять
-  `docker compose up -d`, проверить `doctor`.
-- Перед обновлением сделать `manual-*` state-бэкап и скопировать
-  `backups/mods/current.txt`.
-- Откат: вернуть предыдущий тег образа в `.env`/compose и `docker compose up -d`.
-- Схема данных обратно совместима в пределах v2; если релиз меняет формат
-  архива, это указано в release notes и в `03-contracts.md`.
-- Не откатывайтесь на старый bash-стек после того, как новый ops записал
-  `current.txt` в формате `<sha256> <filename>`: старые скрипты могут не
-  понять второй токен. Для отката используйте предыдущий релиз v2.
-
-## 9. Переход со старой схемы
-
-1. Сделать полный бэкап старого `/tes3mp-easy` (rsync на другую машину).
-2. Остановить старые `nginx`, `export`, cron-задачи и контейнеры.
-3. Оставить данные на местах: `configs/`, `players/`, `world/`, `mods/`,
-   `backups/`. Не пересоздавать их.
-4. Развернуть новый compose; панель читает старые архивы без конвертации.
-5. Проверить `doctor`: он найдёт legacy `current.txt` и подскажет, если
-   архив модов не найден.
-6. Проверить публичные бэкапы и клиент.
-7. Старые URL (`/list-backups/`, `/download/`) больше не работают; обновите
-   ссылки у игроков.
-
-## 10. Шпаргалка команд
+Если состояние мира повреждено:
 
 ```bash
-cd /tes3mp-easy
-
-docker compose ps
-docker compose logs -f panel
-docker compose logs --tail 200 tes3mp
-docker compose restart tes3mp
-
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json doctor
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json status
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json logs --tail 200
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json backups list --type state
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json backups create --type state
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json mods deploy --latest
-docker compose exec panel tes3mp-easy-ops --root /tes3mp-easy --json state deploy --archive <name>
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json state deploy --latest
 ```
 
-## 11. Чек-лист безопасности
+Перед восстановлением ops сам делает `state-predeploy-*`, так что текущее
+состояние не теряется.
 
-- [ ] SSH ограничен по IP и ключам, пароль root отключён.
-- [ ] Открыты только 22/tcp, 80/tcp, 443/tcp, 25565/udp.
-- [ ] Docker socket не проброшен наружу и не доступен игрокам.
-- [ ] Пароль панели сменён с initial, хранится в менеджере паролей.
-- [ ] `panel-data/` и `backups/` не отдаются nginx/apache (их нет).
-- [ ] Публичные бэкапы — осознанное решение; ссылки не индексируются.
-- [ ] TLS-сертификат валиден, self-signed не используется постоянно.
-- [ ] `doctor` без `error`, автобэкапы идут, офсайт-копия настроена.
+## 11. Панель недоступна
+
+Игра и таймер бэкапов от панели не зависят:
+
+```bash
+sudo systemctl status tes3mp-panel.service --no-pager
+sudo journalctl -u tes3mp-panel.service -n 200 --no-pager
+sudo systemctl restart tes3mp-panel.service
+```
+
+Если панель не поднимается:
+
+- проверьте порты `80/443`: `ss -ltnp | grep -E ":80|:443"`;
+- проверьте права `panel-data`: `ls -la /tes3mp-easy/panel-data`;
+- проверьте TLS: `openssl x509 -in /tes3mp-easy/panel-data/tls/cert.pem -noout -dates`;
+- проверьте, что `tes3mp-panel` входит в группу `tes3mp` и читает бэкапы;
+- проверьте sudo: `sudo -u tes3mp-panel sudo -n -u tes3mp \
+  /opt/tes3mp-easy/bin/tes3mp-easy-ops --root /tes3mp-easy --json status`.
+
+Пока панель лежит, бэкапы и игру можно обслуживать через CLI.
+
+## 12. systemd/rootctl
+
+```bash
+systemctl cat tes3mp.service tes3mp-panel.service \
+  tes3mp-easy-backup.service tes3mp-easy-backup.timer
+systemd-analyze verify /etc/systemd/system/tes3mp.service
+sudo /usr/local/libexec/tes3mp-easy-rootctl restart
+```
+
+`rootctl` принимает только `start`, `stop`, `restart` и всегда работает с
+`tes3mp.service`. Если ops возвращает `service_unavailable`:
+
+- проверьте, что `/usr/local/libexec/tes3mp-easy-rootctl` существует и
+  исполняется;
+- проверьте `/etc/sudoers.d/tes3mp-easy` через `sudo visudo -c`;
+- проверьте, что `systemctl` отвечает: `systemctl is-system-running`.
+
+
+## 13. TLS
+
+```bash
+curl -I http://<IP>/          # ожидаем 301/308 на https
+curl -I https://<IP>/         # ожидаем 200
+openssl s_client -connect <IP>:443 -servername <IP> </dev/null \
+  2>/dev/null | openssl x509 -noout -subject -dates
+```
+
+Если сертификат self-signed:
+
+- панель работает, но браузер и клиент могут ругаться;
+- проверьте, что порт 80 доступен для ACME;
+- проверьте системное время: `timedatectl`;
+- перезапустите панель после выпуска:
+  `sudo systemctl restart tes3mp-panel.service`.
+
+Не отключайте проверку TLS в клиенте ради self-signed сертификата. Это
+превращает MITM в норму.
+
+## 14. Копия бэкапов на другую машину
+
+Минимум — state и mods, включая `current.txt`:
+
+```bash
+rsync -a --exclude "*.part" --exclude "*.old-*" \
+  /tes3mp-easy/backups/ backup@offsite:/srv/tes3mp-easy-backups/
+```
+
+Проверка копии:
+
+```bash
+ssh backup@offsite 'ls -lh /srv/tes3mp-easy-backups/state | tail'
+ssh backup@offsite 'tar -tzf /srv/tes3mp-easy-backups/state/<archive>.tar.gz | head'
+```
+
+Копируйте не только state, но и `backups/mods/current.txt` и текущий
+`mods-*.tar.gz`: state-архив ссылается на мод-пак. Без него восстановление
+не пройдёт проверку.
+
+## 15. Восстановление на новой VPS
+
+1. Установите v2 по §2; сразу после `bootstrap` остановите игру и таймер
+   (шаг 2), пока не скопирован state.
+2. Остановите игру и таймер:
+
+   ```bash
+   sudo systemctl stop tes3mp.service tes3mp-easy-backup.timer
+   ```
+
+3. Скопируйте `backups/` с копии, сохранив `current.txt`:
+
+   ```bash
+   sudo rsync -a backup@offsite:/srv/tes3mp-easy-backups/ \
+     /tes3mp-easy/backups/
+   sudo chown -R tes3mp:tes3mp /tes3mp-easy/backups
+   ```
+
+4. Задеплойте текущий мод-пак, затем state:
+
+   ```bash
+   sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+     --root /tes3mp-easy --json mods deploy --current
+   sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+     --root /tes3mp-easy --json state deploy --latest
+   ```
+
+5. Запустите игру и таймер, проверьте:
+
+   ```bash
+   sudo systemctl start tes3mp.service
+   sudo systemctl start tes3mp-easy-backup.timer
+   sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+     --root /tes3mp-easy --json doctor
+   ```
+
+Если `state deploy` говорит `archive_invalid` из-за несовпадения модов,
+сначала задеплойте тот `mods-*`, на который указывает `current.txt` внутри
+state-архива, и повторите.
+
+## 16. Финальная проверка
+
+```bash
+sudo systemctl is-active tes3mp.service tes3mp-panel.service \
+  tes3mp-easy-backup.timer
+sudo systemctl list-timers tes3mp-easy-backup.timer --no-pager
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json doctor
+curl -fsS https://<IP>/healthz
+curl -fsS https://<IP>/api/v1/server
+sudo journalctl -u tes3mp.service -n 20 --no-pager
+```
+
+Ожидаемо: все три unit активны, таймер запланирован, `doctor` без `error`,
+`/healthz` = `ok`, публичный API отдаёт `mods_sha256`, в логах нет panic.

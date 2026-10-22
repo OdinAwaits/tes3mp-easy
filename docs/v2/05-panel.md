@@ -5,8 +5,8 @@
 **Обновлено:** 2026-10-22.
 
 Документ описывает поведение панели. Нормативные JSON-схемы, коды ошибок и
-HTTP-контракты — в `03-contracts.md`; при расхождении прав 03. Панель заменяет
-схему с `nginx` + `export` + `certbot`.
+HTTP-контракты — в `03-contracts.md`; при расхождении прав 03. Панель — это
+единственная HTTPS-точка входа, внешний прокси не нужен.
 
 ## 1. Роль
 
@@ -17,17 +17,18 @@ HTTP-контракты — в `03-contracts.md`; при расхождении 
   модов;
 - для клиента: информация о сервере и архив модов.
 
-Панель не управляет Docker напрямую и не пишет в игровые данные. Она вызывает
-`tes3mp-easy-ops` и читает файлы для отображения/скачивания.
+Панель не управляет systemd напрямую и не пишет в игровые данные. Она вызывает
+`tes3mp-easy-ops` от пользователя `tes3mp` через узкое правило sudoers и
+читает файлы для отображения/скачивания.
 
 ## 2. Стек
 
 - Go, стандартный `net/http` (роутинг по шаблонам Go 1.22+).
 - `html/template` + `embed` для HTML, CSS и минимального JS.
 - Никакого Node.js, SPA-фреймворка и сборки фронтенда.
-- Argon2id для пароля (`golang.org/x/crypto/argon2`).
-- Встроенный ACME-клиент для Let's Encrypt по IP; отдельного `certbot` нет.
-- Файлы: `auth.json`, `panel.log`, TLS-сертификаты, uploads. Внешней БД нет.
+- Argon2id для пароля (`golang.org/x/crypto/argon2`), память 32 MiB, 1 поток.
+- Встроенный ACME-клиент для Let’s Encrypt по IP; внешний клиент не нужен.
+- Файлы: `auth.json`, TLS-сертификаты, uploads. Внешней БД нет.
 
 Почему так: панель — это несколько форм и таблиц. SPA и Node.js добавили бы
 сборку, зависимости и ещё один слой отладки без пользы для одного админа.
@@ -35,17 +36,22 @@ HTTP-контракты — в `03-contracts.md`; при расхождении 
 ## 3. Процесс
 
 ```text
-/app/tes3mp-easy-panel     # HTTP-сервер
-/app/tes3mp-easy-ops       # вызывается как подпроцесс
-/app/templates/            # встроены в бинарник через embed
-/app/static/               # встроены
-/tes3mp-easy/panel-data/   # изменяемые данные
+/opt/tes3mp-easy/bin/tes3mp-easy-panel   # HTTP-сервер
+/opt/tes3mp-easy/bin/tes3mp-easy-ops     # вызывается как подпроцесс
+/opt/tes3mp-easy/templates/              # встроены в бинарник через embed
+/opt/tes3mp-easy/static/                 # встроены
+/tes3mp-easy/panel-data/                 # изменяемые данные
 ```
 
-Панель запускается как PID 1 в контейнере, слушает `:80` и `:443`, пишет логи
-в stdout/stderr. `panel-data` монтируется volume'ом, чтобы пароль, TLS и
-загрузки переживали пересоздание контейнера. Сессии живут в памяти и при
-рестарте теряются — это осознанно.
+Панель запускается как `tes3mp-panel.service` от пользователя
+`tes3mp-panel`, слушает `:80` и `:443`, пишет логи в stdout/stderr → journald.
+`panel-data` принадлежит `tes3mp-panel:tes3mp` и не зависит от жизненного
+цикла игры. Сессии живут в памяти и при рестарте теряются — это осознанно.
+
+Systemd-лимиты: `MemoryHigh=48M`, `MemoryMax=64M`, `GOMAXPROCS=1`,
+`GOMEMLIMIT=64MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE` для портов
+80/443. Ops, который панель запускает, наследует cgroup панели; поэтому все
+операции с архивами обязаны быть потоковыми и не держать файл в памяти.
 
 ## 4. Маршруты
 
@@ -54,13 +60,13 @@ HTTP-контракты — в `03-contracts.md`; при расхождении 
 | Метод | Путь | Назначение |
 |---|---|---|
 | GET | `/` | Имя сервера, статус, текущие моды, ссылки на бэкапы, вход |
-| GET | `/backups` | Публичный список mods/state |
+| GET | `/backups` | Публичный список mods/state с пагинацией |
 | GET | `/backups/mods/<name>` | Скачать архив модов |
 | GET | `/backups/state/<name>` | Скачать state |
 | GET | `/api/v1/server` | Информация для клиента (без пароля) |
 | GET | `/api/v1/mods/current` | Метаданные текущего архива модов |
 | GET | `/api/v1/mods/current/archive` | Текущий архив модов |
-| GET | `/healthz` | Liveness для compose/мониторинга |
+| GET | `/healthz` | Liveness для systemd/мониторинга |
 
 Точные схемы `/api/v1/server`, `/api/v1/mods/current` и
 `/api/v1/mods/current/archive` — в `03-contracts.md` §7. Пароль сервера в
@@ -89,12 +95,7 @@ HTTP-контракты — в `03-contracts.md`; при расхождении 
 | GET/POST | `/admin/password` | Сменить пароль |
 | GET | `/api/v1/admin/logs?tail=200` | Логи для автообновления |
 
-Админские действия — обычные HTML-формы с POST/redirect/GET. Никакого
-отдельного JSON API для каждой кнопки: браузеру он не нужен.
-
 ## 5. Аутентификация
-
-Один админ, один пароль. Никаких пользователей, ролей и email.
 
 `panel-data/auth.json`:
 
@@ -104,26 +105,37 @@ HTTP-контракты — в `03-contracts.md`; при расхождении 
   "algorithm": "argon2id",
   "salt": "base64...",
   "hash": "base64...",
-  "params": {"time": 3, "memory": 65536, "threads": 2, "key_len": 32}
+  "params": {"time": 3, "memory": 32768, "threads": 1, "key_len": 32}
 }
 ```
 
 - При первом запуске генерируется случайный пароль (20+ символов), пишется в
   `panel-data/initial-password.txt` с правами `0600` и один раз печатается в
-  лог.
+  journald.
 - При первом входе панель требует сменить пароль.
+- После успешной смены пароля панель удаляет `initial-password.txt`.
 - Хранение — только хеш; открытый пароль после смены нигде не остаётся.
+- Argon2id: 32 MiB, 1 поток, `time=3`. Это осознанно меньше, чем на большой
+  машине: панель должна укладываться в 64 MiB вместе с Go-рантаймом.
 - Сброс — через SSH:
-  `docker compose exec panel tes3mp-easy-panel reset-password`. Команда
-  перезаписывает `auth.json`, создаёт новый `initial-password.txt` и печатает
-  временный пароль. Если панель не запущена, тот же бинарник можно вызвать
-  через `docker compose run --rm panel ...`.
+
+  ```bash
+  sudo systemctl stop tes3mp-panel.service
+  sudo -u tes3mp-panel /opt/tes3mp-easy/bin/tes3mp-easy-panel reset-password
+  sudo systemctl start tes3mp-panel.service
+  sudo cat /tes3mp-easy/panel-data/initial-password.txt
+  ```
+
+  Команда перезаписывает `auth.json`, создаёт новый `initial-password.txt` и
+  печатает временный пароль. TLS-сертификаты, загрузки и бэкапы не
+  затрагиваются. Панель останавливается, чтобы не было двух писателей
+  `auth.json`.
 
 Сессии:
 
 - случайный 32-байтный ID в cookie `tes3mp_session`;
 - `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`;
-- серверный map в памяти; рестарт панели = повторный вход (это нормально);
+- серверный map в памяти; рестарт панели = повторный вход;
 - idle timeout 12 часов, absolute timeout 7 дней;
 - CSRF-токен привязан к сессии и вставляется в каждую форму;
 - форма логина — исключение: до сессии панель выдаёт короткоживущий
@@ -141,16 +153,20 @@ HTTP-контракты — в `03-contracts.md`; при расхождении 
 
 ## 6. Публичные бэкапы
 
-Список:
+Список пагинируется через ops, а не через чтение каталога панелью:
 
 ```text
-GET /backups
-  panel ──exec──► ops backups list --type mods --json
-  panel ──exec──► ops backups list --type state --json
+GET /backups?type=state&before=<name>
+  panel ──sudo -u tes3mp──► ops backups list --type state --limit 200 --before <name> --json
+  panel группирует items по дням/неделям/месяцам для отображения
 ```
 
-Метаданные берём у ops, чтобы не дублировать сортировку и определение
-`current`. Скачивание — прямое чтение файла:
+- `limit` по умолчанию 200, максимум 500; `next_before` из ответа становится
+  ссылкой «показать более старые»;
+- группировка только визуальная: контракт списка остаётся плоским;
+- метаданные берём у ops, чтобы не дублировать сортировку и определение
+  `current`;
+- скачивание — прямое чтение файла:
 
 ```text
 GET /backups/mods/<name>
@@ -169,19 +185,20 @@ GET /backups/mods/<name>
 - удаления и переименования через публичные маршруты нет.
 
 Почему публично: это осознанное решение из целей. Если бэкапы станут секретом,
-это отдельный режим с токеном, но не MVP.
+это отдельный режим с токеном, но не MVP. Публичная страница показывает
+только имя, размер, дату и тип; путей и логов там нет.
 
 ## 7. Интеграция с ops
 
 ```go
 type Ops interface {
-    Status(ctx context.Context) (Status, error)
+    Status(ctx context.Context, unit string) (Status, error)
     Start(ctx context.Context) error
     Stop(ctx context.Context) error
     Restart(ctx context.Context) error
     Logs(ctx context.Context, tail int) ([]string, error)
-    BackupsList(ctx context.Context, typ string) (Backups, error)
-    BackupCreate(ctx context.Context, typ string) (Backup, error)
+    BackupsList(ctx context.Context, typ string, limit int, before string) (Backups, error)
+    BackupCreate(ctx context.Context, typ string, manual bool) (Backup, error)
     ModsImport(ctx context.Context, path string) (ImportResult, error)
     ModsDeploy(ctx context.Context, ref string) (DeployResult, error)
     StateDeploy(ctx context.Context, name string) (DeployResult, error)
@@ -194,19 +211,19 @@ type Ops interface {
 Production-реализация:
 
 ```text
-exec.CommandContext(ctx, opsBinary,
-  "--root", root, "--json", "mods", "deploy", "--archive", name)
+sudo -n -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json mods deploy --archive <name>
 ```
 
 - аргументы — массив, не строка;
-- stdout парсится как JSON-envelope, stderr идёт в лог;
+- stdout парсится как JSON-envelope, stderr идёт в journald;
 - exit code → HTTP-статус и `error.code`;
 - таймауты — по таблице `03-contracts.md` §8: чтение 5 с, короткие мутации
   2 мин, импорт/деплой/state 10 мин;
 - одновременно может идти только одна мутация: ops lock, панель показывает
   «операция уже выполняется» при `locked`.
 
-В тестах `Ops` — fake: обработчики проверяются без Docker и без бинарника.
+В тестах `Ops` — fake: обработчики проверяются без systemd и без бинарника.
 
 ## 8. Ошибки
 
@@ -215,11 +232,11 @@ exec.CommandContext(ctx, opsBinary,
 | `invalid_argument` / `unsafe_path` | 400 | «Проверьте имя/путь» |
 | `not_found` | 404 | «Архив не найден» |
 | `locked` | 409 | «Другая операция выполняется» |
-| `no_space` | 507 | «Мало места, удалите старые бэкапы» |
-| `docker_unavailable` | 503 | «Docker недоступен» |
-| `archive_invalid` | 422 | Конкретная причина: CRC, путь, обязательный файл |
+| `no_space` | 507 | «Мало места, скопируйте старые бэкапы на другую машину» |
+| `service_unavailable` | 503 | «systemd, journald или unit недоступен» |
+| `archive_invalid` | 422 | Конкретная причина: CRC, путь, старый формат, обязательный файл |
 | `config_invalid` | 422 | Ошибка рядом с полем |
-| `checks_failed` | 503 | «Проверьте doctor»: панель показывает список ошибок |
+| `checks_failed` (exit 10) | 503 | «Проверьте doctor»: панель показывает список ошибок |
 | `internal` | 500 | «Внутренняя ошибка», лог с id |
 
 Панель не показывает stack trace и не подменяет ошибку общим «что-то пошло не
@@ -239,25 +256,30 @@ exec.CommandContext(ctx, opsBinary,
 Загрузка:
 
 ```text
-POST /admin/mods/upload (multipart, max 2 GiB)
+POST /admin/mods/upload (multipart, max 512 MiB)
   panel стримит в panel-data/uploads/<uuid>.tar.gz
-  panel ──exec──► ops mods import --file ... --json
+  panel ──sudo -u tes3mp──► ops mods import --file ... --json
   при успехе: удалить upload, если он ещё существует
-              (ops мог переименовать/перенести его в backups/mods/)
+              (ops переименовал его в backups/mods/)
   при ошибке: удалить upload и показать причину (ops уже вернул детали)
 ```
 
-Лимит размера проверяется до записи (`http.MaxBytesReader`). Имя исходного
-файла не используется как путь; на диске — UUID.
+Лимит проверяется до записи: `http.MaxBytesReader` на тело запроса,
+`r.MultipartReader` для потокового чтения части, без `ParseMultipartForm` и
+без `io.ReadAll` всего файла. Имя исходного файла не используется как путь;
+на диске — UUID. `panel-data/uploads` и `/tes3mp-easy/backups` должны быть на
+одной файловой системе; `doctor` проверяет это, а `mods import` возвращает
+`invalid_argument`, если это не так.
 
 Деплой:
 
-- подтверждение с предупреждением «сервер будет перезапущен»;
+- подтверждение с предупреждением «сервер будет перезапущен, если он запущен»;
 - `ops mods deploy --archive <name> --json`;
 - панель показывает прогресс-заглушку (операция синхронная, но может занять
   минуты), затем результат;
 - при `archive_invalid` показывает конкретную причину;
-- после успеха обновляет `current` и `mods_sha256` в публичном API.
+- после успеха перечитывает `current` и `mods_sha256` для интерфейса и
+  публичного API.
 
 Rollback — это не отдельная магия, а `mods deploy --archive <предыдущий>`.
 Список уже отсортирован, панель знает соседний архив.
@@ -266,16 +288,20 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
 
 Страница `/admin/state`:
 
-- список state-архивов (новые сверху), размер, дата;
-- кнопка «Создать бэкап сейчас» → `ops backups create --type state`;
+- список state-архивов (новые сверху), размер, дата, класс
+  (`state`, `state-manual`, `state-predeploy`);
+- пагинация через `next_before`, чтобы страница не тянула тысячи записей;
+- группировка по дням/неделям/месяцам для длинной истории;
+- кнопка «Создать бэкап сейчас» → `ops backups create --type state --manual`;
 - кнопка «Восстановить» → подтверждение → `ops state deploy --archive <name>`;
-- предупреждение: текущие `players/` и `world/` будут заменены, сервер
-  перезапустится;
-- после успеха — сообщение и обновлённый список бэкапов; `state deploy` сам
-  новый бэкап не создаёт.
+- предупреждение: текущие `players/` и `world/` будут заменены; если сервер
+  был запущен, он перезапустится, иначе останется остановленным;
+- после успеха — сообщение и обновлённый список бэкапов; `state deploy` не
+  создаёт `state-manual`, но всегда делает `state-predeploy-*`.
 
 Панель не даёт удалять state-бэкапы в MVP. Это защита от случайного удаления
-единственной копии.
+единственной копии и от удаления месячной истории. Retention работает только
+в ops и никогда не удаляет месячные архивы.
 
 ## 11. Конфиги
 
@@ -285,7 +311,7 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
 
 - `hostname` (string, 1..64);
 - `port` (int, 1024..65535);
-- `maximumPlayers` (int, 1..64);
+- `maximumPlayers` (int, 1..64, по умолчанию 8);
 - `password` (string, пусто = без пароля);
 - `logLevel` (0..4);
 - `[MasterServer] enabled` (bool).
@@ -296,7 +322,7 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
 
 - `gameMode` (string);
 - `loginTime` (int, 10..600);
-- `maxClientsPerIP` (int, 1..10);
+- `maxClientsPerIP` (int, 1..10, по умолчанию 3);
 - `difficulty` (int, -100..100);
 - `passTimeWhenEmpty` (bool);
 - `nightStartHour`, `nightEndHour` (int, 0..23);
@@ -322,6 +348,8 @@ read-only: показываем, но не редактируем.
 - Ops делает `.bak-<timestamp>` и атомарную замену.
 - Панель перечитывает значения через `ops config get` и показывает «сохранено».
 - Ошибка `config_invalid` приходит с именем поля; панель подсвечивает его.
+- Если `ops` вернул `restart_required=true`, показываем баннер «нужен рестарт»
+  и кнопку «Перезапустить сервер».
 - `customScripts.lua` показывается read-only, с пояснением, что он
   генерируется из `mods/scripts/`.
 
@@ -339,48 +367,54 @@ read-only: показываем, но не редактируем.
 
 ## 13. Статус и логи
 
-- Дашборд опрашивает `ops status --json` каждые 5 секунд (fetch + обновление
-  DOM). WebSocket/SSE в MVP не нужны.
+- Дашборд опрашивает `ops status --unit tes3mp.service --json` каждые 5 секунд
+  (fetch + обновление DOM). WebSocket/SSE в MVP не нужны.
 - Логи: `GET /admin/logs?tail=200`, автообновление раз в 5 секунд; кнопка
-  «Пауза».
-- Если `ops status` вернул `docker_unavailable`, показываем красный баннер и
+  «Пауза». Источник — journald через ops.
+- Если `ops status` вернул `service_unavailable`, показываем красный баннер и
   не пытаемся изображать «running».
-- Если `backup` не запущен, показываем предупреждение «автобэкапы не идут».
+- Если таймер `tes3mp-easy-backup.timer` неактивен, показываем предупреждение
+  «автобэкапы не идут» и кнопку «Создать бэкап сейчас».
 - Дашборд раз в минуту вызывает `ops doctor --json` и показывает `warn`/`error`
   отдельным баннером; `error` не блокирует вход, но блокирует мутации, которые
   заведомо не смогут пройти (например, нет места).
+- Собственные логи панели идут в journald с префиксом `panel:`; отдельного
+  `panel.log` нет. Аудит действий: `action=mods.deploy archive=... result=ok`,
+  без паролей, сессионных ID и содержимого файлов.
 
 ## 14. TLS
 
 - Панель слушает `:80` для ACME HTTP-01 и редиректа на HTTPS.
 - `:443` — TLS.
-- Целевой режим: Let's Encrypt по IP (short-lived), встроенный ACME-клиент,
-  без отдельного `certbot`.
+- Целевой режим: Let’s Encrypt по IP (short-lived); ACME-клиент встроен в
+  панель, внешний клиент не нужен.
 - Сертификаты и ключи — в `panel-data/tls/`, права `0600`.
 - Если выпустить сертификат не удалось, панель стартует с self-signed и
   показывает предупреждение. Это аварийный режим: браузер будет ругаться, а
   клиентские загрузки могут не пройти проверку TLS.
 - Домен не требуется. Если позже появится домен, ACME-код не меняется.
+- Порты 80/443 открываются ambient-капабилити `CAP_NET_BIND_SERVICE`, а не
+  запуском панели под root.
 
 ## 15. Данные панели
 
 ```text
 panel-data/
-├── auth.json                 # Argon2id-хеш
+├── auth.json                 # Argon2id-хеш, 0600
 ├── initial-password.txt      # только до первой смены, 0600
 ├── tls/
 │   ├── cert.pem
 │   └── key.pem
-├── uploads/                  # временные архивы модов, чистится после import
-└── panel.log                 # ошибки и аудит действий (без паролей)
+└── uploads/                  # временные архивы модов, чистится после import
 ```
 
 Сессии в MVP — в памяти. Если панель перезапустилась, админ входит заново.
 Это проще, чем хранить сессии на диске, и не мешает работе сервера.
 
-`panel.log` — не полноценный audit trail, а лог действий:
-`2026-10-22T12:00:00Z action=mods.deploy archive=... result=ok`. Без паролей,
-сессионных ID и содержимого файлов.
+`uploads/` — единственное место, куда панель пишет пользовательские файлы.
+Файлы называются UUID, а не исходным именем. После успешного импорта ops
+переименовывает upload в `backups/mods/`, и панель не пытается удалить уже
+несуществующий путь.
 
 ## 16. Безопасность
 
@@ -389,10 +423,13 @@ panel-data/
 - Нет file manager, web terminal, raw editor.
 - Все формы — CSRF.
 - Все изменяющие действия — POST, без GET-побочек.
-- Загрузка — `MaxBytesReader`, проверка архива в ops, а не в панели.
+- Загрузка — `MaxBytesReader` 512 MiB и потоковый `MultipartReader`; проверка
+  архива в ops, а не в панели.
 - Ops вызывается с фиксированными аргументами; имя архива и игрока
   проверяются, но не вставляются в shell.
-- Docker socket не доступен из интернета и не проксируется.
+- Панель не входит в группу с правом записи в игровые данные; sudoers даёт
+  только запуск ops от `tes3mp`.
+- Прямого доступа к управлению хостом нет, только два узких sudo-правила.
 - Публичные страницы не раскрывают пути, версии с уязвимостями и логи.
 - Логин и скачивания — rate limit.
 - Заголовки безопасности и HTTPS — обязательны.
@@ -403,27 +440,21 @@ panel-data/
 |---|---|
 | Роутинг и шаблоны | `httptest`, проверка статусов и ключевых элементов HTML |
 | Логин | верный/неверный пароль, rate limit, cookie-флаги, CSRF |
+| Argon2id | memory 32768, threads 1, time 3, verify |
 | Публичные скачивания | path traversal, не-`.tar.gz`, отсутствующий файл, `Content-Disposition` |
-| Загрузка модов | лимит размера, UUID-имя, вызов fake ops, очистка upload |
+| Пагинация | `limit`/`before`, `next_before`, группировка по дням/неделям/месяцам |
+| Загрузка модов | лимит 512 MiB, UUID-имя, `MultipartReader`, вызов fake ops, очистка upload |
 | Ошибки ops | каждый `error.code` → ожидаемый HTTP и текст |
 | Конфиги | валидация, повторное чтение, `config_invalid` |
 | Staff | список из `players/*.json`, вызов `ops staff set` |
-| Интеграция | реальный ops на temp-root, фейковый Docker |
+| Интеграция | реальный ops на temp-root, fake systemd/journalctl |
 
 Панель не тестирует tar и CRC — это тесты ops. Панель тестирует, что она
-правильно вызывает ops и правильно показывает результат.
+правильно вызывает ops и правильно показывает результат. Тест на загрузку
+большого файла проверяет, что память панели не растёт пропорционально
+размеру upload.
 
-## 18. Миграция
-
-- `nginx` и `export` удаляются; их публичные URL заменяются на `/backups` и
-  `/api/v1/...`.
-- Старые бэкапы читаются без конвертации: имена и структура совместимы.
-- `certbot` не нужен: ACME внутри панели.
-- Старый `list-backups.sh` больше не используется панелью.
-- Обратная совместимость со старыми URL не обязательна (проект молодой).
-- Панель не пытается импортировать старый пароль/сессии — их нет.
-
-## 19. Non-goals панели
+## 18. Non-goals панели
 
 - несколько админов, роли, приглашения;
 - регистрация и email;

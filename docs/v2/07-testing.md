@@ -10,31 +10,37 @@
 
 ## 1. Принципы
 
-- **Контракт — источник тестов.** JSON-поля, коды выхода и форматы архивов
-  проверяются по `03-contracts.md`, а не по текущей реализации.
+- **Контракт — источник тестов.** JSON-поля, коды выхода, форматы архивов и
+  retention проверяются по `03-contracts.md`, а не по текущей реализации.
 - **Без Morrowind в репозитории.** Фикстуры — пустые файлы с правильными
   именами и CRC. Никаких копий `Morrowind.esm`, BSA, текстур и звуков.
-- **Docker не нужен для большинства тестов.** Ops принимает `--root` и
+- **Systemd не нужен для большинства тестов.** Ops принимает `--root` и
   `Runner`; panel принимает `Ops`; client принимает HTTP-клиент и файловую
   систему.
 - **Один и тот же бинарник в тестах и в проде.** Contract-тесты запускают
   `tes3mp-easy-ops`, а не только внутренние функции.
 - **Failure injection — часть Definition of Done.** Если операция может
   упасть, тест должен уметь это сымитировать.
+- **Память — такой же контракт, как JSON.** Тест на 512 MiB upload обязан
+  проверять, что RSS не растёт до размера файла.
 
 ## 2. Уровни
 
-| Уровень | Что проверяет | Docker | Где живёт |
-|---|---|---|---|
-| Unit | tar, CRC, `requiredDataFiles.json`, `current.txt`, config, pathguard, lock, auth | нет | `internal/**/*_test.go` |
-| Contract (ops) | запуск бинарника, JSON-envelope, exit codes, stdout/stderr | fake | `test/contract/ops` |
-| Contract (panel) | HTTP-коды, заголовки, cookie, JSON публичного API | нет | `internal/panel/**/*_test.go` |
-| Contract (client) | разбор ответов API, профиль, установка модов | нет | `internal/client/**/*_test.go` |
-| Integration | lifecycle compose, mods/state deploy на temp-root | да, отдельный проект | `test/integration` |
-| Parity | ops vs `package.sh`/`deploy_*.sh` | нет | `test/parity` |
-| Fault | битый архив, path traversal, lock, нет места, Docker error, rollback | fake | `test/fault` |
-| E2E | чистая VM: установка, вход, бэкап, восстановление, клиент | да | ручной/nightly |
-| Docs | ссылки, отсутствие дублированных схем | нет | `test/docs` |
+| Уровень | Что проверяет | Где живёт |
+|---|---|---|
+| Unit | tar, CRC, `requiredDataFiles.json`, `current.txt`, retention, config, pathguard, lock, auth | `internal/**/*_test.go` |
+| Contract (ops) | запуск бинарника, JSON-envelope, exit codes, stdout/stderr | `test/contract/ops` |
+| Contract (panel) | HTTP-коды, заголовки, cookie, JSON публичного API | `internal/panel/**/*_test.go` |
+| Contract (client) | разбор ответов API, профиль, установка модов | `internal/{app,serverapi,mods}/**/*_test.go` |
+| Integration | lifecycle на temp-root, mods/state deploy, retention | `test/integration` |
+| Fault | битый архив, path traversal, lock, нет места, systemd error, rollback | `test/fault` |
+| Resource | 64 MiB cgroup, 512 MiB upload, потоковый tar/gzip | `test/resource` |
+| E2E | чистая VM: установка, вход, бэкап, восстановление, клиент | ручной/nightly |
+| Docs | ссылки, отсутствие дублированных схем | `test/docs` |
+
+OS-матрица: Debian 12 и Ubuntu 24.04, x86_64, systemd. Другие ОС — best-effort
+и не входят в acceptance. Docker-вариант не входит в acceptance; его замер —
+в `02-architecture.md` §9.
 
 ## 3. Фикстуры
 
@@ -50,12 +56,14 @@ testdata/
 │   ├── symlink/          # symlink внутри tar
 │   └── duplicate/        # два файла с разным регистром
 ├── state/
-│   ├── empty/            # пустые каталоги + current.txt
-│   ├── full/             # players + все пять world-каталогов
-│   ├── legacy/           # current.txt только sha256
-│   └── no-current/       # без current.txt
+│   ├── empty/            # players/ + world/<5>/ + оба файла
+│   ├── full/             # игроки + все пять world-каталогов
+│   ├── flat/             # cell/ в корне — должен падать
+│   ├── no-current/       # без current.txt — должен падать
+│   ├── missing-world/    # нет world/custom/ — должен падать
+│   └── old-current/      # current.txt только sha256 — должен падать
 ├── configs/
-│   ├── server.cfg
+│   ├── tes3mp-server-default.cfg
 │   ├── config.lua
 │   └── banlist.json
 └── api/
@@ -71,76 +79,120 @@ testdata/
   возможно;
 - для «плохих» архивов можно хранить байты, но с комментарием, что именно
   ломается;
-- `testdata` не содержит пользовательских данных.
+- `testdata` не содержит пользовательских данных;
+- retention-фикстуры генерируются программно с заданными mtime, а не лежат
+  тысячами файлов в git.
 
 ## 4. Ops
 
 ### 4.1. Архивы
 
-- `mods import` принимает `minimal`, `scripts`, `no-crc`;
+- `mods import` принимает `minimal`, `scripts`, `no-crc`; три базовых ESM из
+  `requiredDataFiles.json` не обязаны лежать в архиве;
 - `root-json`, `traversal`, `symlink`, `duplicate`, `bad-crc` → конкретный
   `error.code`;
-- лимиты: 2 GiB сжатого, 100 000 записей, 8 GiB распакованного;
+- лимиты: 512 MiB сжатого, 50 000 записей, 1 GiB распакованного;
 - tar с абсолютным путём, `..`, hardlink, device, FIFO;
 - gzip с мусором после tar;
 - пустой tar;
 - архив без `plugins/`;
 - `scripts/` с вложенным каталогом;
-- скрипт с пробелом/точкой в имени.
+- скрипт с пробелом/точкой в имени;
+- upload и `backups/` на разных файловых системах → `invalid_argument`.
 
-### 4.2. `current.txt`
+### 4.2. State
 
-- новый формат `<sha256> <filename>`;
-- legacy `<sha256>`;
-- лишние пробелы, CRLF, пустая строка;
-- неверная длина хэша, не hex;
-- имя с `/`, `..`, не `.tar.gz`;
-- файл ссылается на отсутствующий архив;
-- `state deploy` с legacy-хэшем, который есть/нет в `backups/mods/`;
-- `state deploy` с чужим текущим мод-паком → `archive_invalid`.
+- `empty` и `full` принимаются, `current.txt` и `requiredDataFiles.json`
+  обязательны;
+- `flat`, `no-current`, `missing-world`, `old-current` → `archive_invalid`;
+- state с `current.txt` на отсутствующий `mods-*` → `archive_invalid`;
+- state с `current.txt` на чужой текущий мод-пак → `archive_invalid` до
+  остановки сервера;
+- архив без `players/` или без любого из пяти `world/*/` → `archive_invalid`;
+- symlink/hardlink в state → `archive_invalid`/`unsafe_path`.
 
-### 4.3. Lock и атомарность
+### 4.3. `current.txt`
+
+- канонический `<sha256> <filename>` принимается;
+- строка только с `sha256` → `archive_invalid`;
+- лишние пробелы, CRLF, пустая строка, два пробела → `archive_invalid`;
+- неверная длина хэша, не hex → `archive_invalid`;
+- имя с `/`, `..`, не `.tar.gz`, `mods-`/`mods-init-` вне шаблона →
+  `archive_invalid`;
+- файл ссылается на отсутствующий архив → `archive_invalid`;
+- sha256 не совпадает с файлом → `archive_invalid`;
+- новый `current.txt` всегда пишется только в каноническом формате.
+
+### 4.4. Retention
+
+Сценарии строятся на синтетическом наборе `state-*` с mtime и проверяют
+точный набор выживших:
+
+| Сценарий | Ожидание |
+|---|---|
+| 120 дней по 5 минут | все 5-минутные старше 7 дней удалены; по одному на каждый день |
+| 2 года | дневные старше года удалены; по одному на каждую ISO-неделю |
+| 5 лет | недельные старше 3 лет удалены; по одному на каждый месяц; месячные живы |
+| 5 лет + давление | месячные всё равно живы; удаляются дневные/недельные по порядку |
+| 10 лет | каждый месяц присутствует, даже если бюджет превышен |
+| 6 `state-manual-*` | остаются 5 новейших |
+| 3 `state-predeploy-*` | остаются 2 новейших |
+| 6 `mods-*` | остаются 5 новейших; текущий не удаляется |
+| 3 `mods-init-*` | остаются 2 новейших и текущий, если он старше |
+| бюджет 1 GiB превышен только месячными | `warnings` непустой, месячные не удалены |
+| ошибка `os.Remove` | имя в `warnings`, не в `pruned`; архив создания цел |
+
+Порядок pressure pruning проверяется отдельным тестом: 5-минутные старше 24
+часов → дневные → недельные. Месячные не должны появляться в `pruned` ни при
+каком сценарии.
+
+### 4.5. Lock и атомарность
 
 - две параллельные мутации: одна проходит, вторая получает `locked` (exit 4);
 - `--lock-timeout 0` не ждёт;
 - `mods deploy` внутри себя не вызывает `backups create` повторно;
-- `backup loop` не блокирует сам себя;
+- timer-запуск не блокирует сам себя;
 - `--dry-run` не меняет ни одного байта;
 - kill -9 в момент записи `current.txt`/архива: старый файл цел, `.part`
   остаётся, `doctor` предупреждает;
 - запись конфига: старый файл цел при ошибке fsync/rename (fake writer).
 
-### 4.4. Команды
+### 4.6. Команды
 
 | Команда | Обязательные случаи |
 |---|---|
-| `doctor` | ok/warn/error, exit 0/0/10, нет Docker, нет места, битый `current.txt` |
-| `status` | running/stopped/unhealthy, Docker недоступен, оба формата `compose ps` |
-| `logs` | tail, пустой лог, JSON `lines`, не-JSON текст |
-| `backups list` | пусто, сортировка, `current`, `--sha256`, битый `current.txt` |
-| `backups create` | успех, `--if-running` + stopped, нет места, обрыв, имя `manual-*` |
-| `mods import` | успех, все ошибки архива, upload не удалён при ошибке |
-| `mods deploy` | первый деплой, rollback, `--no-restart`, сбой на каждом шаге, state-бэкап |
-| `state deploy` | успех, legacy, нет `current.txt`, несовпадение модов, сбой распаковки, rollback |
+| `doctor` | ok/warn/error, exit 0/0/10, systemd недоступен, незнакомая ОС, non-x86_64, нет места, битый `current.txt`, разные FS, превышен бюджет |
+| `status` | running/stopped/unhealthy, systemd недоступен, оба unit-а, нет `backend` |
+| `logs` | tail, пустой journal, JSON `lines`, journald недоступен |
+| `backups list` | пусто, сортировка, `current`, `--sha256`, `--limit`, `--before`, 2016 записей |
+| `backups create` | успех, `--if-running` + stopped, `--if-running` + systemd недоступен (exit 6), `--manual`, нет места, обрыв, `pruned`/`warnings`, имя `state-*` / `state-manual-*` |
+| `mods import` | успех, все ошибки архива, upload не удалён при ошибке, cross-FS |
+| `mods deploy` | первый деплой, rollback, `--no-restart`, сбой на каждом шаге, `state-predeploy` |
+| `state deploy` | успех, старый формат, нет `current.txt`, несовпадение модов, сбой распаковки, rollback, `--no-restart` |
 | `staff set` | 0..3, неверный ранг, имя с `/`, отсутствующий игрок, `.bak` |
 | `config get/set` | типы, диапазоны, комментарии, read-only, `.bak`, `config_invalid` |
-| `backup loop` | тик, lock busy, SIGTERM, интервал < 1m |
 
 ## 5. Панель
 
 - логин: верный/неверный пароль, 5 неудач/15 минут, 429, cookie-флаги;
+- Argon2id: `memory=32768`, `threads=1`, `time=3`, verify;
 - pre-session CSRF на форме логина и CSRF на каждой админской форме;
 - сессия: idle 12 ч, absolute 7 дней, рестарт панели = разлогин;
 - публичные страницы: `/`, `/backups`, `/api/v1/server`,
   `/api/v1/mods/current`, `/api/v1/mods/current/archive`, `/healthz`;
+- пагинация: `limit`/`before`, `next_before`, 2016 записей, группировка
+  день/неделя/месяц;
 - скачивание: `..`, абсолютный путь, не `.tar.gz`, отсутствующий файл,
   `Content-Disposition`, `ETag`/304;
-- загрузка: `MaxBytesReader`, 2 GiB, UUID-имя, вызов fake ops, очистка upload;
+- загрузка: `MaxBytesReader` 512 MiB, `MultipartReader`, UUID-имя, вызов fake
+  ops, очистка upload;
 - ошибки ops: каждый код из таблицы `03-contracts.md` §3 → HTTP и текст;
 - конфиги: валидация, повторное чтение, `config_invalid` рядом с полем;
 - staff: чтение `players/*.json`, вызов `ops staff set`, баннер рестарта;
 - шаблоны: нет неэкранированного пользовательского ввода, нет stack trace;
-- заголовки безопасности на всех ответах.
+- заголовки безопасности на всех ответах;
+- `service_unavailable` не превращается в «running»;
+- неактивный backup timer показывает предупреждение.
 
 Панель не тестирует tar и CRC: это тесты ops. Она тестирует, что правильно
 вызывает ops и правильно показывает результат.
@@ -151,64 +203,92 @@ testdata/
 - проверка ESM, регистр имён, отсутствующий файл;
 - `openmw.cfg`: профиль → активный конфиг, сохранение пользовательских строк,
   `.bak`, переключение серверов;
-- моды: `no_mods`, совпадение sha256, скачивание, обрыв, битый архив,
-  path traversal, отсутствующий плагин;
+- моды: `no_mods` как ошибка установки, совпадение sha256, скачивание, обрыв,
+  битый архив, path traversal, отсутствующий плагин;
+- имена архивов: клиент работает только с `mods-*`/`mods-init-*` из API;
 - шрифты: успех, 404, битый файл, fallback без шрифтов;
 - локализация: overlay, `encoding=win1251`, отказ от установки в Morrowind;
 - запуск: Windows env, Linux Proton env, отсутствие Proton;
 - TLS: self-signed → понятная ошибка, без отключения проверки;
 - GUI не тестируется в CI; `app` тестируется без Fyne.
 
-## 7. Parity со старыми скриптами
-
-| Что сравниваем | Критерий |
-|---|---|
-| `package.sh` vs `internal/archive` | одинаковый набор файлов, `requiredDataFiles.json`, CRC, имена |
-| `package_state.sh` vs `backups create` | одинаковые каталоги и метаданные после распаковки |
-| `deploy_mods.sh` vs `mods deploy` | одинаковый итоговый `mods/`, `customScripts.lua`, `current.txt` |
-| `deploy_state.sh` vs `state deploy` | одинаковый итоговый state; отличие — staging и отсутствие удаления до успеха |
-| `set-staff-rank.sh` vs `staff set` | одинаковый `settings.staffRank`, `.bak` |
-
-Parity-тест сравнивает **содержимое**, а не байты tar: порядок и заголовки
-могут отличаться. Различия в поведении должны быть перечислены в
-`03-contracts.md` §9 и в тесте.
-
-## 8. Failure injection
+## 7. Failure injection
 
 - **Нет места.** Fake writer возвращает `ENOSPC`; ops — `no_space`, exit 5,
   старые файлы целы.
-- **Docker недоступен.** Runner возвращает ошибку; `status` — exit 6, панель —
-  503, без «running».
+- **systemd недоступен.** Runner возвращает ошибку; `status` — exit 6, панель —
+  503 `service_unavailable`, без «running».
 - **Битый gzip/tar.** `archive_invalid`, staging очищен, текущее состояние не
   тронуто.
 - **Обрыв на середине.** Тест отменяет context; проверяем `.part`, `.old-*`,
   `current.txt` и `doctor`.
 - **Lock.** Два процесса; второй — `locked`.
 - **Падение панели.** Сессии в памяти, после рестарта вход заново; публичные
-  бэкапы и ops работают.
-- **Падение backup-контейнера.** Панель показывает предупреждение; ручной
-  `backups create` работает.
+  бэкапы, игра и таймер работают.
+- **Падение backup-сервиса.** Панель показывает предупреждение; ручной
+  `backups create` работает; следующий тик таймера проходит.
+- **Пересечение timer-запусков.** Предыдущий `backups create` ещё держит lock;
+  второй запуск не стартует или получает `locked`, но не плодит архивы.
+- **Бюджет превышен.** Retention не удаляет месячные; JSON содержит `warnings`,
+  `doctor` — `warn`.
+- **Разные FS.** Upload и `backups/` на разных mount: `doctor` — `error`,
+  `mods import` — `invalid_argument`, файлы не теряются.
+
+## 8. Ресурсные тесты
+
+### 8.1. Память
+
+- `tes3mp-easy-ops` запускается с `GOMEMLIMIT=64MiB`, `GOMAXPROCS=1` и
+  `MemoryMax=64M` (cgroup v2 через `systemd-run --scope -p MemoryMax=64M`, если
+  доступен на тестовой машине).
+- На вход подаётся потоковый upload 512 MiB (сжатый tar с повторяющимся
+  содержимым); тест читает пиковый RSS из `/proc/self/status` (`VmHWM`) и
+  проверяет, что он не масштабируется с размером файла.
+- `ulimit -v` для Go-тестов не используем: среда выполнения резервирует
+  виртуальное адресное пространство, и лимит ломает не память, а запуск.
+  Ограничение — cgroup `MemoryMax`, `GOMEMLIMIT` и измерение RSS.
+- `backups create` на state 500 MiB не должен держать state в памяти: только
+  буфер 32–64 KiB на файл.
+
+### 8.2. CPU и I/O
+
+- `GOMAXPROCS=1` не создаёт больше одного P; тест не проверяет скорость, а
+  проверяет, что нет `GOMAXPROCS` из окружения хоста.
+- Backup-сервис имеет `Nice=19` и `IOSchedulingClass=idle`; в unit-тесте
+  проверяется сгенерированный unit, в E2E — что бэкап не вытесняет игру по
+  CPU на 1 vCPU.
 
 ## 9. Acceptance
 
-Сценарии с чистой VM:
+Сценарии с чистой VM **Debian 12 или Ubuntu 24.04, 1 vCPU, 512–640 MiB RAM,
+512 MiB swap, 7 GiB NVMe**:
 
-1. **Установка.** Docker + compose + `.env` → панель по HTTPS → первый пароль
-   → смена пароля → `doctor` без ошибок.
-2. **Моды.** Загрузить архив → deploy → сервер перезапустился → клиент видит
-   `mods_sha256` и скачивает архив.
-3. **State.** Создать бэкап → изменить мир → восстановить → состояние
-   вернулось, сервер запущен.
-4. **Публичные бэкапы.** Скачать mods/state без логина; список не раскрывает
-   пути и логи.
-5. **TLS.** Сертификат выпущен по IP; HTTP редиректит на HTTPS; после
+1. **Установка.** `bootstrap.sh` → пользователи, sudoers, rootctl, systemd,
+   journald, sysctl → панель по HTTPS → первый пароль → смена пароля →
+   `doctor` без ошибок.
+2. **Автобэкап.** Таймер активен; через 5–10 минут появляется `state-*`;
+   `backups list` показывает его; при остановленной игре `--if-running` даёт
+   `skipped`.
+3. **Моды.** Загрузить архив → deploy → сервер перезапустился (если был
+   запущен) → клиент видит `mods_sha256` и скачивает `mods-*`.
+4. **State.** Создать бэкап → изменить мир → восстановить → состояние
+   вернулось, сервер запущен, `state-predeploy-*` существует.
+5. **Публичные бэкапы.** Скачать mods/state без логина; список не раскрывает
+   пути и логи; пагинация работает на длинной истории.
+6. **Retention.** Синтетическая история на 5 лет: месячные живы, дневные и
+   недельные прорежены, бюджет не превышен.
+7. **TLS.** Сертификат выпущен по IP; HTTP редиректит на HTTPS; после
    перевыпуска клиент не ругается.
-6. **Отказ.** Остановить Docker → панель показывает 503; поднять → статус
-   возвращается.
-7. **Клиент.** Windows 10/11: бинарник + Morrowind → мастер → игра. Linux:
-   Proton найден автоматически.
-8. **Без модов.** `no_mods` → клиент запускает vanilla-сервер, без ложной
-   ошибки.
+8. **Отказ systemd.** Fake/недоступный systemd или unit → панель показывает 503
+   `service_unavailable`; после восстановления статус возвращается.
+9. **Мало места.** Заполнить диск до порога → `doctor` `error`, мутации
+   возвращают `no_space`, данные не теряются.
+10. **Клиент.** Windows 10/11: бинарник + Morrowind → мастер → игра. Linux:
+    Proton найден автоматически.
+11. **Битый `current.txt`.** API отдаёт `404 no_mods` → клиент показывает
+    ошибку установки и не запускает vanilla-сервер молча.
+12. **Долгая история.** 2016 state-архивов: панель листает страницами, не
+    строит одну гигантскую HTML-таблицу, память панели не растёт.
 
 Критерий приёмки — не только «получилось», но и понятное сообщение при
 неудаче, путь к логу и отсутствие потери данных.
@@ -227,11 +307,14 @@ GOOS=linux   GOARCH=amd64 go build ./cmd/tes3mp-easy-ops
 GOOS=linux   GOARCH=amd64 go build ./cmd/tes3mp-easy-panel
 ```
 
-- Integration с Docker — nightly или на merge в `v2`, не на каждый PR.
+- Integration и resource-тесты используют fake systemd/journalctl на каждом PR.
+- Реальный systemd E2E — nightly на VM Debian 12/Ubuntu 24.04 с 1 vCPU /
+  512 MiB / 7 GiB.
 - Fyne GUI не запускается в CI; собирается бинарник.
 - Contract-тесты ops запускают собранный бинарник.
-- `test/docs` проверяет, что ссылки в `docs/v2/` не битые и что схемы не
-  дублируются (например, нет второго блока `/api/v1/server`).
+- `test/docs` проверяет, что ссылки в `docs/v2/` не битые, что схемы не
+  дублируются и что в документации нет старых backend-названий и запрещённых
+  полей.
 
 ## 11. Definition of Done
 
@@ -241,6 +324,7 @@ GOOS=linux   GOARCH=amd64 go build ./cmd/tes3mp-easy-panel
 - contract-тест ops проверяет JSON и exit code;
 - panel-тест проверяет HTTP-код и пользовательское сообщение;
 - client-тест проверяет поведение без сети/с битым ответом;
-- parity-тест обновлён, если меняется формат архива;
+- retention-тест обновлён, если меняется политика или бюджеты;
+- resource-тест подтверждает, что память не растёт с размером архива;
 - `03-contracts.md` обновлён первым;
 - `07-testing.md` обновлён, если появился новый класс проверок.
