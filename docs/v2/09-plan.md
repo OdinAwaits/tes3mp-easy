@@ -34,7 +34,9 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
   `.gitignore` и команды разработки.
 - C02 закрыт: добавлены JSON-envelope, коды выхода 0–10, глобальные флаги,
   `--help` и тесты контракта процесса.
-- Функциональных ops-команд пока нет. Следующая задача — C03.
+- C03 закрыт: добавлены `internal/pathguard` и потоковый `internal/archive`
+  с лимитами и защитой от небезопасных записей.
+- Функциональных ops-команд пока нет. Следующая задача — C04.
 
 Схема веток на момент старта:
 
@@ -67,8 +69,8 @@ read-контрактов, клиент — после появления пуб
 |---|---|---|---|
 | C01 | done | Каркас Go и CI | `go.mod`, `cmd/tes3mp-easy-ops`, CI |
 | C02 | done | JSON-envelope, exit codes, флаги | стабильный машинный интерфейс |
-| C03 | next | Безопасный tar.gz reader | потоковое чтение и pathguard |
-| C04 | planned | Валидация mods-архивов | `requiredDataFiles.json`, plugins/scripts |
+| C03 | done | Безопасный tar.gz reader | потоковое чтение и pathguard |
+| C04 | next | Валидация mods-архивов | `requiredDataFiles.json`, plugins/scripts |
 | C05 | planned | Валидация state и `current.txt` | вложенная структура, sha256 |
 | C06 | planned | Retention и имена архивов | buckets, protected, бюджеты |
 | C07 | planned | Contract harness и docs test | проверка реального бинарника |
@@ -101,7 +103,13 @@ Scope:
 
 Готово, когда реальный бинарник проходит contract-тест на JSON и коды выхода.
 
-### C03 — безопасный tar.gz reader
+### C03 — безопасный tar.gz reader (done)
+
+Сделано: `internal/pathguard` проверяет базовые имена и пути; `internal/archive`
+потоково читает tar.gz, принимает только regular file/directory, отклоняет
+symlink/hardlink/device/FIFO, дубликаты, регистровые коллизии и хвостовые данные.
+Лимиты 512 MiB / 1 GiB / 50 000 записей настраиваются через `Limits` для тестов.
+Пустой tar читается как архив с нулём записей; layout проверяют C04/C05.
 
 Scope:
 
