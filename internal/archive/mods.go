@@ -105,37 +105,37 @@ func ValidateMods(r *Reader) (ModsInfo, error) {
 				continue
 			case strings.HasPrefix(entry.Name, "plugins/"),
 				strings.HasPrefix(entry.Name, "scripts/"):
-				return ModsInfo{}, modsInvalidf(
+				return ModsInfo{}, archiveInvalidf(
 					"%q: nested directories are not allowed", entry.Name)
 			default:
-				return ModsInfo{}, modsInvalidf(
+				return ModsInfo{}, archiveInvalidf(
 					"%q: unexpected top-level directory", entry.Name)
 			}
 		case TypeFile:
 			// Continue below.
 		default:
-			return ModsInfo{}, modsInvalidf("%q: unsupported entry type", entry.Name)
+			return ModsInfo{}, archiveInvalidf("%q: unsupported entry type", entry.Name)
 		}
 
 		top, rest, hasDir := strings.Cut(entry.Name, "/")
 		if !hasDir {
 			if entry.Name == requiredDataFilesName {
-				return ModsInfo{}, modsInvalidf(
+				return ModsInfo{}, archiveInvalidf(
 					"%s must be inside plugins/, not at archive root", requiredDataFilesName)
 			}
-			return ModsInfo{}, modsInvalidf(
+			return ModsInfo{}, archiveInvalidf(
 				"%q: unexpected top-level file", entry.Name)
 		}
 
 		switch top {
 		case "plugins":
 			if strings.Contains(rest, "/") {
-				return ModsInfo{}, modsInvalidf(
+				return ModsInfo{}, archiveInvalidf(
 					"%q: nested directories are not allowed", entry.Name)
 			}
 			if rest == requiredDataFilesName {
 				if hasJSON {
-					return ModsInfo{}, modsInvalidf(
+					return ModsInfo{}, archiveInvalidf(
 						"%s: duplicate metadata file", requiredDataFilesName)
 				}
 				data, err := readRequiredDataFiles(r, entry.Size)
@@ -154,7 +154,7 @@ func ValidateMods(r *Reader) (ModsInfo, error) {
 				return ModsInfo{}, fmt.Errorf("plugins/%s: %w", rest, err)
 			}
 			if isBaseESM(rest) {
-				return ModsInfo{}, modsInvalidf(
+				return ModsInfo{}, archiveInvalidf(
 					"plugins/%s: base ESM must not be archived", rest)
 			}
 
@@ -167,7 +167,7 @@ func ValidateMods(r *Reader) (ModsInfo, error) {
 
 		case "scripts":
 			if strings.Contains(rest, "/") {
-				return ModsInfo{}, modsInvalidf(
+				return ModsInfo{}, archiveInvalidf(
 					"%q: nested directories are not allowed", entry.Name)
 			}
 			if err := validateScriptFilename(rest); err != nil {
@@ -176,13 +176,13 @@ func ValidateMods(r *Reader) (ModsInfo, error) {
 			scriptCount++
 
 		default:
-			return ModsInfo{}, modsInvalidf(
+			return ModsInfo{}, archiveInvalidf(
 				"%q: unexpected top-level entry", entry.Name)
 		}
 	}
 
 	if !hasJSON {
-		return ModsInfo{}, modsInvalidf(
+		return ModsInfo{}, archiveInvalidf(
 			"%s is missing from plugins/", requiredDataFilesName)
 	}
 	if err := validateModsRequirements(requirements, pluginNames, pluginCRCs); err != nil {
@@ -199,10 +199,10 @@ func ParseRequiredDataFiles(data []byte) ([]RequiredFile, error) {
 
 	tok, err := dec.Token()
 	if err != nil {
-		return nil, modsInvalidf("invalid JSON: %v", err)
+		return nil, archiveInvalidf("invalid JSON: %v", err)
 	}
 	if delim, ok := tok.(json.Delim); !ok || delim != '[' {
-		return nil, modsInvalidf("top-level value must be an array")
+		return nil, archiveInvalidf("top-level value must be an array")
 	}
 
 	var (
@@ -212,12 +212,12 @@ func ParseRequiredDataFiles(data []byte) ([]RequiredFile, error) {
 	)
 	for dec.More() {
 		if len(files) >= MaxEntries {
-			return nil, modsInvalidf("too many entries (limit %d)", MaxEntries)
+			return nil, archiveInvalidf("too many entries (limit %d)", MaxEntries)
 		}
 
 		var raw json.RawMessage
 		if err := dec.Decode(&raw); err != nil {
-			return nil, modsInvalidf("invalid JSON: %v", err)
+			return nil, archiveInvalidf("invalid JSON: %v", err)
 		}
 		obj, err := parseRequiredObject(raw)
 		if err != nil {
@@ -225,23 +225,23 @@ func ParseRequiredDataFiles(data []byte) ([]RequiredFile, error) {
 		}
 
 		if err := pathguard.Base(obj.Name); err != nil {
-			return nil, modsInvalidf(
+			return nil, archiveInvalidf(
 				"invalid plugin name %q: %v", obj.Name, err)
 		}
 		if err := validatePluginExtension(obj.Name); err != nil {
-			return nil, modsInvalidf(
+			return nil, archiveInvalidf(
 				"invalid plugin name %q: %v", obj.Name, err)
 		}
 
 		key := strings.ToLower(obj.Name)
 		if prev, ok := seen[key]; ok {
-			return nil, modsInvalidf(
+			return nil, archiveInvalidf(
 				"duplicate plugin name %q (also %q)", obj.Name, prev)
 		}
 
 		if isBaseESM(obj.Name) {
 			if seenMods {
-				return nil, modsInvalidf(
+				return nil, archiveInvalidf(
 					"base ESM entries must come before mods")
 			}
 		} else {
@@ -250,7 +250,7 @@ func ParseRequiredDataFiles(data []byte) ([]RequiredFile, error) {
 
 		crcs, err := parseCRCs(obj.CRCs)
 		if err != nil {
-			return nil, modsInvalidf("%s: %v", obj.Name, err)
+			return nil, archiveInvalidf("%s: %v", obj.Name, err)
 		}
 
 		seen[key] = obj.Name
@@ -259,13 +259,13 @@ func ParseRequiredDataFiles(data []byte) ([]RequiredFile, error) {
 
 	tok, err = dec.Token()
 	if err != nil {
-		return nil, modsInvalidf("invalid JSON: %v", err)
+		return nil, archiveInvalidf("invalid JSON: %v", err)
 	}
 	if delim, ok := tok.(json.Delim); !ok || delim != ']' {
-		return nil, modsInvalidf("top-level array is not closed")
+		return nil, archiveInvalidf("top-level array is not closed")
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, modsInvalidf("trailing data after JSON array")
+		return nil, archiveInvalidf("trailing data after JSON array")
 	}
 
 	return files, nil
@@ -281,32 +281,32 @@ func parseRequiredObject(data []byte) (requiredObject, error) {
 
 	tok, err := dec.Token()
 	if err != nil {
-		return requiredObject{}, modsInvalidf("invalid entry: %v", err)
+		return requiredObject{}, archiveInvalidf("invalid entry: %v", err)
 	}
 	if delim, ok := tok.(json.Delim); !ok || delim != '{' {
-		return requiredObject{}, modsInvalidf("entry must be an object")
+		return requiredObject{}, archiveInvalidf("entry must be an object")
 	}
 	if !dec.More() {
-		return requiredObject{}, modsInvalidf(
+		return requiredObject{}, archiveInvalidf(
 			"entry must contain exactly one key")
 	}
 
 	tok, err = dec.Token()
 	if err != nil {
-		return requiredObject{}, modsInvalidf("invalid entry: %v", err)
+		return requiredObject{}, archiveInvalidf("invalid entry: %v", err)
 	}
 	name, ok := tok.(string)
 	if !ok || name == "" {
-		return requiredObject{}, modsInvalidf(
+		return requiredObject{}, archiveInvalidf(
 			"entry key must be a non-empty string")
 	}
 
 	tok, err = dec.Token()
 	if err != nil {
-		return requiredObject{}, modsInvalidf("invalid entry: %v", err)
+		return requiredObject{}, archiveInvalidf("invalid entry: %v", err)
 	}
 	if delim, ok := tok.(json.Delim); !ok || delim != '[' {
-		return requiredObject{}, modsInvalidf(
+		return requiredObject{}, archiveInvalidf(
 			"%s: value must be an array of CRC strings", name)
 	}
 
@@ -314,7 +314,7 @@ func parseRequiredObject(data []byte) (requiredObject, error) {
 	for dec.More() {
 		var crc string
 		if err := dec.Decode(&crc); err != nil {
-			return requiredObject{}, modsInvalidf(
+			return requiredObject{}, archiveInvalidf(
 				"%s: CRC value must be a string", name)
 		}
 		crcs = append(crcs, crc)
@@ -322,26 +322,26 @@ func parseRequiredObject(data []byte) (requiredObject, error) {
 
 	tok, err = dec.Token()
 	if err != nil {
-		return requiredObject{}, modsInvalidf("invalid entry: %v", err)
+		return requiredObject{}, archiveInvalidf("invalid entry: %v", err)
 	}
 	if delim, ok := tok.(json.Delim); !ok || delim != ']' {
-		return requiredObject{}, modsInvalidf(
+		return requiredObject{}, archiveInvalidf(
 			"%s: CRC array is not closed", name)
 	}
 	if dec.More() {
-		return requiredObject{}, modsInvalidf(
+		return requiredObject{}, archiveInvalidf(
 			"entry must contain exactly one key")
 	}
 
 	tok, err = dec.Token()
 	if err != nil {
-		return requiredObject{}, modsInvalidf("invalid entry: %v", err)
+		return requiredObject{}, archiveInvalidf("invalid entry: %v", err)
 	}
 	if delim, ok := tok.(json.Delim); !ok || delim != '}' {
-		return requiredObject{}, modsInvalidf("entry object is not closed")
+		return requiredObject{}, archiveInvalidf("entry object is not closed")
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return requiredObject{}, modsInvalidf("trailing data in entry")
+		return requiredObject{}, archiveInvalidf("trailing data in entry")
 	}
 
 	return requiredObject{Name: name, CRCs: crcs}, nil
@@ -388,12 +388,12 @@ func validateModsRequirements(
 		}
 		actual, ok := pluginCRCs[file.Name]
 		if !ok {
-			return modsInvalidf(
+			return archiveInvalidf(
 				"%s: plugin %q is missing from plugins/",
 				requiredDataFilesName, file.Name)
 		}
 		if len(file.CRCs) > 0 && !containsCRC(file.CRCs, actual) {
-			return modsInvalidf(
+			return archiveInvalidf(
 				"%s: CRC mismatch for %s (expected %s, got 0x%08X)",
 				requiredDataFilesName, file.Name,
 				formatCRCs(file.CRCs), actual)
@@ -402,7 +402,7 @@ func validateModsRequirements(
 
 	for _, name := range pluginNames {
 		if _, ok := required[name]; !ok {
-			return modsInvalidf(
+			return archiveInvalidf(
 				"plugins/%s: not listed in %s", name, requiredDataFilesName)
 		}
 	}
@@ -427,23 +427,25 @@ func formatCRCs(crcs []uint32) string {
 }
 
 func readRequiredDataFiles(r *Reader, size int64) ([]byte, error) {
-	if size > MaxRequiredDataFilesSize {
-		return nil, modsInvalidf(
-			"%s: file exceeds %d bytes", requiredDataFilesName,
-			MaxRequiredDataFilesSize)
+	return readLimitedEntry(r, requiredDataFilesName, size, MaxRequiredDataFilesSize)
+}
+
+// readLimitedEntry reads one metadata entry, enforcing the limit both on the
+// tar header size and on the actual stream. Callers must invoke it directly
+// after Next returned the matching regular file.
+func readLimitedEntry(r *Reader, name string, size, limit int64) ([]byte, error) {
+	if size > limit {
+		return nil, archiveInvalidf(
+			"%s: file exceeds %d bytes", name, limit)
 	}
 
-	data, err := io.ReadAll(&io.LimitedReader{
-		R: r,
-		N: MaxRequiredDataFilesSize + 1,
-	})
+	data, err := io.ReadAll(&io.LimitedReader{R: r, N: limit + 1})
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > MaxRequiredDataFilesSize {
-		return nil, modsInvalidf(
-			"%s: file exceeds %d bytes", requiredDataFilesName,
-			MaxRequiredDataFilesSize)
+	if int64(len(data)) > limit {
+		return nil, archiveInvalidf(
+			"%s: file exceeds %d bytes", name, limit)
 	}
 	return data, nil
 }
@@ -451,18 +453,18 @@ func readRequiredDataFiles(r *Reader, size int64) ([]byte, error) {
 func validatePluginExtension(name string) error {
 	ext := path.Ext(name)
 	if _, ok := pluginExtensions[strings.ToLower(ext)]; !ok || len(name) <= len(ext) {
-		return modsInvalidf("unsupported plugin extension in %q", name)
+		return archiveInvalidf("unsupported plugin extension in %q", name)
 	}
 	return nil
 }
 
 func validateScriptFilename(name string) error {
 	if path.Ext(name) != ".lua" {
-		return modsInvalidf("script %q must have the .lua extension", name)
+		return archiveInvalidf("script %q must have the .lua extension", name)
 	}
 	stem := strings.TrimSuffix(name, ".lua")
 	if stem == "" {
-		return modsInvalidf("script name must not be empty")
+		return archiveInvalidf("script name must not be empty")
 	}
 	for i := 0; i < len(stem); i++ {
 		c := stem[i]
@@ -470,7 +472,7 @@ func validateScriptFilename(name string) error {
 			c >= '0' && c <= '9' || c == '_' || c == '-' {
 			continue
 		}
-		return modsInvalidf(
+		return archiveInvalidf(
 			"script name %q may contain only letters, digits, '_' and '-'", stem)
 	}
 	return nil
@@ -481,6 +483,7 @@ func isBaseESM(name string) bool {
 	return ok
 }
 
-func modsInvalidf(format string, args ...any) error {
+// archiveInvalidf wraps ErrInvalid for every archive layout or metadata error.
+func archiveInvalidf(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
 }
