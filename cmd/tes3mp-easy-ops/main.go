@@ -1,7 +1,8 @@
 // Command tes3mp-easy-ops is the administrative CLI for tes3mp-easy.
 //
-// This is the v2 scaffold: only help and argument validation are implemented.
-// Commands and the JSON envelope arrive in later steps from docs/v2/03-contracts.md.
+// This step implements the process contract: global flags, the JSON envelope,
+// exit codes and argument validation. Command bodies arrive in later steps from
+// docs/v2/04-ops.md.
 package main
 
 import (
@@ -9,41 +10,271 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/Saagilat/tes3mp-easy/internal/contract"
+	"github.com/Saagilat/tes3mp-easy/internal/ops"
+)
+
+const (
+	defaultRoot           = "/tes3mp-easy"
+	defaultLockTimeout    = 30 * time.Second
+	defaultCommandTimeout = 2 * time.Minute
 )
 
 const usage = `Usage: tes3mp-easy-ops [global flags] <command> [command flags]
 
-Global flags and commands will be added with the ops contract.
-For now the binary only validates invocation; see docs/v2/04-ops.md for the
-target command set.
+Global flags:
+  --root <path>              data root (default /tes3mp-easy)
+  --json                     write exactly one JSON object to stdout
+  --dry-run                  validate and print the plan, change nothing
+  --lock-timeout <duration>  wait for the ops lock (default 30s)
+  --command-timeout <duration>
+                             timeout for one systemctl/journalctl call (default 2m)
+
+Commands:
+  doctor, status, start, stop, restart, logs, backups, mods, state, staff,
+  config.
+
+Commands are not implemented yet; they return internal until later steps.
+See docs/v2/04-ops.md for the target command set.
 `
+
+// knownCommands distinguishes a known but unfinished command from a typo.
+var knownCommands = map[string]struct{}{
+	"doctor":  {},
+	"status":  {},
+	"start":   {},
+	"stop":    {},
+	"restart": {},
+	"logs":    {},
+	"backups": {},
+	"mods":    {},
+	"state":   {},
+	"staff":   {},
+	"config":  {},
+}
+
+type options struct {
+	root           string
+	json           bool
+	dryRun         bool
+	lockTimeout    time.Duration
+	commandTimeout time.Duration
+}
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 1 && (args[0] == "-h" || args[0] == "--help" || args[0] == "-help") {
+	opts, rest, help, parseErr := parseGlobal(args)
+	if help {
 		fmt.Fprint(stdout, usage)
 		return 0
 	}
+	if parseErr != nil {
+		return writeError(stdout, stderr, opts.json, parseErr)
+	}
+
+	if len(rest) == 0 {
+		return writeError(stdout, stderr, opts.json,
+			ops.NewError(ops.ExitInvalidArgument, "command is required"))
+	}
+
+	command := rest[0]
+	if strings.HasPrefix(command, "-") {
+		return writeError(stdout, stderr, opts.json,
+			ops.NewError(ops.ExitInvalidArgument,
+				fmt.Sprintf("unknown flag %q", command)))
+	}
+	if _, ok := knownCommands[command]; !ok {
+		return writeError(stdout, stderr, opts.json,
+			ops.NewError(ops.ExitInvalidArgument,
+				fmt.Sprintf("unknown command %q", command)))
+	}
+
+	return writeError(stdout, stderr, opts.json,
+		ops.NewError(ops.ExitInternal,
+			fmt.Sprintf("command %q is not implemented yet", command)))
+}
+
+func writeError(stdout, stderr io.Writer, jsonMode bool, err *ops.Error) int {
+	if jsonMode {
+		if writeErr := contract.Write(stdout, err.Envelope()); writeErr != nil {
+			fmt.Fprintf(stderr, "tes3mp-easy-ops: write json: %v\n", writeErr)
+			return int(ops.ExitInternal)
+		}
+		return int(err.Exit)
+	}
+
+	fmt.Fprintf(stderr, "tes3mp-easy-ops: %s\n", err.Message)
+	return int(err.Exit)
+}
+
+func parseGlobal(args []string) (options, []string, bool, *ops.Error) {
+	globalArgs, rest, help := splitGlobal(args)
+	if help {
+		return options{}, rest, true, nil
+	}
+
+	opts := options{
+		root:           defaultRoot,
+		lockTimeout:    defaultLockTimeout,
+		commandTimeout: defaultCommandTimeout,
+	}
 
 	fs := flag.NewFlagSet("tes3mp-easy-ops", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	fs.Usage = func() { fmt.Fprint(stderr, usage) }
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {}
 
-	if err := fs.Parse(args); err != nil {
-		if err == flag.ErrHelp {
-			return 0
+	root := fs.String("root", defaultRoot, "")
+	jsonMode := fs.Bool("json", false, "")
+	dryRun := fs.Bool("dry-run", false, "")
+	lockTimeout := fs.Duration("lock-timeout", defaultLockTimeout, "")
+	commandTimeout := fs.Duration("command-timeout", defaultCommandTimeout, "")
+
+	if err := fs.Parse(globalArgs); err != nil {
+		// The output mode must still be known when parsing fails, otherwise a
+		// malformed --lock-timeout followed by --json would print human text.
+		opts.json = wantsJSON(args)
+		return opts, rest, false, ops.NewError(ops.ExitInvalidArgument, err.Error())
+	}
+
+	opts = options{
+		root:           *root,
+		json:           *jsonMode,
+		dryRun:         *dryRun,
+		lockTimeout:    *lockTimeout,
+		commandTimeout: *commandTimeout,
+	}
+
+	switch {
+	case opts.root == "":
+		return opts, rest, false, ops.NewError(
+			ops.ExitInvalidArgument, "--root must not be empty")
+	case opts.lockTimeout <= 0:
+		return opts, rest, false, ops.NewError(
+			ops.ExitInvalidArgument, "--lock-timeout must be positive")
+	case opts.commandTimeout <= 0:
+		return opts, rest, false, ops.NewError(
+			ops.ExitInvalidArgument, "--command-timeout must be positive")
+	}
+
+	return opts, rest, false, nil
+}
+
+// splitGlobal extracts global flags regardless of whether they appear before
+// or after the command. The remaining arguments stay untouched for the command
+// parser that will be added in later steps.
+func splitGlobal(args []string) (global, rest []string, help bool) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+
+		if arg == "--" {
+			rest = append(rest, args[i+1:]...)
+			break
 		}
-		return 2
+		if isHelpFlag(arg) {
+			help = true
+			continue
+		}
+
+		name, hasValue, ok := flagToken(arg)
+		if !ok {
+			rest = append(rest, arg)
+			continue
+		}
+
+		known, takesValue := globalFlag(name)
+		if !known {
+			rest = append(rest, arg)
+			continue
+		}
+
+		global = append(global, arg)
+		if takesValue && !hasValue && i+1 < len(args) {
+			i++
+			global = append(global, args[i])
+		}
 	}
 
-	if fs.NArg() == 0 {
-		fmt.Fprintln(stderr, "tes3mp-easy-ops: command is required")
-		return 2
+	return global, rest, help
+}
+
+func globalFlag(name string) (known, takesValue bool) {
+	switch name {
+	case "root":
+		return true, true
+	case "lock-timeout", "command-timeout":
+		return true, true
+	case "json", "dry-run":
+		return true, false
+	default:
+		return false, false
+	}
+}
+
+func flagToken(arg string) (name string, hasValue, ok bool) {
+	if arg == "" || arg == "-" || arg == "--" || !strings.HasPrefix(arg, "-") {
+		return "", false, false
 	}
 
-	fmt.Fprintf(stderr, "tes3mp-easy-ops: command %q is not implemented yet\n", fs.Arg(0))
-	return 1
+	trimmed := strings.TrimPrefix(arg, "-")
+	trimmed = strings.TrimPrefix(trimmed, "-")
+	name, _, hasValue = strings.Cut(trimmed, "=")
+	if name == "" {
+		return "", false, false
+	}
+	return name, hasValue, true
+}
+
+func isHelpFlag(arg string) bool {
+	return arg == "-h" || arg == "--help" || arg == "-help"
+}
+
+// wantsJSON is a fallback for parse errors. It mirrors the global flag grammar
+// closely enough to decide where a failed invocation should write its error.
+func wantsJSON(args []string) bool {
+	jsonMode := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			break
+		}
+		if isHelpFlag(arg) {
+			continue
+		}
+
+		name, hasValue, ok := flagToken(arg)
+		if !ok {
+			continue
+		}
+		known, takesValue := globalFlag(name)
+		if !known {
+			continue
+		}
+		if takesValue && !hasValue {
+			i++
+			continue
+		}
+		if name != "json" {
+			continue
+		}
+		if !hasValue {
+			jsonMode = true
+			continue
+		}
+
+		_, value, _ := strings.Cut(arg, "=")
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			jsonMode = true
+			continue
+		}
+		jsonMode = parsed
+	}
+	return jsonMode
 }
