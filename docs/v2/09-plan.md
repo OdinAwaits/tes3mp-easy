@@ -38,7 +38,13 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
   с лимитами и защитой от небезопасных записей.
 - C04 закрыт: добавлена потоковая валидация mods-архивов — layout, JSON, CRC,
   расширения, имена скриптов и запрет базовых ESM.
-- Функциональных ops-команд пока нет. Следующая задача — C05.
+- C05 закрыт: добавлена валидация state, канонического `current.txt` и
+  соответствия текущему mods-архиву в `backups/mods/`.
+- C06 закрыт: добавлены UTC-имена и коллизии, retention-планировщик с
+  buckets, protected-архивами, pressure pruning и бюджетами.
+- C07 закрыт: добавлены contract harness реального бинарника, общие builders
+  mods/state/config/api-фикстур и docs test для ссылок, схем и старых имён.
+- Функциональных ops-команд пока нет. Следующая задача — I01.
 
 Схема веток на момент старта:
 
@@ -73,9 +79,9 @@ read-контрактов, клиент — после появления пуб
 | C02 | done | JSON-envelope, exit codes, флаги | стабильный машинный интерфейс |
 | C03 | done | Безопасный tar.gz reader | потоковое чтение и pathguard |
 | C04 | done | Валидация mods-архивов | `requiredDataFiles.json`, plugins/scripts |
-| C05 | next | Валидация state и `current.txt` | вложенная структура, sha256 |
-| C06 | planned | Retention и имена архивов | buckets, protected, бюджеты |
-| C07 | planned | Contract harness и docs test | проверка реального бинарника |
+| C05 | done | Валидация state и `current.txt` | вложенная структура, sha256 |
+| C06 | done | Retention и имена архивов | buckets, protected, бюджеты |
+| C07 | done | Contract harness и docs test | проверка реального бинарника |
 
 ### C01 — каркас Go и CI (done)
 
@@ -146,7 +152,14 @@ Scope:
 Тесты: `minimal`, `scripts`, `no-crc`, `bad-crc`, `root-json`, `traversal`,
 `symlink`, `duplicate` и граничные имена.
 
-### C05 — state и `current.txt`
+### C05 — state и `current.txt` (done)
+
+Сделано: `internal/archive` получил `ValidateState`/`ValidateStateFile`/
+`ValidateStateReader`, `ParseCurrent`/`ReadCurrentFile` и `VerifyStateMods`.
+Проверяются только `players/` и пять каталогов `world/`, обязательные
+`requiredDataFiles.json` и `current.txt`, канонический LF-формат, UTC-имя
+mods-архива, его наличие в `backups/mods/` и совпадение sha256 с текущим
+`current.txt`. Любое расхождение даёт `ErrInvalid` (`archive_invalid`).
 
 Scope:
 
@@ -161,7 +174,15 @@ Scope:
 Тесты: `empty`, `full`, `flat`, `no-current`, `missing-world`, `old-current`,
 несуществующий mods-архив, чужой current, CRLF и лишние пробелы.
 
-### C06 — retention и имена архивов
+### C06 — retention и имена архивов (done)
+
+Сделано: `internal/archive` получил `ParseArchiveName`/`ValidateArchiveName`,
+`ValidateModsArchiveName`, `ValidateStateArchiveName`, `ArchiveName` и
+`NextArchiveName`/`NextArchiveNameInDir`. `internal/retention` получил `Build`
+(чистый план), `Apply` (удаление и fsync каталога), UTC-buckets, защиту
+newest/current/monthly, pressure pruning и бюджеты с warnings. `Build` не
+меняет диск; `Apply` продолжает после ошибки удаления и возвращает её в
+`Warnings`.
 
 Scope:
 
@@ -175,7 +196,16 @@ Scope:
 Тесты: синтетическая история на 5 лет, одинаковые mtime, коллизии имён,
 защита current, месячные при pressure, бюджеты и пустые каталоги.
 
-### C07 — contract harness, фикстуры и docs test
+### C07 — contract harness, фикстуры и docs test (done)
+
+Сделано: `test/contract/ops` собирает `tes3mp-easy-ops` один раз в `TestMain`
+и запускает реальный бинарник с `--root` на temp-dir; проверяются JSON-envelope,
+exit code, разделение stdout/stderr, help и неизменность заполненного temp-root.
+`test/fixtures` генерирует mods/state/config/api-фикстуры без Morrowind и
+пользовательских данных. `test/docs` проверяет локальные ссылки, валидность
+JSON-примеров, отсутствие дублированных схем, запрещённых полей и старых
+backend-имён; дубли `doctor`/`status` из `04-ops.md` убраны в пользу ссылок на
+`03-contracts.md`.
 
 Scope:
 

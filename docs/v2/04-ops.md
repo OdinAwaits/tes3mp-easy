@@ -147,20 +147,8 @@ internal/
 - нет осиротевших `.part`, `.old-*`, `.staging/` и старых lock-файлов;
 - journald-капы `SystemMaxUse=100M`, `RuntimeMaxUse=32M`.
 
-Результат — список проверок:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "status": "warn",
-    "checks": [
-      {"name": "root", "status": "ok"},
-      {"name": "disk", "status": "warn", "message": "свободно меньше 1 ГиБ"}
-    ]
-  }
-}
-```
+Результат — список проверок в форме `doctor` из `03-contracts.md` §4; схема
+здесь не дублируется.
 
 `doctor` возвращает 0, если нет `error` (предупреждения допустимы), и 10
 (`checks_failed`), если есть хотя бы одна ошибка. Код 2 зарезервирован за
@@ -168,17 +156,7 @@ internal/
 
 ### `status`
 
-```json
-{
-  "ok": true,
-  "data": {
-    "unit": "tes3mp.service",
-    "state": "running",
-    "health": "healthy",
-    "started_at": "2026-10-22T12:00:00Z"
-  }
-}
-```
+Форма `data` — из `03-contracts.md` §4, `status`; схема здесь не дублируется.
 
 Состояния: `running`, `stopped`, `starting`, `unhealthy`, `unknown`.
 
