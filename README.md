@@ -61,10 +61,17 @@ master
 `docs/v2/03-contracts.md`, затем фикстуры и тесты.
 
 ```bash
+bash -n bootstrap.sh
 go test ./...
 go vet ./...
 go build -o /tmp/tes3mp-easy-ops ./cmd/tes3mp-easy-ops
 go run ./cmd/tes3mp-easy-ops --help
+```
+
+Preflight bootstrap можно проверить без изменений на диске:
+
+```bash
+sudo ./bootstrap.sh --check
 ```
 
 ## Благодарности

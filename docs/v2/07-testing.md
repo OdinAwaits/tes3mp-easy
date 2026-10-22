@@ -32,6 +32,7 @@
 | Contract (ops) | запуск бинарника, JSON-envelope, exit codes, stdout/stderr | `test/contract/ops` |
 | Contract (panel) | HTTP-коды, заголовки, cookie, JSON публичного API | `internal/panel/**/*_test.go` |
 | Contract (client) | разбор ответов API, профиль, установка модов | `internal/{app,serverapi,mods}/**/*_test.go` |
+| Infra | preflight `bootstrap.sh` на fake `/proc`, systemd и `df` | `test/infra` |
 | Integration | lifecycle на temp-root, mods/state deploy, retention | `test/integration` |
 | Fault | битый архив, path traversal, lock, нет места, systemd error, rollback | `test/fault` |
 | Resource | 64 MiB cgroup, 512 MiB upload, потоковый tar/gzip | `test/resource` |
@@ -41,6 +42,12 @@
 OS-матрица: Debian 12 и Ubuntu 24.04, x86_64, systemd. Другие ОС — best-effort
 и не входят в acceptance. Docker-вариант не входит в acceptance; его замер —
 в `02-architecture.md` §9.
+
+`test/infra` запускает настоящий `bootstrap.sh` с подменёнными `/etc/os-release`,
+`/proc`, системным каталогом systemd и командами `id`, `uname`, `df`,
+`systemctl`. Проверяются успех, предупреждения, каждый отказ (root, ОС, arch,
+systemd, RAM, swap, диск), границы порогов и то, что повторный запуск не меняет
+ни одного файла.
 
 ## 3. Фикстуры
 
@@ -298,6 +305,7 @@ testdata/
 Обязательные шаги на каждый PR:
 
 ```bash
+bash -n bootstrap.sh
 go test ./...
 go test -race ./...
 go vet ./...

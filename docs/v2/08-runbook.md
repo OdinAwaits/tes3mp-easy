@@ -56,6 +56,12 @@ timedatectl
    sudo ./bootstrap.sh
    ```
 
+   Проверить хост без изменений можно отдельно:
+
+   ```bash
+   sudo ./bootstrap.sh --check
+   ```
+
 Bootstrap:
 
 - проверяет Debian/Ubuntu, x86_64, systemd, RAM/swap/диск;
