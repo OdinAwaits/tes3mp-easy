@@ -31,3 +31,10 @@ example-client/
 
 # Migration planning (private until published)
 migration/
+
+# Go build and test artifacts
+/bin/
+/dist/
+*.test
+coverage.out
+*.coverprofile

@@ -71,6 +71,7 @@ master
     ├── v2-infra
     ├── v2-ops
     │   ├── v2-ops-contracts
+    │   ├── v2-ops-read
     │   └── v2-ops-mutations
     ├── v2-panel
     │   └── v2-panel-auth
@@ -90,6 +91,8 @@ master
 - Задача живёт 1–3 дня, затем PR в подсистему, подсистема — в `v2`.
 - Milestone-теги: `v2-m0-docs`, `v2-m1-infra`, `v2-m2-ops-read`,
   `v2-m3-ops-write`, `v2-m4-panel`, `v2-m5-client`, `v2-m6-packaging`.
+- Контракты и фикстуры — foundation-шаг без отдельного milestone-тега:
+  результат вливается в `v2` до `v2-m1-infra`.
 
 Порядок из `02-architecture.md` §10:
 
