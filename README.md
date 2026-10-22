@@ -31,6 +31,7 @@
 | [06-client](docs/v2/06-client.md) | мастер, моды, шрифты, запуск |
 | [07-testing](docs/v2/07-testing.md) | тесты, фикстуры, retention, acceptance |
 | [08-runbook](docs/v2/08-runbook.md) | установка, восстановление, аварии |
+| [09-plan](docs/v2/09-plan.md) | декомпозиция, статусы задач, acceptance |
 
 `docs/reference/` — справки по TES3MP 0.8.1, они не описывают нашу
 архитектуру. Старые гайды удалены; актуальна только документация v2.
