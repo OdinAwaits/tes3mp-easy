@@ -386,15 +386,27 @@ Contract-тесты реального бинарника проверяют т�
 
 ## 7. Failure injection
 
-- **Нет места.** Fake writer возвращает `ENOSPC`; ops — `no_space`, exit 5,
-  старые файлы целы.
-- **systemd недоступен.** Runner возвращает ошибку; `status` — exit 6, панель —
-  503 `service_unavailable`, без «running».
-- **Битый gzip/tar.** `archive_invalid`, staging очищен, текущее состояние не
-  тронуто.
-- **Обрыв на середине.** Тест отменяет context; проверяем `.part`, `.old-*`,
-  `current.txt` и `doctor`.
-- **Lock.** Два процесса; второй — `locked`.
+- **Нет места.** Fake writer возвращает `ENOSPC`; `TestWriteStatePropagatesNoSpace`
+  проверяет проброс через `WriteState`, CLI-тесты — `no_space`, exit 5 и
+  сохранность старых файлов.
+- **systemd недоступен.** Runner возвращает ошибку; `test/fault` проверяет
+  `status` на реальном бинарнике с пустым `PATH` — exit 6
+  `service_unavailable`, без `data` и без «running»; панель позже должна
+  отдавать 503.
+- **Битый gzip/tar.** `test/fault` подаёт не-gzip upload: `archive_invalid`,
+  upload остаётся побайтно на месте, `backups/mods` пуст. Contract-тесты
+  дополнительно проверяют staging и неизменность `current.txt`.
+- **Лимиты архива.** Unit-тесты reader проверяют compressed, uncompressed и
+  entries caps; `TestExtractModsEnforcesUncompressedLimit` подтверждает, что
+  `ExtractMods` завершается с `ErrLimit` на маленьком тестовом лимите.
+- **Обрыв на середине.** `test/fault` убивает `backups create` через SIGKILL,
+  когда `*.part` уже вырос: финального архива нет, `.part` остаётся, sha256
+  живого state не меняется, lock освобождён. Повторный запуск создаёт валидный
+  архив; `.part` под старым именем остаётся для `doctor`, если новое имя
+  отличается.
+- **Lock.** `test/fault` держит exclusive `flock` и проверяет exit 4 `locked`
+  без создания `backups/`; unit- и contract-тесты покрывают shared lock,
+  timeout и `--dry-run`.
 - **Падение панели.** Сессии в памяти, после рестарта вход заново; публичные
   бэкапы, игра и таймер работают.
 - **Падение backup-сервиса.** Панель показывает предупреждение; ручной
@@ -410,17 +422,34 @@ Contract-тесты реального бинарника проверяют т�
 
 ### 8.1. Память
 
-- `tes3mp-easy-ops` запускается с `GOMEMLIMIT=64MiB`, `GOMAXPROCS=1` и
-  `MemoryMax=64M` (cgroup v2 через `systemd-run --scope -p MemoryMax=64M`, если
-  доступен на тестовой машине).
-- На вход подаётся потоковый upload 512 MiB (сжатый tar с повторяющимся
-  содержимым); тест читает пиковый RSS из `/proc/self/status` (`VmHWM`) и
-  проверяет, что он не масштабируется с размером файла.
+- `test/resource` собирает реальный `tes3mp-easy-ops` и запускает его с
+  `GOMEMLIMIT=64MiB`, `GOMAXPROCS=1`, `TZ=UTC`. `sudo` и `systemd-run` не
+  используются.
+- `MemoryMax=64M` применяется, только если `/sys/fs/cgroup` уже writable:
+  тест создаёт leaf-cgroup напрямую, пишет `memory.max` и `memory.swap.max`,
+  добавляет PID в `cgroup.procs` и после завершения читает `memory.peak`.
+  Если cgroup read-only, тест не пропускается целиком: он логирует отсутствие
+  MemoryMax и проверяет `GOMEMLIMIT` + RSS. В dev-окружении cgroup был
+  read-only, поэтому MemoryMax не применялся.
+- `mods import` получает потоковый tar.gz с несжимаемым плагином 510 MiB
+  (практически предел 512 MiB); `backups create` — state с файлом 500 MiB.
+  Оба входа генерируются потоково, без буфера размером с архив.
+- Пик RSS дочернего процесса читается из `wait4`/`Rusage.Maxrss`, а не из
+  `/proc` теста: `/proc/self/status` показал бы RSS тестового процесса. Для
+  каждой команды сравниваются маленький вход (8 MiB mods, 1 MiB state) и
+  большой. Порог: абсолютный RSS ≤ 128 MiB и рост ≤ 32 MiB относительно
+  маленького входа.
+- Фактический dev-замер: `mods import` — 14.0 MiB против 13.8 MiB;
+  `backups create` — 13.8 MiB против 11.7 MiB. Обе операции укладываются в
+  секунду на 500 MiB.
+- Resource-тесты исключены из `-race` (`//go:build linux && !race`):
+  race-детектор меняет память и время, поэтому его прогон не является
+  ресурсным измерением. Обычный CI-прогон `go test ./...` их выполняет.
 - `ulimit -v` для Go-тестов не используем: среда выполнения резервирует
   виртуальное адресное пространство, и лимит ломает не память, а запуск.
   Ограничение — cgroup `MemoryMax`, `GOMEMLIMIT` и измерение RSS.
-- `backups create` на state 500 MiB не должен держать state в памяти: только
-  буфер 32–64 KiB на файл.
+- `backups create` на state 500 MiB не держит state в памяти: только буфер
+  32–64 KiB на файл.
 
 ### 8.2. CPU и I/O
 
@@ -482,7 +511,10 @@ GOOS=linux   GOARCH=amd64 go build ./cmd/tes3mp-easy-ops
 GOOS=linux   GOARCH=amd64 go build ./cmd/tes3mp-easy-panel
 ```
 
-- Integration и resource-тесты используют fake systemd/journalctl на каждом PR.
+- Integration-тесты используют fake systemd/journalctl на каждом PR.
+- `test/fault` и `test/resource` запускаются в обычном `go test ./...`;
+  resource исключён из `-race`, fault-kill тоже. Cgroup `MemoryMax` —
+  best-effort: без writable cgroup v2 проверка RSS продолжается.
 - Реальный systemd E2E — nightly на VM Debian 12/Ubuntu 24.04 с 1 vCPU /
   512 MiB / 7 GiB.
 - Fyne GUI не запускается в CI; собирается бинарник.

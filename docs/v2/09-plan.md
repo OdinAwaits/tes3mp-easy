@@ -93,7 +93,13 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
 - W06 закрыт: `staff set`, `config get/set` и `internal/gameconfig` с
   whitelist-проверкой типов, сохранением комментариев, `.bak-*` и атомарной
   записью.
-- Следующая задача — W07 (fault/resource-тесты).
+- W07 закрыт: добавлены fault-тесты `test/fault` (битый архив, lock,
+  недоступный systemd, SIGKILL посреди `backups create` с `.part` и
+  восстановлением) и resource-тесты `test/resource` (510 MiB mods и 500 MiB
+  state при `GOMEMLIMIT=64MiB`, пик RSS через `wait4`); ENOSPC проверен fake
+  writer-ом в `WriteState`. Cgroup `MemoryMax` применяется только при writable
+  cgroup v2.
+- Следующая задача — P01 (HTTP-сервер, TLS, конфиг, lifecycle).
 
 Схема веток на момент старта:
 
@@ -595,7 +601,7 @@ lock `lock_linux_test.go`; для не-Linux платформ тест lock пр
 | W04 | done | `mods deploy` | predeploy, остановка, restart |
 | W05 | done | `state deploy` | staging, проверка, rollback |
 | W06 | done | `staff set`, `config get/set` | точечные изменения |
-| W07 | planned | Fault/resource-тесты | отказы, 512 MiB архив, 64 MiB cgroup |
+| W07 | done | Fault/resource-тесты | отказы, 512 MiB архив, 64 MiB cgroup |
 
 Критерий milestone: любая мутация либо завершается успешно, либо оставляет
 сервер и данные в исходном состоянии; `--no-restart` и «если он работал до
@@ -790,6 +796,57 @@ dry-run, symlink, отсутствующие файлы и валидацию ba
 
 Ограничение: таблицы и списки `config.lua` в MVP только показываются в
 `read_only` и не редактируются.
+
+### W07 — Fault/resource-тесты (done)
+
+Сделано: добавлен пакет `test/fault`, который запускает реальный
+`tes3mp-easy-ops` и проверяет отказы на границе процесса:
+
+- битый mods-архив даёт `archive_invalid` (exit 7), upload остаётся побайтно
+  неизменным, а `backups/mods` не получает файлов;
+- удержанный exclusive `flock` даёт `locked` (exit 4), и команда не создаёт
+  `backups/`;
+- недоступный `systemctl` даёт `service_unavailable` (exit 6) без `data` и без
+  состояния «running»;
+- SIGKILL посреди `backups create --type state` оставляет только `*.part`,
+  не оставляет финального архива, не меняет sha256 живого state и освобождает
+  lock. Повторный запуск создаёт валидный state-архив; `.part` убитого запуска
+  под старым именем не мешает и остаётся для `doctor`, если имя уже другое.
+  Тест исключён из `-race`, потому что проверяет именно kill процесса.
+
+ENOSPC проверен без root: fake writer в `TestWriteStatePropagatesNoSpace`
+возвращает `syscall.ENOSPC` на середине потоковой записи, а `WriteState`
+пробрасывает ошибку через `errors.Is`; CLI-тесты уже проверяют её mapping в
+`no_space`/exit 5 и сохранность старых файлов. Лимиты архива (512 MiB сжатого,
+1 GiB распакованного, 50 000 записей) покрыты unit-тестами `internal/archive`;
+`TestExtractModsEnforcesUncompressedLimit` отдельно проверяет, что `ExtractMods`
+останавливается на uncompressed-лимите, а не создаёт staging целиком.
+
+Добавлен пакет `test/resource` (Linux, вне `-race`): собирается реальный
+бинарник и запускается с `GOMEMLIMIT=64MiB`, `GOMAXPROCS=1`, `TZ=UTC`.
+`mods import` получает потоковый tar.gz с плагином 510 MiB (около лимита
+512 MiB), `backups create` — state с файлом 500 MiB. Пик RSS дочернего
+процесса читается из `wait4`/`Rusage.Maxrss`, а не из `/proc` теста. Для
+каждой команды сравниваются маленький и большой входы: RSS не должен
+превышать 128 MiB и не должен вырастать больше чем на 32 MiB относительно
+маленького входа.
+
+Cgroup `MemoryMax=64M` применяется только если `/sys/fs/cgroup` уже writable
+для тестового пользователя: тест создаёт leaf-cgroup напрямую, пишет
+`memory.max`, добавляет PID и проверяет `memory.peak`. Без прав cgroup тест
+не пропускается целиком, а логирует, что остаётся `GOMEMLIMIT` + RSS. В
+dev-окружении cgroup read-only, поэтому MemoryMax не применялся; `sudo` и
+`systemd-run` не используются.
+
+Проверено: `go test ./test/fault ./test/resource -count=1` (510 MiB mods:
+RSS 14.0 MiB против 13.8 MiB на 8 MiB; 500 MiB state: RSS 13.8 MiB против
+11.7 MiB на 1 MiB), полный `go test ./... -count=1`, `go test -race ./...`,
+`go vet ./...`, `go build ./...`.
+
+Ограничение: настоящий ENOSPC на заполненном mount, cgroup `MemoryMax` и
+SIGKILL-тест требуют Linux; cgroup-часть без writable cgroup v2 не
+выполняется. Fault-тесты панели и клиента появятся вместе с этими
+компонентами (P/K).
 
 ## 8. M4 — панель MVP
 

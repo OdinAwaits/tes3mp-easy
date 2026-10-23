@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -271,5 +272,36 @@ func TestWriteStateRejectsUnsafeEntries(t *testing.T) {
 				t.Fatal("WriteState succeeded, want an error")
 			}
 		})
+	}
+}
+
+type failingWriter struct {
+	remaining int
+	err       error
+}
+
+func (w *failingWriter) Write(p []byte) (int, error) {
+	if w.remaining <= 0 {
+		return 0, w.err
+	}
+	if len(p) > w.remaining {
+		n := w.remaining
+		w.remaining = 0
+		return n, w.err
+	}
+	w.remaining -= len(p)
+	return len(p), nil
+}
+
+func TestWriteStatePropagatesNoSpace(t *testing.T) {
+	fixture := newStateWriteFixture(t)
+	custom := filepath.Join(fixture.source.WorldDir, "custom")
+	writeStateFixtureFile(t, custom, "large.bin",
+		string(bytes.Repeat([]byte("x"), 1<<20)))
+
+	writer := &failingWriter{remaining: 256, err: syscall.ENOSPC}
+	_, err := WriteState(writer, fixture.source)
+	if !errors.Is(err, syscall.ENOSPC) {
+		t.Fatalf("WriteState error = %v, want ENOSPC", err)
 	}
 }

@@ -190,3 +190,22 @@ func TestExtractModsReadsStreamingReader(t *testing.T) {
 		t.Fatalf("ValidateModsDir: %v", err)
 	}
 }
+
+func TestExtractModsEnforcesUncompressedLimit(t *testing.T) {
+	data := makeTarGz(t, deployModsEntries("mod data", ""))
+	limits := Limits{
+		CompressedSize:   int64(len(data)),
+		UncompressedSize: 512,
+		Entries:          10,
+	}
+	reader, err := NewReaderWithLimits(bytes.NewReader(data), limits)
+	if err != nil {
+		t.Fatalf("NewReaderWithLimits: %v", err)
+	}
+	defer reader.Close()
+
+	dest := filepath.Join(t.TempDir(), "stage")
+	if err := ExtractMods(reader, dest); !errors.Is(err, ErrLimit) {
+		t.Fatalf("ExtractMods error = %v, want ErrLimit", err)
+	}
+}
