@@ -132,29 +132,46 @@ func TestRunRejectsUnknownCommand(t *testing.T) {
 	})
 }
 
-func TestRunUnimplementedCommand(t *testing.T) {
+func TestRunStartDryRun(t *testing.T) {
+	root := t.TempDir()
+
 	t.Run("human", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 
-		if got := run([]string{"start"}, &stdout, &stderr); got != 1 {
-			t.Fatalf("run(start) = %d, want 1", got)
+		args := []string{"--root", root, "--dry-run", "start"}
+		if got := run(args, &stdout, &stderr); got != 0 {
+			t.Fatalf("run(%v) = %d, want 0; stderr=%s", args, got, stderr.String())
 		}
-		if !strings.Contains(stderr.String(), `command "start" is not implemented`) {
-			t.Fatalf("stderr = %q, want not-implemented error", stderr.String())
+		for _, want := range []string{"unit: tes3mp.service\n", "action: start\n", "result: planned\n"} {
+			if !strings.Contains(stdout.String(), want) {
+				t.Fatalf("stdout = %q, want substring %q", stdout.String(), want)
+			}
 		}
-		if stdout.Len() != 0 {
-			t.Fatalf("stdout = %q, want empty", stdout.String())
+		if stderr.Len() != 0 {
+			t.Fatalf("stderr = %q, want empty", stderr.String())
 		}
 	})
 
 	t.Run("json", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 
-		if got := run([]string{"start", "--json"}, &stdout, &stderr); got != 1 {
-			t.Fatalf("run(start --json) = %d, want 1", got)
+		args := []string{"--root", root, "--dry-run", "--json", "restart"}
+		if got := run(args, &stdout, &stderr); got != 0 {
+			t.Fatalf("run(%v) = %d, want 0; stderr=%s", args, got, stderr.String())
 		}
-		assertJSONError(t, stdout.String(), ops.ExitInternal,
-			`command "start" is not implemented`)
+		envelope := decodeOneEnvelope(t, stdout.String())
+		if !envelope.OK {
+			t.Fatal("envelope.ok = false, want true")
+		}
+		data, err := json.Marshal(envelope.Data)
+		if err != nil {
+			t.Fatalf("marshal data: %v", err)
+		}
+		for _, want := range []string{`"action":"restart"`, `"dry_run":true`, `"unit":"tes3mp.service"`} {
+			if !strings.Contains(string(data), want) {
+				t.Fatalf("data = %s, want substring %q", data, want)
+			}
+		}
 		if stderr.Len() != 0 {
 			t.Fatalf("stderr = %q, want empty in JSON mode", stderr.String())
 		}
@@ -162,6 +179,7 @@ func TestRunUnimplementedCommand(t *testing.T) {
 }
 
 func TestRunAcceptsGlobalFlags(t *testing.T) {
+	root := t.TempDir()
 	tests := []struct {
 		name string
 		args []string
@@ -169,14 +187,14 @@ func TestRunAcceptsGlobalFlags(t *testing.T) {
 		{
 			name: "before command",
 			args: []string{
-				"--root", "/tmp/root", "--dry-run", "--lock-timeout", "1s",
+				"--root", root, "--dry-run", "--lock-timeout", "1s",
 				"--command-timeout", "2s", "start",
 			},
 		},
 		{
 			name: "after command",
 			args: []string{
-				"start", "--root=/tmp/root", "--dry-run=true",
+				"start", "--root=" + root, "--dry-run=true",
 				"--lock-timeout=1s", "--command-timeout=2s",
 			},
 		},
@@ -186,11 +204,14 @@ func TestRunAcceptsGlobalFlags(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			if got := run(tt.args, &stdout, &stderr); got != 1 {
-				t.Fatalf("run(%v) = %d, want 1 (unimplemented)", tt.args, got)
+			if got := run(tt.args, &stdout, &stderr); got != 0 {
+				t.Fatalf("run(%v) = %d, want 0; stderr=%s", tt.args, got, stderr.String())
 			}
-			if !strings.Contains(stderr.String(), "not implemented") {
-				t.Fatalf("stderr = %q, want not-implemented error", stderr.String())
+			if !strings.Contains(stdout.String(), "result: planned") {
+				t.Fatalf("stdout = %q, want dry-run plan", stdout.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("stderr = %q, want empty", stderr.String())
 			}
 		})
 	}
@@ -242,14 +263,15 @@ func TestRunJSONModeAfterParseError(t *testing.T) {
 func TestRunJSONFalseUsesHumanOutput(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
-	if got := run([]string{"--json=false", "start"}, &stdout, &stderr); got != 1 {
-		t.Fatalf("run(--json=false start) = %d, want 1", got)
+	args := []string{"--root", t.TempDir(), "--dry-run", "--json=false", "start"}
+	if got := run(args, &stdout, &stderr); got != 0 {
+		t.Fatalf("run(%v) = %d, want 0; stderr=%s", args, got, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "not implemented") {
-		t.Fatalf("stderr = %q, want not-implemented error", stderr.String())
+	if !strings.Contains(stdout.String(), "result: planned") {
+		t.Fatalf("stdout = %q, want human dry-run output", stdout.String())
 	}
-	if stdout.Len() != 0 {
-		t.Fatalf("stdout = %q, want empty", stdout.String())
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
 }
 

@@ -1,9 +1,9 @@
 // Command tes3mp-easy-ops is the administrative CLI for tes3mp-easy.
 //
 // This step implements the process contract, the read-only doctor, status,
-// logs, backups and config get commands, and the mutating mods/state deploy,
-// staff set and config set commands. start/stop/restart arrive later from
-// docs/v2/04-ops.md.
+// logs, backups and config get commands, the mutating mods/state deploy,
+// staff set and config set commands, and fixed start/stop/restart through
+// tes3mp-easy-rootctl from docs/v2/04-ops.md.
 package main
 
 import (
@@ -39,6 +39,9 @@ Global flags:
 Commands:
   doctor
   status [--unit tes3mp.service|tes3mp-easy-backup.timer]
+  start
+  stop
+  restart
   logs --tail <n>
   backups list --type mods|state [--limit <n>] [--before <name>] [--sha256]
   backups create --type state [--manual] [--if-running]
@@ -49,8 +52,8 @@ Commands:
   config get --file server|config|banlist
   config set --file server|config|banlist --key <key> --value <value>
 
-start, stop and restart are not implemented yet; they return internal until a
-later step.
+start, stop and restart call sudo -n /usr/local/libexec/tes3mp-easy-rootctl
+and take the ops lock; --dry-run only prints the plan.
 See docs/v2/04-ops.md for the target command set.
 `
 
@@ -118,6 +121,12 @@ func runWithClient(args []string, stdout, stderr io.Writer, client *systemd.Clie
 		return runDoctor(opts, rest[1:], client, stdout, stderr)
 	case "status":
 		return runStatus(opts, rest[1:], client, stdout, stderr)
+	case "start":
+		return runControl(opts, systemd.ActionStart, rest[1:], client, stdout, stderr)
+	case "stop":
+		return runControl(opts, systemd.ActionStop, rest[1:], client, stdout, stderr)
+	case "restart":
+		return runControl(opts, systemd.ActionRestart, rest[1:], client, stdout, stderr)
 	case "logs":
 		return runLogs(opts, rest[1:], client, stdout, stderr)
 	case "backups":

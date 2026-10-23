@@ -83,12 +83,6 @@ func TestJSONErrorContract(t *testing.T) {
 			exit: 2,
 			code: "invalid_argument",
 		},
-		{
-			name: "known command is unfinished",
-			args: []string{"--json", "start"},
-			exit: 1,
-			code: "internal",
-		},
 	}
 
 	for _, tt := range tests {
@@ -109,7 +103,6 @@ func TestHumanErrorContract(t *testing.T) {
 		{name: "missing command", exit: 2, message: "command is required"},
 		{name: "unknown flag", args: []string{"--unknown"}, exit: 2, message: "unknown flag"},
 		{name: "unknown command", args: []string{"bogus"}, exit: 2, message: "unknown command"},
-		{name: "unfinished", args: []string{"start"}, exit: 1, message: "not implemented"},
 	}
 
 	for _, tt := range tests {
@@ -121,8 +114,8 @@ func TestHumanErrorContract(t *testing.T) {
 }
 
 func TestJSONOutputIsOneEnvelope(t *testing.T) {
-	res := testHarness.Run(t, "--json", "start")
-	env := res.requireJSONError(t, 1, "internal")
+	res := testHarness.Run(t, "--json", "--root")
+	env := res.requireJSONError(t, 2, "invalid_argument")
 
 	if len(env.Data) != 0 {
 		t.Fatalf("data = %s, want absent", env.Data)

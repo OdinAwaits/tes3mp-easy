@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Панель — tes3mp-easy</title>
+  <script defer src="/static/admin.js"></script>
+</head>
+<body>
+  <main>
+    <h1>{{.ServerName}}</h1>
+    <p>Панель запущена. Управление сервером доступно ниже.</p>
+    {{template "adminNav" .}}
+
+    {{if .Notice}}<p role="status">{{.Notice}}</p>{{end}}
+    {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
+    {{if .RestartRequired}}<p role="status">Нужен перезапуск сервера, чтобы применить изменения.</p>{{end}}
+
+    <section>
+      <h2>Сервер</h2>
+      {{if .StatusError}}<p role="alert">{{.StatusError}}</p>{{end}}
+      <p>Статус: <strong id="server-status" data-status="{{.Status}}">{{.StatusLabel}}</strong></p>
+      <p>Health: <span id="server-health">{{.Health}}</span></p>
+      {{if .StartedAt}}<p>Запущен: <time datetime="{{.StartedAt}}">{{.StartedAt}}</time></p>{{end}}
+      <div>
+        <form method="post" action="/admin/server/start">
+          <input type="hidden" name="_csrf" value="{{.CSRF}}">
+          <button type="submit">Запустить</button>
+        </form>
+        <form method="post" action="/admin/server/stop">
+          <input type="hidden" name="_csrf" value="{{.CSRF}}">
+          <button type="submit">Остановить</button>
+        </form>
+        <form method="post" action="/admin/server/restart">
+          <input type="hidden" name="_csrf" value="{{.CSRF}}">
+          <button type="submit">Перезапустить</button>
+        </form>
+      </div>
+    </section>
+
+    <section>
+      <h2>Автобэкапы</h2>
+      <p>Таймер: <strong id="backup-timer">{{.Timer}}</strong></p>
+      {{if .TimerError}}<p role="alert">{{.TimerError}}</p>{{end}}
+      <form method="post" action="/admin/state/create">
+        <input type="hidden" name="_csrf" value="{{.CSRF}}">
+        <button type="submit">Создать бэкап сейчас</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>Диагностика</h2>
+      {{if .DoctorError}}<p role="alert">{{.DoctorError}}</p>{{end}}
+      {{if .Doctor}}
+        <p>Итог: <strong>{{.Doctor.Status}}</strong></p>
+        <ul>
+          {{range .Doctor.Checks}}
+            <li>{{.Name}}: <strong>{{.Status}}</strong>{{if .Message}} — {{.Message}}{{end}}</li>
+          {{end}}
+        </ul>
+      {{else if not .DoctorError}}
+        <p>Диагностика недоступна.</p>
+      {{end}}
+    </section>
+
+    <section>
+      <h2>Текущие моды</h2>
+      {{if .Mods}}
+        <p><code>{{.Mods.Name}}</code> ({{.Mods.SizeLabel}})</p>
+        <p>sha256: <code>{{.Mods.SHA256}}</code></p>
+      {{else}}
+        <p>{{.ModsError}}</p>
+      {{end}}
+    </section>
+  </main>
+</body>
+</html>

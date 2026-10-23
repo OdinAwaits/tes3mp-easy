@@ -94,6 +94,19 @@ if [ -n "${FAKE_SUDO_LOG:-}" ]; then
 	printf '%s\n' '--' >> "$FAKE_SUDO_LOG"
 fi
 
+if [ "$#" -ne 3 ] || [ "$1" != "-n" ] ||
+	[ "$2" != "/usr/local/libexec/tes3mp-easy-rootctl" ]; then
+	printf 'unexpected sudo call: %s\n' "$*" >&2
+	exit 99
+fi
+case "$3" in
+start|stop|restart) ;;
+*)
+	printf 'unexpected rootctl action: %s\n' "$3" >&2
+	exit 99
+	;;
+esac
+
 if [ "${FAKE_SUDO_MODE:-ok}" = "fail" ]; then
 	printf '%s\n' 'rootctl failed' >&2
 	exit 1

@@ -1,8 +1,10 @@
 // Package panel implements the HTTPS entry point of tes3mp-easy.
 //
-// This step provides configuration, TLS material management, the public
-// listener pair and graceful process lifecycle. Authentication, the public API
-// and admin pages arrive in later steps.
+// This step provides configuration, TLS material management, the listener pair,
+// graceful lifecycle, Argon2id password authentication, in-memory sessions,
+// CSRF protection, the subprocess client for tes3mp-easy-ops, the public
+// server/mods/backups routes and the admin status/logs/mods/state/config/staff
+// pages with streaming upload.
 package panel
 
 import (

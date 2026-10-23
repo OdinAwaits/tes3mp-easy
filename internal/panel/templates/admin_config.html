@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Настройки — tes3mp-easy</title>
+</head>
+<body>
+  <main>
+    <h1>Настройки</h1>
+    {{template "adminNav" .}}
+    {{if .Notice}}<p role="status">{{.Notice}}</p>{{end}}
+    {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
+    {{if .RestartRequired}}<p role="status">Нужен перезапуск сервера, чтобы применить изменения.</p>{{end}}
+
+    {{range .Sections}}
+      {{$section := .}}
+      <section>
+        <h2>{{.Title}}</h2>
+        {{if .Note}}<p>{{.Note}}</p>{{end}}
+        {{if .Error}}<p role="alert">Проверьте поле: {{.Error}}</p>{{end}}
+
+        {{range .Fields}}
+          <form method="post" action="/admin/config/{{$section.File}}">
+            <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="key" value="{{.Key}}">
+            <label for="{{.Key}}">{{.Label}}</label>
+            {{if eq .Kind "bool"}}
+              <select id="{{.Key}}" name="value">
+                <option value="true"{{if .Checked}} selected{{end}}>Да</option>
+                <option value="false"{{if not .Checked}} selected{{end}}>Нет</option>
+              </select>
+            {{else}}
+              <input id="{{.Key}}" name="value" value="{{.Value}}"
+                     type="{{if eq .Kind "password"}}password{{else if eq .Kind "int"}}number{{else}}text{{end}}">
+            {{end}}
+            <button type="submit">{{$section.SaveLabel}}</button>
+          </form>
+        {{end}}
+
+        {{range .Banlist}}
+          <form method="post" action="/admin/config/{{$section.File}}">
+            <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+            <input type="hidden" name="key" value="{{.Key}}">
+            <label for="{{.Key}}">{{.Label}}</label>
+            <textarea id="{{.Key}}" name="value" rows="6">{{.Value}}</textarea>
+            <button type="submit">Сохранить</button>
+          </form>
+        {{end}}
+
+        {{if .ReadOnly}}
+          <h3>Только для чтения</h3>
+          <ul>
+            {{range .ReadOnly}}<li><code>{{.}}</code></li>{{end}}
+          </ul>
+        {{end}}
+      </section>
+    {{end}}
+
+    <section>
+      <h2>customScripts.lua</h2>
+      <p>Файл генерируется ops из <code>mods/scripts/</code> и доступен только для чтения.</p>
+    </section>
+  </main>
+</body>
+</html>

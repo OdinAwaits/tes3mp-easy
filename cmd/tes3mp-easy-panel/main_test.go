@@ -147,3 +147,127 @@ func TestRunContextGeneratesTLSForEnvRoot(t *testing.T) {
 }
 
 func noEnv(string) string { return "" }
+
+func TestRunResetPassword(t *testing.T) {
+	root := t.TempDir()
+	args := []string{"reset-password", "--root", root}
+
+	var firstOut, firstErr bytes.Buffer
+	if got := run(args, noEnv, &firstOut, &firstErr); got != 0 {
+		t.Fatalf("reset-password = %d; stderr=%s", got, firstErr.String())
+	}
+	if firstErr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", firstErr.String())
+	}
+	line, _, ok := strings.Cut(firstOut.String(), "\n")
+	if !ok || !strings.HasPrefix(line, "temporary password: ") {
+		t.Fatalf("stdout = %q", firstOut.String())
+	}
+	password := strings.TrimPrefix(line, "temporary password: ")
+	if len(password) != 24 {
+		t.Fatalf("password length = %d, want 24", len(password))
+	}
+	initial := filepath.Join(root, "panel-data", "initial-password.txt")
+	data, err := os.ReadFile(initial)
+	if err != nil {
+		t.Fatalf("read initial password: %v", err)
+	}
+	if strings.TrimSpace(string(data)) != password {
+		t.Fatalf("initial password = %q, want %q", strings.TrimSpace(string(data)), password)
+	}
+
+	var secondOut, secondErr bytes.Buffer
+	if got := run(args, noEnv, &secondOut, &secondErr); got != 0 {
+		t.Fatalf("second reset-password = %d; stderr=%s", got, secondErr.String())
+	}
+	if secondOut.String() == firstOut.String() {
+		t.Fatal("repeated reset produced the same password")
+	}
+}
+
+func TestRunResetPasswordRecoversCorruptAuthAndPreservesData(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "panel-data")
+	files := map[string]string{
+		filepath.Join(dataDir, "tls", "cert.pem"):            "certificate",
+		filepath.Join(dataDir, "tls", "key.pem"):             "private key",
+		filepath.Join(dataDir, "uploads", "pending-upload"):  "upload",
+		filepath.Join(root, "backups", "mods", "old.tar.gz"): "backup",
+		filepath.Join(dataDir, "auth.json"):                  "corrupt on purpose",
+		filepath.Join(dataDir, "initial-password.txt"):       "old temporary password",
+	}
+	for path, content := range files {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	if got := run([]string{"reset-password", "--root", root}, noEnv,
+		&stdout, &stderr); got != 0 {
+		t.Fatalf("reset-password = %d; stderr=%s", got, stderr.String())
+	}
+	line, _, ok := strings.Cut(stdout.String(), "\n")
+	if !ok {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	password := strings.TrimPrefix(line, "temporary password: ")
+	if len(password) != 24 {
+		t.Fatalf("password length = %d, want 24", len(password))
+	}
+
+	initialPath := filepath.Join(dataDir, "initial-password.txt")
+	initial, err := os.ReadFile(initialPath)
+	if err != nil {
+		t.Fatalf("read initial password: %v", err)
+	}
+	if got := strings.TrimSpace(string(initial)); got != password {
+		t.Fatalf("initial password = %q, want %q", got, password)
+	}
+	info, err := os.Stat(filepath.Join(dataDir, "auth.json"))
+	if err != nil {
+		t.Fatalf("stat auth.json: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("auth.json mode = %o, want 600", got)
+	}
+	authData, err := os.ReadFile(filepath.Join(dataDir, "auth.json"))
+	if err != nil {
+		t.Fatalf("read auth.json: %v", err)
+	}
+	if strings.Contains(string(authData), "corrupt on purpose") ||
+		!strings.Contains(string(authData), `"algorithm": "argon2id"`) {
+		t.Fatalf("auth.json was not replaced with a valid record: %q", authData)
+	}
+
+	for path, want := range files {
+		if path == filepath.Join(dataDir, "auth.json") ||
+			path == filepath.Join(dataDir, "initial-password.txt") {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read preserved file %s: %v", path, err)
+		}
+		if string(data) != want {
+			t.Fatalf("%s = %q, want %q", path, data, want)
+		}
+	}
+}
+
+func TestRunResetPasswordRejectsBadFlags(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if got := run([]string{"reset-password", "--data-dir="}, noEnv,
+		&stdout, &stderr); got != 2 {
+		t.Fatalf("reset-password --data-dir= = %d, want 2", got)
+	}
+	if !strings.Contains(stderr.String(), "--data-dir") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+}

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Логи — tes3mp-easy</title>
+  <script defer src="/static/admin.js"></script>
+</head>
+<body>
+  <main>
+    <h1>Логи</h1>
+    {{template "adminNav" .}}
+    {{if .Notice}}<p role="status">{{.Notice}}</p>{{end}}
+    {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
+
+    <form method="get" action="/admin/logs">
+      <label for="tail">Последних строк</label>
+      <input id="tail" type="number" name="tail" min="1" max="2000" value="{{.Tail}}">
+      <button type="submit">Показать</button>
+    </form>
+    <button type="button" id="log-toggle">Пауза</button>
+    <pre id="admin-logs" data-tail="{{.Tail}}">{{range .Lines}}{{.}}
+{{end}}</pre>
+  </main>
+</body>
+</html>

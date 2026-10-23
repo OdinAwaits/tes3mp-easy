@@ -1,8 +1,8 @@
 // Command tes3mp-easy-panel serves the tes3mp-easy HTTPS panel.
 //
-// This step provides the HTTP/HTTPS listener pair, TLS material, configuration
-// and graceful lifecycle. Authentication, public API routes and admin pages are
-// added in later steps.
+// This step provides the HTTP/HTTPS listener pair, TLS material, password
+// authentication, sessions, CSRF protection, and the public server/mods/backups
+// API and pages. Admin server management is added in later steps.
 package main
 
 import (
@@ -14,12 +14,18 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/Saagilat/tes3mp-easy/internal/panel"
 )
 
 const usage = `Usage: tes3mp-easy-panel [flags]
+       tes3mp-easy-panel reset-password [flags]
+
+Commands:
+  reset-password            replace the password hash with a new temporary
+                            password, print it and exit
 
 Flags:
   --root <path>             data root (default /tes3mp-easy; env TES3MP_PANEL_ROOT)
@@ -42,6 +48,11 @@ If both TLS files are absent, the panel creates a self-signed certificate with
 mode 0600 under <data-dir>/tls and logs a warning. If only one file exists or the
 pair is invalid, startup fails without overwriting it. Ports 80/443 require
 CAP_NET_BIND_SERVICE in the systemd unit; logs go to stdout/stderr.
+
+If auth.json is absent, startup creates a random temporary password, stores its
+hash in <data-dir>/auth.json (0600) and writes the password to
+<data-dir>/initial-password.txt (0600). The first login must change it. Use
+reset-password if that file was lost.
 `
 
 func main() {
@@ -60,6 +71,9 @@ func runContext(ctx context.Context, args []string, getenv func(string) string,
 	if wantsHelp(args) {
 		fmt.Fprint(stdout, usage)
 		return 0
+	}
+	if len(args) > 0 && args[0] == "reset-password" {
+		return runResetPassword(args[1:], getenv, stdout, stderr)
 	}
 
 	cfg, showVersion, err := parseConfig(args, getenv)
@@ -86,6 +100,29 @@ func runContext(ctx context.Context, args []string, getenv func(string) string,
 		fmt.Fprintf(stderr, "tes3mp-easy-panel: %v\n", err)
 		return 1
 	}
+	return 0
+}
+
+func runResetPassword(args []string, getenv func(string) string,
+	stdout, stderr io.Writer) int {
+	cfg, showVersion, err := parseConfig(args, getenv)
+	if err != nil {
+		fmt.Fprintf(stderr, "tes3mp-easy-panel: %v\n", err)
+		return 2
+	}
+	if showVersion {
+		fmt.Fprintf(stdout, "tes3mp-easy-panel %s\n", panel.Version)
+		return 0
+	}
+
+	password, err := panel.ResetPassword(cfg)
+	if err != nil {
+		fmt.Fprintf(stderr, "tes3mp-easy-panel: reset password: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "temporary password: %s\n", password)
+	fmt.Fprintf(stdout, "written to %s\n",
+		filepath.Join(cfg.DataDir, panel.InitialPasswordFileName))
 	return 0
 }
 

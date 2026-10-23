@@ -37,16 +37,13 @@ type Server struct {
 	listening bool
 }
 
-// New validates cfg, loads or creates TLS material and builds both servers. A
-// nil handler installs the healthz-only handler used before the public API
-// arrives. A nil logger discards logs.
+// New validates cfg, loads or creates TLS material and the password hash, and
+// builds both servers. A nil handler installs the built-in admin UI. A nil
+// logger discards logs.
 func New(cfg Config, handler http.Handler, logger *log.Logger) (*Server, error) {
 	cfg = cfg.Normalize()
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid panel config: %w", err)
-	}
-	if handler == nil {
-		handler = newHandler()
 	}
 	if logger == nil {
 		logger = log.New(io.Discard, "", 0)
@@ -61,6 +58,24 @@ func New(cfg Config, handler http.Handler, logger *log.Logger) (*Server, error) 
 			filepath.Dir(cfg.CertFile))
 	} else {
 		logger.Printf("tls: loaded certificate %s", cfg.CertFile)
+	}
+
+	if handler == nil {
+		auth, authErr := openAuthStore(cfg, logger)
+		if authErr != nil {
+			return nil, authErr
+		}
+		opsClient, opsErr := NewOpsClient(OpsClientConfig{
+			Root:   cfg.Root,
+			Logger: logger,
+		})
+		if opsErr != nil {
+			return nil, fmt.Errorf("build ops client: %w", opsErr)
+		}
+		handler, err = newHandler(cfg, auth, opsClient, logger, time.Now)
+		if err != nil {
+			return nil, fmt.Errorf("build panel handler: %w", err)
+		}
 	}
 
 	secureHandler := withSecurityHeaders(handler)

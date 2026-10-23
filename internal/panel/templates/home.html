@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{{.Name}} — tes3mp-easy</title>
+</head>
+<body>
+  <main>
+    <h1>{{.Name}}</h1>
+    <p>
+      Адрес: <code>{{.Address}}</code>, порт: <code>{{.Port}}</code>.
+    </p>
+    <p>
+      Статус сервера: <code>{{.Status}}</code> — {{.StatusLabel}}.
+    </p>
+    {{if .StatusError}}<p role="alert">{{.StatusError}}</p>{{end}}
+
+    <h2>Текущие моды</h2>
+    {{if .Mods}}
+      <dl>
+        <dt>Архив</dt>
+        <dd><code>{{.Mods.Name}}</code></dd>
+        <dt>Размер</dt>
+        <dd>{{.Mods.SizeLabel}} ({{.Mods.Size}} байт)</dd>
+        <dt>sha256</dt>
+        <dd><code>{{.Mods.SHA256}}</code></dd>
+      </dl>
+      <p><a href="{{.Mods.DownloadURL}}">Скачать текущий архив модов</a></p>
+    {{else}}
+      <p role="alert">{{.ModsError}}</p>
+    {{end}}
+
+    <nav>
+      <a href="/backups">Бэкапы</a>
+      <a href="/admin/login">Вход в панель</a>
+    </nav>
+  </main>
+</body>
+</html>

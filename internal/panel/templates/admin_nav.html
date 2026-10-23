@@ -1,0 +1,15 @@
+{{define "adminNav"}}
+<nav>
+  <a href="/admin">Обзор</a>
+  <a href="/admin/logs">Логи</a>
+  <a href="/admin/mods">Моды</a>
+  <a href="/admin/state">Состояние</a>
+  <a href="/admin/config">Настройки</a>
+  <a href="/admin/staff">Staff</a>
+  <a href="/admin/password">Пароль</a>
+</nav>
+<form method="post" action="/admin/logout">
+  <input type="hidden" name="_csrf" value="{{.CSRF}}">
+  <button type="submit">Выйти</button>
+</form>
+{{end}}
