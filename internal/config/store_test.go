@@ -58,7 +58,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if loaded.Language != "ru" || loaded.ActiveServer != server.ID {
+	if loaded.Language != "ru" || loaded.ActiveServer != server.ID ||
+		loaded.ProtonPath != cfg.ProtonPath || loaded.Localization != cfg.Localization ||
+		loaded.MorrowindPath != cfg.MorrowindPath || loaded.WorkDir != cfg.WorkDir {
 		t.Fatalf("loaded config = %+v", loaded)
 	}
 	if len(loaded.Servers) != 1 || loaded.Servers[0] != server {

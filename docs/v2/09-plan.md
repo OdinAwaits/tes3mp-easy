@@ -2,7 +2,7 @@
 
 **Статус:** living, рабочий план.
 
-**Обновлено:** 2026-10-23.
+**Обновлено:** 2026-10-24.
 
 Документ фиксирует декомпозицию v2 на проверяемые задачи. Это не контракт:
 JSON-схемы, коды ошибок, форматы архивов и HTTP API по-прежнему живут только
@@ -128,8 +128,10 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
   `locked`→409 для админских действий.
 - M4 закрыт; K01 закрыт: добавлен каркас Fyne, `internal/config` с профилями
   серверов и `internal/i18n` с English/Russian. K02 закрыт: реализованы поиск
-  Morrowind, проверка ESM и установка TES3MP. Следующая задача — K03
-  (Server API и моды).
+  Morrowind, проверка ESM и установка TES3MP. K03 закрыт: публичный Server API,
+  установка модов с SHA256 и атомарная замена профиля. K04 закрыт: шрифты,
+  локализация-overlay и запуск через Windows/Proton. Следующая задача — K05
+  (мастер, ошибки и путь к логу).
 
 Схема веток на момент старта:
 
@@ -1125,8 +1127,8 @@ loopback и подменяет `sudo` скриптом, который пров�
 |---|---|---|---|
 | K01 | done | Каркас Fyne, config, i18n | окно и профили без бизнес-логики в UI |
 | K02 | done | Morrowind и TES3MP | поиск, проверка ESM, установка |
-| K03 | planned | Server API и моды | скачивание, sha256, распаковка |
-| K04 | planned | Шрифты, локализация, launcher | запуск Windows/Linux/Proton |
+| K03 | done | Server API и моды | скачивание, sha256, распаковка |
+| K04 | done | Шрифты, локализация, launcher | запуск Windows/Linux/Proton |
 | K05 | planned | Мастер и ошибки | понятные сообщения и путь к логу |
 | K06 | planned | Сборки и smoke | Windows 10/11, Linux + Proton |
 
@@ -1187,6 +1189,74 @@ ZIP traversal/symlink/limits, httptest-скачивание, retry, checksum, к
 skip, staging/rollback и wiring `app`; официальный архив проверяется
 опциональным `TestOfficialArchive`. Ограничение: реальный GUI и smoke на
 Windows/Linux — K06.
+
+### K03 — Server API и моды (done)
+
+`internal/serverapi` читает только публичные GET §7: `/api/v1/server` и
+`/api/v1/mods/current`. Новый клиент принимает HTTPS, а HTTP — только для
+loopback. Ответы ограничены 1 MiB и разбираются строгим JSON; сеть и 5xx
+повторяются три раза, 4xx возвращаются как `APIError`, `no_mods` — как
+`ErrNoMods`. `mods.url` проверяется по имени `mods-*`/`mods-init-*`, размеру
+1..512 MiB, 64-символьному lowercase SHA256 и должен вести на тот же хост и
+`/api/v1/mods/current/archive`; query, fragment, credentials и cross-host
+redirect запрещены. Скачивание потоковое, с прогрессом, `Content-Length` и
+записью через `atomicfile`.
+
+`internal/mods` устанавливает пак в профиль: кеш `cache/<name>` проверяется по
+размеру и SHA256, tar.gz проходит общий `internal/archive`, распаковывается в
+`servers/<id>/.staging/`, базовые ESM сверяются с Morrowind по CRC из
+`requiredDataFiles.json`, плагины копируются в `data/Data Files` (серверные
+`scripts/` не устанавливаются). `BuildProfile` перегенерирует `data=` и
+`content=`, сохраняя пользовательские строки; `Data Files` и `openmw.cfg`
+меняются через `*.old`, digest `.mods-sha256` пишется последним, любая ошибка
+возвращает прежнюю установку. Совпадение digest и готовых путей пропускает
+скачивание.
+
+`internal/app` добавил `CheckServer`, `ModsState` и `UpdateMods` с прогрессом;
+Fyne-карточка сервера получила «Проверить сервер» и «Обновить моды» с
+локализованным диалогом прогресса.
+
+Тесты: httptest-панель для URL/HTTPS/редиректов/`no_mods`/битого JSON/лимита
+ответа, `httptest`-скачивание с проверкой размера и `Content-Length`,
+установка/обновление/skip, неверный SHA256, битый архив, CRC базового ESM,
+path traversal имени профиля, восстановление `*.old`, rollback digest и wiring
+`app`. Ограничение: реальный сервер с модами и GUI smoke — E2E/K06.
+
+### K04 — Шрифты, локализация, launcher (done)
+
+`internal/download` стал общим pinned-загрузчиком: HTTPS (HTTP только
+loopback), три попытки на сеть/5xx, лимит размера, `Content-Length`, проверка
+SHA256, кеш и атомарная запись. `internal/fonts` ставит Noto Sans, Noto Serif и
+Roboto Mono с зашитыми URL/SHA256 в `Fonts/` каталога OpenMW, генерирует
+`openmw_font.xml` с Latin + Cyrillic и идемпотентно заменяет
+`fallback=Fonts_Font_0..2`; сбой шрифта — предупреждение, а не блокировка.
+
+`internal/locale` скачивает `russian.tar` и опциональный
+`voices_russian.tar`, проверяет SHA256, извлекает только `Data Files/` (плюс
+legacy `Video/`, `Sound/`, `Music/`) и активирует overlay через staging/`.old`.
+`Apply` копирует слои в `servers/<id>/data/Data Files`, ведёт
+`.locale-applied.json` с SHA256 и backup, а `RemoveOverlay` восстанавливает
+неизменённые файлы и сохраняет изменённые с предупреждением. Обновление модов
+заново накладывает локализацию; активный `openmw.cfg` получает
+`encoding=win1251`.
+
+`internal/launcher` проверяет Morrowind/TES3MP, находит Proton, создаёт prefix
+и symlink `C:\Morrowind`, готовит активный `openmw.cfg` из профиля с `.bak-*` и
+запускает Windows `tes3mp.exe` или Linux `proton run` с env
+`SteamAppId`/`SteamGameId`/`STEAM_COMPAT_DATA_PATH`. Процесс не блокирует UI:
+Fyne-диалог ждёт его в фоне и сообщает о выходе; advanced-раздел запускает
+OpenMW-CS или даёт ссылку. Settings получил локализацию и озвучку, карточка
+сервера — «Играть» и advanced.
+
+Тесты: `internal/download` — кеш, retry, 4xx без retry, HTTPS, размер;
+`internal/fonts` — XML, fallback, установка, 404 и изменённый файл;
+`internal/locale` — lifecycle, skip, сбой озвучки, `mapEntry`, encoding;
+`internal/launcher` — Windows spec, Linux Proton env/prefix symlink,
+OpenMW-CS, отсутствие Morrowind, backup/идемпотентность конфига; `internal/app`
+и UI — wiring, прогресс и warning шрифтов. Реальный `russian.tar`
+(128 428 544 байт, pinned SHA256) проверен вручную на полный overlay round
+trip. Ограничение: реальный Fyne GUI, Windows и Proton smoke — K06; голосовой
+архив вручную не проверялся.
 
 
 ## 10. M6 — упаковка и E2E

@@ -444,6 +444,24 @@ K02 проверяется unit-тестами `internal/morrowind`, `internal/t
 проверяет зашитый SHA256 и реальный layout релиза 0.8.1. Реальный Fyne-диалог
 и smoke на Windows/Linux — K06.
 
+K03 проверяется на `httptest`-панели: `internal/serverapi` — URL/HTTPS,
+`no_mods`, битый JSON, лимит ответа, cross-host redirect, подмена archive URL и
+размер/Content-Length; `internal/mods` — успешная установка, skip по
+`.mods-sha256`, обновление пака, неверный SHA256, битый tar.gz, несовпадение
+CRC базового ESM, path traversal в имени server-id, восстановление `*.old` и
+rollback при сбое записи digest. `internal/app` проверяет wiring профиля,
+Morrowind, cache/work paths и прогресс; UI — только форматирование прогресса.
+
+K04 проверяется unit-тестами `internal/download`, `internal/fonts`,
+`internal/locale`, `internal/launcher`, `internal/app` и `internal/ui`:
+pinned cache и SHA256, retry/HTTPS/размер, 404 и fallback шрифтов, XML и
+идемпотентность `fallback=`, overlay lifecycle и skip, warning при сбое
+озвучки, `encoding=win1251`, Windows spec, Linux Proton env и symlink
+`C:\Morrowind`, отсутствие OpenMW-CS с подсказкой, wiring `app` и
+предупреждение при сбое шрифтов. Реальный `russian.tar` проверен вручную по
+pinned SHA256 и полному overlay round trip; реальный Fyne GUI, Windows и
+Proton smoke остаются в K06. Голосовой архив в ручной проверке не участвовал.
+
 ## 7. Failure injection
 
 - **Нет места.** Fake writer возвращает `ENOSPC`; `TestWriteStatePropagatesNoSpace`

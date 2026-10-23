@@ -152,11 +152,16 @@ func (s *shell) serverCard(tr *i18n.Translator, activeID string,
 	panelLabel.Wrapping = fyne.TextWrapWord
 
 	play := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonPlay), theme.MediaPlayIcon(), func() {
-		dialog.ShowInformation(
-			tr.T(i18n.KeyServerPlayTitle),
-			tr.T(i18n.KeyServerPlayBody),
-			s.window,
-		)
+		s.showLaunch(profile)
+	})
+	check := widget.NewButton(tr.T(i18n.KeyServerCheck), func() {
+		s.showCheckServer(profile)
+	})
+	updateMods := widget.NewButton(tr.T(i18n.KeyServerUpdateMods), func() {
+		s.showModsUpdate(profile)
+	})
+	advanced := widget.NewButton(tr.T(i18n.KeyCommonAdvanced), func() {
+		s.showAdvanced(profile)
 	})
 	edit := widget.NewButton(tr.T(i18n.KeyCommonEdit), func() {
 		s.showServerDialog(profile.ID, profile)
@@ -164,7 +169,7 @@ func (s *shell) serverCard(tr *i18n.Translator, activeID string,
 	remove := widget.NewButton(tr.T(i18n.KeyCommonDelete), func() {
 		s.confirmDelete(tr, profile)
 	})
-	actions := container.NewHBox(play, edit, remove)
+	actions := container.NewHBox(play, check, updateMods, advanced, edit, remove)
 	if profile.ID != activeID {
 		actions.Add(widget.NewButton(tr.T(i18n.KeyServerMakeActive), func() {
 			if err := s.service.SetActiveServer(profile.ID); err != nil {
@@ -228,6 +233,7 @@ func (s *shell) settings() app.Settings {
 		MorrowindPath: cfg.MorrowindPath,
 		WorkDir:       cfg.WorkDir,
 		ProtonPath:    cfg.ProtonPath,
+		Localization:  cfg.Localization,
 	}
 }
 

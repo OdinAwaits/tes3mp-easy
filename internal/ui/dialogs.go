@@ -10,9 +10,9 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
-	"github.com/Saagilat/tes3mp-easy/internal/app"
 	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
+	"github.com/Saagilat/tes3mp-easy/internal/locale"
 )
 
 type serverForm struct {
@@ -125,6 +125,39 @@ func (s *shell) showSettings() {
 	proton.SetText(cfg.ProtonPath)
 	proton.SetPlaceHolder(".../Proton")
 
+	profile, hasProfile := activeProfile(cfg)
+	localizationState := locale.State{}
+	if hasProfile {
+		if state, err := s.service.LocalizationState(profile.ID); err == nil {
+			localizationState = state
+		}
+	}
+
+	localization := widget.NewCheck(tr.T(i18n.KeySettingsLocalization), nil)
+	localization.SetChecked(cfg.Localization)
+	voiceover := widget.NewCheck(tr.T(i18n.KeySettingsVoiceover), nil)
+	voiceover.SetChecked(localizationState.Voiceover)
+	localizationStatus := widget.NewLabel("")
+	localizationStatus.Wrapping = fyne.TextWrapWord
+	if !hasProfile {
+		localization.Disable()
+		voiceover.Disable()
+		localizationStatus.SetText(tr.T(i18n.KeySettingsNoServer))
+	} else {
+		localizationStatus.SetText(tr.T(i18n.KeySettingsLocalizationHint))
+	}
+	syncLocalization := func(enabled bool) {
+		if enabled && hasProfile {
+			voiceover.Enable()
+			return
+		}
+		voiceover.Disable()
+	}
+	localization.OnChanged = syncLocalization
+	syncLocalization(localization.Checked)
+
+	fontsHint := widget.NewLabel(tr.T(i18n.KeySettingsFontsHint))
+	fontsHint.Wrapping = fyne.TextWrapWord
 	hint := widget.NewLabel(tr.T(i18n.KeySettingsHint))
 	hint.Wrapping = fyne.TextWrapWord
 	items := []*widget.FormItem{
@@ -134,7 +167,13 @@ func (s *shell) showSettings() {
 	if runtime.GOOS == "linux" {
 		items = append(items, widget.NewFormItem(tr.T(i18n.KeySettingsProton), proton))
 	}
-	items = append(items, widget.NewFormItem("", hint))
+	items = append(items,
+		widget.NewFormItem(tr.T(i18n.KeySettingsLocalization), localization),
+		widget.NewFormItem(tr.T(i18n.KeySettingsVoiceover), voiceover),
+		widget.NewFormItem("", localizationStatus),
+		widget.NewFormItem("", fontsHint),
+		widget.NewFormItem("", hint),
+	)
 	dialog.NewForm(
 		tr.T(i18n.KeySettingsTitle),
 		tr.T(i18n.KeyCommonSave),
@@ -148,18 +187,40 @@ func (s *shell) showSettings() {
 			if runtime.GOOS == "linux" {
 				protonPath = proton.Text
 			}
-			settings := app.Settings{
-				Language:      s.service.Config().Language,
-				MorrowindPath: morrowind.Text,
-				WorkDir:       workDir.Text,
-				ProtonPath:    protonPath,
-			}
+			settings := s.settings()
+			settings.MorrowindPath = morrowind.Text
+			settings.WorkDir = workDir.Text
+			settings.ProtonPath = protonPath
 			if err := s.service.UpdateSettings(settings); err != nil {
 				s.showError(err)
 				return
 			}
 			s.render()
+			if !hasProfile {
+				return
+			}
+			enabled := localization.Checked
+			withVoices := enabled && voiceover.Checked
+			switch {
+			case !enabled && (cfg.Localization || localizationState.Installed):
+				s.showLocalization(profile, false, false)
+			case enabled && (!localizationState.Installed ||
+				localizationState.Voiceover != withVoices || !cfg.Localization):
+				s.showLocalization(profile, true, withVoices)
+			}
 		},
 		s.window,
 	).Show()
+}
+
+func activeProfile(cfg config.Config) (config.Server, bool) {
+	for _, profile := range cfg.Servers {
+		if profile.ID == cfg.ActiveServer {
+			return profile, true
+		}
+	}
+	if len(cfg.Servers) == 0 {
+		return config.Server{}, false
+	}
+	return cfg.Servers[0], true
 }

@@ -653,7 +653,38 @@ readiness.
   `tes3mp.staging-*` и `tes3mp.old` не являются частью установки и удаляются
   после успешной замены; при сбое клиент возвращает прежний каталог.
 - Клиент не скачивает моды с произвольных URL: только архивы `mods-*` /
-  `mods-init-*` из API (§7).
+  `mods-init-*` из API (§7). `name` проверяется по §6.6, `sha256` — 64
+  lowercase hex, `size` — 1..512 MiB. `url` должен вести на тот же хост панели
+  и ровно на `/api/v1/mods/current/archive`; query, fragment, credentials и
+  редиректы на другой хост запрещены.
+- Архив модов кешируется как `cache/<name>`, проверяется по `size` и `sha256`,
+  затем проходит общий `internal/archive` (layout, CRC, лимиты, pathguard).
+  Плагины копируются в `servers/<id>/data/Data Files`; серверные `scripts/` не
+  устанавливаются. Базовые ESM из `requiredDataFiles.json` сверяются с
+  Morrowind по CRC, если CRC указаны.
+- `openmw.cfg` профиля и `Data Files` заменяются вместе; старые версии лежат в
+  `*.old` до успешной записи `servers/<id>/.mods-sha256`. При любой ошибке
+  клиент возвращает прежние файлы. `.mods-sha256` содержит lowercase SHA256 и
+  завершающий LF; совпадение с API позволяет пропустить скачивание.
+- Набор шрифтов фиксирован в сборке: три TTF-файла с зашитыми HTTPS URL и
+  SHA256. Клиент кладёт их в `Fonts/` каталога конфигурации OpenMW, генерирует
+  `openmw_font.xml` с Latin + Cyrillic и заменяет только строки
+  `fallback=Fonts_Font_0..2`; остальные строки `openmw.cfg` сохраняются.
+  Ошибка загрузки шрифта — предупреждение, запуск не блокируется.
+- Локализация — overlay в `servers/<id>/localization`, не в Morrowind. Основной
+  и голосовой архивы скачиваются только с GitHub Releases проекта и проверяются
+  по зашитым SHA256. `Apply` копирует слои в `servers/<id>/data/Data Files`,
+  пишет `.locale-applied.json` с SHA256 и backup; `RemoveOverlay` восстанавливает
+  неизменённые файлы, а изменённые пользователем оставляет с предупреждением.
+  При включённой локализации активный `openmw.cfg` содержит
+  `encoding=win1251`.
+- Перед запуском клиент проверяет профиль, установленные моды и (если включена)
+  локализацию, создаёт `prefix` и ссылку `C:\Morrowind`, копирует профиль в
+  активный `openmw.cfg` с `.bak-*`. Windows запускает `tes3mp.exe`; Linux —
+  `proton run` с `SteamAppId=22320`, `STEAM_COMPAT_DATA_PATH` и
+  `STEAM_COMPAT_CLIENT_INSTALL_PATH`. Ожидание процесса идёт в фоне, выход
+  показывается пользователю. `openmw-cs.exe` запускается из advanced-раздела,
+  а при отсутствии клиент даёт ссылку на OpenMW.
 
 ## 10. Старые форматы не принимаются
 

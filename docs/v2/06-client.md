@@ -268,6 +268,12 @@ Proton не скачиваем и не устанавливаем: это час
 `tes3mp-easy://connect?...`, но в MVP — ручной ввод. Это не блокирует сценарий
 «скинул адрес в мессенджере».
 
+`internal/serverapi` реализует только публичные GET-запросы §7: строгий JSON,
+лимит ответа 1 MiB, HTTPS (HTTP — только loopback), таймауты и три попытки на
+сеть/5xx. Ответ `no_mods` сохраняется как `ErrNoMods`. URL архива обязан
+остаться на хосте панели и указывать на фиксированный путь; редирект на другой
+хост отклоняется. Пароль сервера и админские cookie в клиент API не попадают.
+
 ## 8. Моды
 
 Алгоритм:
@@ -294,6 +300,14 @@ Proton не скачиваем и не устанавливаем: это час
    `.old`.
 10. Записать `.mods-sha256`.
 11. Удалить staging и старые каталоги.
+
+`internal/mods` выполняет шаги 2–11. Кеш проверяется по имени, размеру и SHA256;
+имя обязано проходить `mods-*`/`mods-init-*`. Скачивание идёт потоково в
+`cache/<name>.part` через `atomicfile`, затем архив проверяется общим
+`internal/archive`, распаковывается в `servers/<id>/.staging/`, а базовые ESM
+сверяются с Morrowind по CRC из `requiredDataFiles.json`. `Data Files` и
+`openmw.cfg` заменяются через `*.old`; digest пишется последним. Любая ошибка
+до digest возвращает прежние файлы. Серверные `scripts/` не копируются.
 
 `openmw.cfg`:
 
@@ -340,6 +354,13 @@ content=<mod.esp>   # порядок из requiredDataFiles.json
   шрифтом и показывает предупреждение, а не блокирует запуск.
 - Продвинутый выбор шрифтов — позже, не в MVP.
 
+Реализация `internal/fonts` использует `NotoSans.ttf`, `NotoSerif.ttf` и
+`RobotoMono.ttf` из `google/fonts`; URL и SHA256 зашиты в
+`internal/fonts/fonts.go`. Скачивание идёт через общий `internal/download` в
+`cache/fonts/`, файлы устанавливаются атомарно, а `openmw_font.xml` и
+`fallback=Fonts_Font_0..2` обновляются идемпотентно. Неудачный файл попадает в
+предупреждения, остальные шрифты и запуск продолжают работать.
+
 ## 10. Локализация
 
 Локализация опциональна. По умолчанию — язык игры/системы, обычно английский.
@@ -358,6 +379,15 @@ content=<mod.esp>   # порядок из requiredDataFiles.json
 
 В отличие от распаковки прямо в папку Morrowind, v2 не трогает оригинальную
 установку и не создаёт там видео-заглушки.
+
+`internal/locale` скачивает `russian.tar` и опциональный `voices_russian.tar`
+в `cache/`, проверяет SHA256 и собирает `servers/<id>/localization/main` и
+`voices` через `internal/archive`. `mapEntry` берёт только `Data Files/` и
+legacy `Video/`, `Sound/`, `Music/`, отбрасывая launcher-файлы. Слои
+применяются в `data/Data Files` с manifest `.locale-applied.json` и backup;
+повторный `Apply` сначала откатывает прошлый overlay, поэтому обновление модов
+не стирает локализацию. Изменённые после установки файлы при удалении
+сохраняются с предупреждением.
 
 ## 11. Запуск
 
@@ -389,6 +419,13 @@ OpenMW-CS:
 - кнопка «OpenMW-CS» в advanced-разделе;
 - запускает `openmw-cs.exe` из установленного TES3MP/OpenMW, если он есть;
 - если нет — объясняет, что CS не входит в клиент, и даёт ссылку.
+
+`internal/launcher` проверяет Morrowind и TES3MP, находит Proton, создаёт
+`prefix` и symlink `C:\Morrowind`, готовит активный `openmw.cfg` из профиля и
+формирует `Spec`. Windows запускает `tes3mp.exe` напрямую; Linux — `proton run`
+с `SteamAppId=22320`, `SteamGameId=22320`, `STEAM_COMPAT_DATA_PATH` и
+`STEAM_COMPAT_CLIENT_INSTALL_PATH`. Процесс запускается без ожидания; UI ждёт
+его в отдельной goroutine и показывает результат выхода.
 
 ## 12. GUI
 

@@ -171,28 +171,40 @@ func NewReaderWithLimits(r io.Reader, limits Limits) (*Reader, error) {
 }
 
 func newReader(r io.Reader, limits Limits, closer io.Closer) (*Reader, error) {
+	return newStreamReader(r, limits, closer, true)
+}
+
+func newStreamReader(r io.Reader, limits Limits, closer io.Closer,
+	compressed bool,
+) (*Reader, error) {
 	if err := limits.validate(); err != nil {
 		return nil, err
 	}
 
-	compressed := &limitReader{
+	raw := &limitReader{
 		r:     r,
-		kind:  "compressed size",
+		kind:  "archive size",
 		limit: limits.CompressedSize,
 	}
-	br := bufio.NewReaderSize(compressed, 32*1024)
+	br := bufio.NewReaderSize(raw, 32*1024)
 
-	gz, err := gzip.NewReader(br)
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("%w: empty gzip stream", ErrInvalid)
+	var gz *gzip.Reader
+	var source io.Reader = br
+	if compressed {
+		var err error
+		gz, err = gzip.NewReader(br)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, fmt.Errorf("%w: empty gzip stream", ErrInvalid)
+			}
+			return nil, wrapReadError(err)
 		}
-		return nil, wrapReadError(err)
+		gz.Multistream(false)
+		source = gz
 	}
-	gz.Multistream(false)
 
 	uncompressed := &limitReader{
-		r:     gz,
+		r:     source,
 		kind:  "uncompressed size",
 		limit: limits.UncompressedSize,
 	}
@@ -207,6 +219,56 @@ func newReader(r io.Reader, limits Limits, closer io.Closer) (*Reader, error) {
 		implied:      make(map[string]string),
 		closer:       closer,
 	}, nil
+}
+
+// OpenTar opens an uncompressed tar file. It is used for release assets such as
+// the project localization archive, which are already compressed by the HTTP
+// transport or stored as a plain tar.
+func OpenTar(name string) (*Reader, error) {
+	return OpenTarWithLimits(name, DefaultLimits())
+}
+
+// OpenTarWithLimits is OpenTar with explicit limits.
+func OpenTarWithLimits(name string, limits Limits) (*Reader, error) {
+	if err := limits.validate(); err != nil {
+		return nil, err
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, fmt.Errorf("archive: %s is not a regular file", name)
+	}
+	if info.Size() > limits.CompressedSize {
+		_ = f.Close()
+		return nil, limitError("archive size", limits.CompressedSize)
+	}
+	r, err := newStreamReader(f, limits, f, false)
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return r, nil
+}
+
+// NewTarReader returns a streaming Reader for an uncompressed tar stream.
+func NewTarReader(r io.Reader) (*Reader, error) {
+	return NewTarReaderWithLimits(r, DefaultLimits())
+}
+
+// NewTarReaderWithLimits is NewTarReader with explicit limits.
+func NewTarReaderWithLimits(r io.Reader, limits Limits) (*Reader, error) {
+	if r == nil {
+		return nil, errors.New("archive: nil reader")
+	}
+	return newStreamReader(r, limits, nil, false)
 }
 
 // Next advances to the next archive entry. It returns io.EOF after the tar end

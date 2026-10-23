@@ -8,11 +8,18 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/Saagilat/tes3mp-easy/internal/config"
+	"github.com/Saagilat/tes3mp-easy/internal/fonts"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
+	"github.com/Saagilat/tes3mp-easy/internal/launcher"
+	"github.com/Saagilat/tes3mp-easy/internal/locale"
+	"github.com/Saagilat/tes3mp-easy/internal/mods"
+	"github.com/Saagilat/tes3mp-easy/internal/serverapi"
 	"github.com/Saagilat/tes3mp-easy/internal/tes3mp"
 )
 
@@ -33,16 +40,32 @@ type Settings struct {
 	MorrowindPath string
 	WorkDir       string
 	ProtonPath    string
+	Localization  bool
 }
 
 // Service owns the configuration store used by the UI.
 type Service struct {
-	store  *config.Store
-	paths  config.Paths
-	getenv func(string) string
+	store   *config.Store
+	paths   config.Paths
+	getenv  func(string) string
+	goos    string
+	homeDir string
 
 	// installTES3MP is replaceable in tests; production uses tes3mp.Install.
 	installTES3MP func(context.Context, tes3mp.Options) (tes3mp.Result, error)
+	// installMods is replaceable in tests; production uses mods.Install.
+	installMods func(context.Context, mods.Options) (mods.Result, error)
+	// installFonts is replaceable in tests; production uses fonts.Install.
+	installFonts func(context.Context, fonts.Options) (fonts.Result, error)
+	// installLocale is replaceable in tests; production uses locale.Install.
+	installLocale func(context.Context, locale.Options) (locale.Result, error)
+	// launchClient is replaceable in tests; production uses launcher.Launch.
+	launchClient func(context.Context, launcher.LaunchOptions) (launcher.Result, error)
+	// newServerAPI is replaceable in tests; production uses serverapi.New.
+	newServerAPI func(serverapi.Options) (*serverapi.Client, error)
+	// httpClient is used by the public API and archive download; nil means the
+	// production default from serverapi.New.
+	httpClient *http.Client
 }
 
 // Open loads the configuration at paths.ConfigFile.
@@ -62,7 +85,14 @@ func OpenWithEnv(paths config.Paths, getenv func(string) string) (*Service, erro
 	if err != nil {
 		return nil, err
 	}
-	return &Service{store: store, paths: paths, getenv: getenv}, nil
+	homeDir, _ := os.UserHomeDir()
+	return &Service{
+		store:   store,
+		paths:   paths,
+		getenv:  getenv,
+		goos:    runtime.GOOS,
+		homeDir: homeDir,
+	}, nil
 }
 
 // Config returns an independent configuration snapshot.

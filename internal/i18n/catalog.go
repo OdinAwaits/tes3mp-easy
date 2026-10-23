@@ -18,6 +18,7 @@ const (
 	KeyCommonConfirm  = "common.confirm"
 	KeyCommonError    = "common.error"
 	KeyCommonSetup    = "common.setup"
+	KeyCommonAdvanced = "common.advanced"
 
 	KeyServerEmptyTitle  = "server.empty.title"
 	KeyServerEmptyHint   = "server.empty.hint"
@@ -35,12 +36,51 @@ const (
 	KeyServerFieldPort   = "server.field.port"
 	KeyServerFieldPass   = "server.field.password"
 	KeyServerFieldPanel  = "server.field.panel_url"
+	KeyServerCheck       = "server.check"
+	KeyServerCheckTitle  = "server.check.title"
+	KeyServerCheckBody   = "server.check.body"
+	KeyServerUpdateMods  = "server.update_mods"
+	KeyServerLaunching   = "server.launching"
+	KeyServerLaunched    = "server.launched"
+	KeyServerWarnings    = "server.warnings"
+	KeyServerExited      = "server.exited"
+	KeyServerExitFailed  = "server.exit_failed"
 
-	KeySettingsTitle     = "settings.title"
-	KeySettingsMorrowind = "settings.morrowind"
-	KeySettingsWorkDir   = "settings.work_dir"
-	KeySettingsProton    = "settings.proton"
-	KeySettingsHint      = "settings.hint"
+	KeyModsTitle       = "mods.title"
+	KeyModsChecking    = "mods.checking"
+	KeyModsDownloading = "mods.downloading"
+	KeyModsVerifying   = "mods.verifying"
+	KeyModsExtracting  = "mods.extracting"
+	KeyModsInstalling  = "mods.installing"
+	KeyModsUpToDate    = "mods.up_to_date"
+	KeyModsDone        = "mods.done"
+	KeyModsFailed      = "mods.failed"
+
+	KeySettingsTitle            = "settings.title"
+	KeySettingsMorrowind        = "settings.morrowind"
+	KeySettingsWorkDir          = "settings.work_dir"
+	KeySettingsProton           = "settings.proton"
+	KeySettingsHint             = "settings.hint"
+	KeySettingsFontsHint        = "settings.fonts_hint"
+	KeySettingsLocalization     = "settings.localization"
+	KeySettingsVoiceover        = "settings.voiceover"
+	KeySettingsNoServer         = "settings.no_server"
+	KeySettingsLocalizationHint = "settings.localization_hint"
+
+	KeyLocaleTitle       = "locale.title"
+	KeyLocaleChecking    = "locale.checking"
+	KeyLocaleDownloading = "locale.downloading"
+	KeyLocaleExtracting  = "locale.extracting"
+	KeyLocaleInstalling  = "locale.installing"
+	KeyLocaleDone        = "locale.done"
+	KeyLocaleRemoved     = "locale.removed"
+	KeyLocaleFailed      = "locale.failed"
+
+	KeyAdvancedTitle   = "advanced.title"
+	KeyAdvancedOpenCS  = "advanced.open_cs"
+	KeyAdvancedCSHint  = "advanced.cs_hint"
+	KeyAdvancedStarted = "advanced.started"
+	KeyAdvancedFailed  = "advanced.failed"
 
 	KeySetupTitle               = "setup.title"
 	KeySetupMorrowind           = "setup.morrowind"
@@ -87,6 +127,7 @@ var catalogs = map[Language]map[string]string{
 		KeyCommonConfirm:  "Confirm",
 		KeyCommonError:    "Error",
 		KeyCommonSetup:    "Prepare",
+		KeyCommonAdvanced: "Advanced",
 
 		KeyServerEmptyTitle:  "No servers yet",
 		KeyServerEmptyHint:   "Add the server address your friends sent you.",
@@ -104,12 +145,51 @@ var catalogs = map[Language]map[string]string{
 		KeyServerFieldPort:   "Port",
 		KeyServerFieldPass:   "Password",
 		KeyServerFieldPanel:  "Panel URL",
+		KeyServerCheck:       "Check server",
+		KeyServerCheckTitle:  "Server status",
+		KeyServerCheckBody:   "Server: %s\nAddress: %s:%d\nStatus: %s\nMods: %s",
+		KeyServerUpdateMods:  "Update mods",
+		KeyServerLaunching:   "Preparing the launch...",
+		KeyServerLaunched:    "The game is running.",
+		KeyServerWarnings:    "Warnings:\n%s",
+		KeyServerExited:      "The game has exited.",
+		KeyServerExitFailed:  "The game exited with an error: %v",
 
-		KeySettingsTitle:     "Settings",
-		KeySettingsMorrowind: "Morrowind folder",
-		KeySettingsWorkDir:   "Work folder",
-		KeySettingsProton:    "Proton (Linux)",
-		KeySettingsHint:      "Leave a path empty to use the default.",
+		KeyModsTitle:       "Server mods",
+		KeyModsChecking:    "Checking server mods...",
+		KeyModsDownloading: "Downloading mods: %s of %s",
+		KeyModsVerifying:   "Checking the mods archive...",
+		KeyModsExtracting:  "Extracting mods...",
+		KeyModsInstalling:  "Installing mods...",
+		KeyModsUpToDate:    "Mods are up to date.",
+		KeyModsDone:        "Mods are installed.",
+		KeyModsFailed:      "Mod update failed: %v",
+
+		KeySettingsTitle:            "Settings",
+		KeySettingsMorrowind:        "Morrowind folder",
+		KeySettingsWorkDir:          "Work folder",
+		KeySettingsProton:           "Proton (Linux)",
+		KeySettingsHint:             "Leave a path empty to use the default.",
+		KeySettingsFontsHint:        "Cyrillic fonts are installed automatically before every launch.",
+		KeySettingsLocalization:     "Russian localization",
+		KeySettingsVoiceover:        "Russian voiceover (large download)",
+		KeySettingsNoServer:         "Add a server profile to install the localization.",
+		KeySettingsLocalizationHint: "The localization is copied into the selected server's Data Files; the original Morrowind folder is never modified.",
+
+		KeyLocaleTitle:       "Russian localization",
+		KeyLocaleChecking:    "Checking the installed localization...",
+		KeyLocaleDownloading: "Downloading localization: %s of %s",
+		KeyLocaleExtracting:  "Extracting localization...",
+		KeyLocaleInstalling:  "Applying localization...",
+		KeyLocaleDone:        "The Russian localization is installed.",
+		KeyLocaleRemoved:     "The Russian localization overlay was removed.",
+		KeyLocaleFailed:      "Localization failed: %v",
+
+		KeyAdvancedTitle:   "Advanced",
+		KeyAdvancedOpenCS:  "Run OpenMW-CS",
+		KeyAdvancedCSHint:  "OpenMW-CS is not bundled with TES3MP. If it is missing, download it from https://openmw.org/downloads/ and put openmw-cs.exe next to tes3mp.exe.",
+		KeyAdvancedStarted: "OpenMW-CS is running.",
+		KeyAdvancedFailed:  "OpenMW-CS failed to start: %v",
 
 		KeySetupTitle:               "Prepare the client",
 		KeySetupMorrowind:           "Morrowind",
@@ -154,6 +234,7 @@ var catalogs = map[Language]map[string]string{
 		KeyCommonConfirm:  "Подтвердить",
 		KeyCommonError:    "Ошибка",
 		KeyCommonSetup:    "Подготовка",
+		KeyCommonAdvanced: "Дополнительно",
 
 		KeyServerEmptyTitle:  "Серверов пока нет",
 		KeyServerEmptyHint:   "Добавьте адрес сервера, который прислали друзья.",
@@ -171,12 +252,51 @@ var catalogs = map[Language]map[string]string{
 		KeyServerFieldPort:   "Порт",
 		KeyServerFieldPass:   "Пароль",
 		KeyServerFieldPanel:  "URL панели",
+		KeyServerCheck:       "Проверить сервер",
+		KeyServerCheckTitle:  "Статус сервера",
+		KeyServerCheckBody:   "Сервер: %s\nАдрес: %s:%d\nСтатус: %s\nМоды: %s",
+		KeyServerUpdateMods:  "Обновить моды",
+		KeyServerLaunching:   "Подготовка к запуску...",
+		KeyServerLaunched:    "Игра запущена.",
+		KeyServerWarnings:    "Предупреждения:\n%s",
+		KeyServerExited:      "Игра закрыта.",
+		KeyServerExitFailed:  "Игра завершилась с ошибкой: %v",
 
-		KeySettingsTitle:     "Настройки",
-		KeySettingsMorrowind: "Папка Morrowind",
-		KeySettingsWorkDir:   "Рабочая папка",
-		KeySettingsProton:    "Proton (Linux)",
-		KeySettingsHint:      "Пустое поле означает путь по умолчанию.",
+		KeyModsTitle:       "Моды сервера",
+		KeyModsChecking:    "Проверка модов на сервере...",
+		KeyModsDownloading: "Загрузка модов: %s из %s",
+		KeyModsVerifying:   "Проверка архива модов...",
+		KeyModsExtracting:  "Распаковка модов...",
+		KeyModsInstalling:  "Установка модов...",
+		KeyModsUpToDate:    "Моды уже актуальны.",
+		KeyModsDone:        "Моды установлены.",
+		KeyModsFailed:      "Ошибка обновления модов: %v",
+
+		KeySettingsTitle:            "Настройки",
+		KeySettingsMorrowind:        "Папка Morrowind",
+		KeySettingsWorkDir:          "Рабочая папка",
+		KeySettingsProton:           "Proton (Linux)",
+		KeySettingsHint:             "Пустое поле означает путь по умолчанию.",
+		KeySettingsFontsHint:        "Кириллические шрифты ставятся автоматически перед каждым запуском.",
+		KeySettingsLocalization:     "Русская локализация",
+		KeySettingsVoiceover:        "Русская озвучка (большая загрузка)",
+		KeySettingsNoServer:         "Добавьте сервер, чтобы установить локализацию.",
+		KeySettingsLocalizationHint: "Локализация копируется в Data Files выбранного сервера; папка Morrowind не изменяется.",
+
+		KeyLocaleTitle:       "Русская локализация",
+		KeyLocaleChecking:    "Проверка установленной локализации...",
+		KeyLocaleDownloading: "Загрузка локализации: %s из %s",
+		KeyLocaleExtracting:  "Распаковка локализации...",
+		KeyLocaleInstalling:  "Применение локализации...",
+		KeyLocaleDone:        "Русская локализация установлена.",
+		KeyLocaleRemoved:     "Русская локализация удалена из профиля.",
+		KeyLocaleFailed:      "Ошибка локализации: %v",
+
+		KeyAdvancedTitle:   "Дополнительно",
+		KeyAdvancedOpenCS:  "Запустить OpenMW-CS",
+		KeyAdvancedCSHint:  "OpenMW-CS не входит в TES3MP. Если его нет, скачайте с https://openmw.org/downloads/ и положите openmw-cs.exe рядом с tes3mp.exe.",
+		KeyAdvancedStarted: "OpenMW-CS запущен.",
+		KeyAdvancedFailed:  "Не удалось запустить OpenMW-CS: %v",
 
 		KeySetupTitle:               "Подготовка клиента",
 		KeySetupMorrowind:           "Morrowind",
