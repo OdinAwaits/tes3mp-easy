@@ -1,6 +1,6 @@
-# SSH keys
-tes3mp
-tes3mp.pub
+# SSH keys (root only; do not hide internal/tes3mp)
+/tes3mp
+/tes3mp.pub
 html
 sys.json
 test-server/

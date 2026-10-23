@@ -25,6 +25,11 @@ jobs:
           bash -n bootstrap.sh
           sh -n rootctl/tes3mp-easy-rootctl
 
+      - name: Install Fyne build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+
       - name: Validate sudoers
         run: sudo visudo -cf sudoers.d/tes3mp-easy
 
@@ -45,3 +50,6 @@ jobs:
 
       - name: Build panel
         run: go build -o /tmp/tes3mp-easy-panel ./cmd/tes3mp-easy-panel
+
+      - name: Build client
+        run: go build -o /tmp/tes3mp-easy-client ./cmd/tes3mp-easy-client

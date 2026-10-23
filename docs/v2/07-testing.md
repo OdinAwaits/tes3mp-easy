@@ -30,7 +30,7 @@
 |---|---|---|
 | Unit | tar, CRC, `requiredDataFiles.json`, `current.txt`, retention, config, pathguard, lock, auth | `internal/**/*_test.go` |
 | Contract (ops) | запуск бинарника, JSON-envelope, exit codes, stdout/stderr | `test/contract/ops` |
-| Contract (panel) | HTTP-коды, заголовки, cookie, JSON публичного API | `internal/panel/**/*_test.go` |
+| Contract (panel) | HTTP-коды, заголовки, cookie, JSON публичного API | `test/contract/panel`, `internal/panel/**/*_test.go` |
 | Contract (client) | разбор ответов API, профиль, установка модов | `internal/{app,serverapi,mods}/**/*_test.go` |
 | Infra | preflight `bootstrap.sh` на fake `/proc`, systemd и `df` | `test/infra` |
 | Integration | lifecycle на temp-root, mods/state deploy, retention | `test/integration` |
@@ -355,6 +355,40 @@ Contract-тесты реального бинарника проверяют т�
 - P01 lifecycle: env/flags и derived paths, self-signed generation/reuse,
   неполная/битая пара, режимы `0600`/`0700`, SAN, HTTP `308`, ACME `404`,
   TLS ≥ 1.2, security headers, `/healthz`, bind rollback, graceful `SIGTERM`;
+- P02 auth: создание/reuse/corrupt `auth.json`, режимы `0600`, `reset-password`
+  поверх битого файла, Argon2id verify, смена пароля и удаление
+  `initial-password.txt`, обязательная смена первого пароля, ротация сессии и
+  CSRF-токена, `X-CSRF-Token`, cookie-флаги
+  `HttpOnly`/`Secure`/`SameSite=Strict`, idle 12 ч и absolute 7 дней, рестарт
+  панели = разлогин, вход без CSRF и с неверным паролем, 429 после 5 неудач за
+  15 минут и `Retry-After`;
+- P03 ops-клиент: фиксированный argv через sudo, разбор ровно одного
+  JSON-envelope, все exit codes §3 → HTTP, `error.code/message/details`,
+  таймауты 5 с/2 мин/10 мин, отмена и timeout, отсутствие shell, лимиты
+  stdout/stderr, `checks_failed` с сохранённым отчётом `doctor`;
+- P04 публичные маршруты: `/`, `/backups`, скачивание mods/state,
+  `/api/v1/server`, `/api/v1/mods/current`, `/api/v1/mods/current/archive`,
+  `/healthz`; JSON-схемы и `Cache-Control`, `status` из fake ops, `no_mods`
+  для отсутствующего/битого `current.txt`, ETag/304, `Content-Disposition`,
+  `limit`/`before`/`next_before`, группировка день/неделя/месяц, path traversal,
+  symlink/каталог/не-`.tar.gz`, лимит 60 скачиваний в минуту на IP, отсутствие
+  утечки путей и сообщений ops в публичный HTML;
+- P05 админские маршруты: дашборд со статусом/health/таймером/doctor,
+  `/admin/server/{start,stop,restart}`, логи (HTML и API), моды (список,
+  deploy, rollback, upload), state (список, create, deploy), конфиги
+  (server/config/banlist и `config_invalid` рядом с полем), staff
+  (`players/*.json` и `ops staff set`), CSRF на каждом POST, аудит без
+  секретов, `no-store` и `/api/v1/admin/status`;
+- upload проверяется fake `Ops`: `MultipartReader`, UUID-имя в `uploads/`,
+  CSRF в потоке, удаление после успеха/ошибки, отказ без CSRF и сохранение
+  причины `archive_invalid`;
+- P06 contract-тесты панели: `test/contract/panel` собирает и запускает
+  настоящий `tes3mp-easy-panel` на loopback, подменяет `sudo` скриптом с
+  проверкой точного production argv и fake ops; покрыты HTTP→HTTPS `308`,
+  ACME `404`, security headers, `/healthz`, `/`, `/backups`, публичный API,
+  `no_mods`, `503 service_unavailable`, вход/CSRF/cookie-флаги, обязательная
+  смена пароля, ротация сессии, logout, `start`/`stop`/`restart` (успех,
+  `fail`→503, `locked`→409) и аудит;
 - пагинация: `limit`/`before`, `next_before`, 2016 записей, группировка
   день/неделя/месяц;
 - скачивание: `..`, абсолютный путь, не `.tar.gz`, отсутствующий файл,
@@ -377,8 +411,13 @@ challenge-path. Unit-тесты слушают эфемерные порты; р
 
 ## 6. Клиент
 
-- поиск Morrowind: реестр, Steam-библиотеки, GOG, Flatpak, ручной выбор;
+- поиск Morrowind: реестр, Steam-библиотеки (`libraryfolders.vdf`, modern и
+  legacy), GOG, Flatpak, ручной выбор;
 - проверка ESM, регистр имён, отсутствующий файл;
+- TES3MP: фиксированный SHA256, кеш, 3 попытки на 5xx/сеть, отказ на 4xx и
+  HTTP вне loopback, staging/rollback, повторный запуск без скачивания;
+- ZIP: path traversal, абсолютные пути, backslash, symlink, дубли, file/dir
+  conflict и лимиты entries/uncompressed/compressed;
 - `openmw.cfg`: профиль → активный конфиг, сохранение пользовательских строк,
   `.bak`, переключение серверов;
 - моды: `no_mods` как ошибка установки, совпадение sha256, скачивание, обрыв,
@@ -386,9 +425,24 @@ challenge-path. Unit-тесты слушают эфемерные порты; р
 - имена архивов: клиент работает только с `mods-*`/`mods-init-*` из API;
 - шрифты: успех, 404, битый файл, fallback без шрифтов;
 - локализация: overlay, `encoding=win1251`, отказ от установки в Morrowind;
+- `config.json`: пути Windows/Linux/XDG, отсутствующий и битый файл, дубли
+  `id`, `0600`, атомарная запись и rollback неудачного обновления;
+- профили: обязательные поля, порт 1..65535, HTTPS и loopback-исключение,
+  смена `id` при смене адреса/порта, активный профиль и удаление;
+- i18n: приоритет `LC_ALL`/`LC_MESSAGES`/`LANG`/`LANGUAGE`, явная настройка,
+  паритет ключей English/Russian и fallback;
 - запуск: Windows env, Linux Proton env, отсутствие Proton;
 - TLS: self-signed → понятная ошибка, без отключения проверки;
-- GUI не тестируется в CI; `app` тестируется без Fyne.
+- GUI не тестируется в CI; `app` тестируется без Fyne. CI ставит X11/OpenGL
+  заголовки и собирает `tes3mp-easy-client`, но не открывает окно.
+
+K02 проверяется unit-тестами `internal/morrowind`, `internal/tes3mp`,
+`internal/archive` и `internal/app`: поддельные registry/VDF/каталоги для
+поиска, настоящие temp-файлы для ESM и установки, `httptest` для скачивания.
+Официальный 65-MiB архив не входит в CI; опциональный
+`TES3MP_ARCHIVE=/path/to.zip go test ./internal/tes3mp -run TestOfficialArchive`
+проверяет зашитый SHA256 и реальный layout релиза 0.8.1. Реальный Fyne-диалог
+и smoke на Windows/Linux — K06.
 
 ## 7. Failure injection
 

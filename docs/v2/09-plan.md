@@ -104,7 +104,32 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
   redirect, `/healthz`, security headers, bind-rollback и graceful shutdown.
   ACME-выпуск по IP ещё не реализован: `:80` резервирует challenge-path и
   отдаёт 404, панель использует готовую пару или self-signed.
-- Следующая задача — P02 (auth, сессии, Argon2id, CSRF).
+- P02 закрыт: Argon2id `auth.json` и `reset-password`, обязательная смена
+  первого пароля, in-memory сессии с idle/absolute timeout, pre-session CSRF
+  для логина и CSRF на админских формах, rate limit 5/15 минут и cookie-флаги.
+- P03 закрыт: `OpsClient` запускает ops фиксированным argv через sudo,
+  проверяет один JSON-envelope, держит таймауты 5 с/2 мин/10 мин и маппит exit
+  codes в HTTP (400/404/409/422/500/503/507); `doctor` сохраняет отчёт при
+  `checks_failed`.
+- P04 закрыт: публичные `/`, `/backups`, скачивания mods/state и API
+  `/api/v1/server`, `/api/v1/mods/current`, `/api/v1/mods/current/archive`
+  работают через `Ops` и прямое чтение разрешённых файлов; healthz остаётся
+  liveness-пробой.
+- P05 закрыт: `/admin` со статусом/health/таймером/doctor, `/admin/logs`,
+  `/admin/mods` с потоковым upload, deploy и rollback, `/admin/state` с
+  create/deploy, `/admin/config/{server,config,banlist}`, `/admin/staff` и
+  JSON `/api/v1/admin/{status,logs}`. Все POST требуют CSRF; upload проверяет
+  токен в потоке, пишет UUID в `panel-data/uploads/` и удаляет файл после
+  `mods import`.
+- P06 закрыт: `cmd/tes3mp-easy-ops` реализует `start`/`stop`/`restart`
+  через `sudo -n`/rootctl и общий ops lock; `test/contract/panel` запускает
+  настоящий бинарник панели на loopback с fake `sudo`, проверяет публичный
+  HTTP-контракт, cookie/CSRF/сессии, а также успех, `fail`→503 и
+  `locked`→409 для админских действий.
+- M4 закрыт; K01 закрыт: добавлен каркас Fyne, `internal/config` с профилями
+  серверов и `internal/i18n` с English/Russian. K02 закрыт: реализованы поиск
+  Morrowind, проверка ESM и установка TES3MP. Следующая задача — K03
+  (Server API и моды).
 
 Схема веток на момент старта:
 
@@ -860,11 +885,11 @@ SIGKILL-тест требуют Linux; cgroup-часть без writable cgroup 
 | ID | Статус | Задача | Результат |
 |---|---|---|---|
 | P01 | done | HTTP-сервер, TLS, конфиг, lifecycle | панель слушает 80/443 |
-| P02 | planned | Auth, сессии, Argon2id, CSRF | вход и смена первого пароля |
-| P03 | planned | Ops-клиент и маппинг ошибок | HTTP-коды из exit codes |
-| P04 | planned | Публичный API и страницы | server, mods, backups, healthz |
-| P05 | planned | Админка и upload | статус, логи, моды, state, конфиги |
-| P06 | planned | Contract-тесты и лимиты | 64 MiB cgroup, cookie, ошибки |
+| P02 | done | Auth, сессии, Argon2id, CSRF | вход и смена первого пароля |
+| P03 | done | Ops-клиент и маппинг ошибок | HTTP-коды из exit codes |
+| P04 | done | Публичный API и страницы | server, mods, backups, healthz |
+| P05 | done | Админка и upload | статус, логи, моды, state, конфиги |
+| P06 | done | Contract-тесты и лимиты | реальная панель, cookie, ошибки, start/stop |
 
 ### P01 — HTTP-сервер, TLS, конфиг, lifecycle (done)
 
@@ -901,6 +926,193 @@ HTTPS; `SIGINT/SIGTERM` вызывают graceful shutdown с таймаутом
 unit-тесты слушают эфемерные порты, реальный bind требует
 `CAP_NET_BIND_SERVICE` на VM.
 
+### P02 — Auth, сессии, Argon2id, CSRF (done)
+
+Сделано: `panel-data/auth.json` версии 1 с `argon2id`, солью 16 байт и ключом
+32 байта; параметры `time=3`, `memory=32768` KiB, `threads=1`, `key_len=32`.
+`openAuthStore` загружает валидный файл, при его отсутствии генерирует
+24-символьный base64url-пароль, пишет `auth.json` и `initial-password.txt` с
+режимом `0600` и один раз логирует временный пароль. Битый `auth.json` —
+ошибка без молчаливой перезаписи. `ResetPassword` и подкоманда
+`tes3mp-easy-panel reset-password` перезаписывают хеш, создают новый
+`initial-password.txt`, печатают пароль в stdout и не трогают TLS, uploads и
+бэкапы; старые файлы восстанавливаются, если запись нового пароля сорвалась.
+Argon2-операции `verify` и создание нового хеша сериализованы семафором, чтобы
+логин и смена пароля не держали в памяти два буфера по 32 MiB одновременно.
+
+Сессии — in-memory map; ID и CSRF-токен — по 32 случайных байта в base64url.
+Cookie `tes3mp_session`: `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/`.
+Idle timeout 12 ч, absolute 7 дней; после смены пароля сессия и CSRF-токен
+ротируются, `initial-password.txt` удаляется, а до смены первого пароля
+`/admin` и `/admin/logout` перенаправляют на `/admin/password`. Форма логина
+использует отдельный одноразовый pre-session CSRF-токен в cookie
+`tes3mp_login_csrf` (`Path=/admin/login`, 10 минут); остальные POST требуют
+`_csrf` из формы или `X-CSRF-Token`. Логин ограничен 5 неудачами за 15 минут
+на IP и отвечает `429` с `Retry-After`; те же лимиты применяются к неверному
+текущему паролю.
+
+Тесты: `internal/panel` проверяет генерацию/повторное открытие/битый
+`auth.json`, `reset-password` поверх битого файла, точные Argon2-параметры,
+verify и смену пароля, удаление `initial-password.txt`, сессии, idle/absolute
+timeout, ротацию, отсутствие сессий после рестарта, pre-session и form/header
+CSRF, cookie-флаги, статусы входа/смены/выхода, 429, security headers и
+интеграционный flow первого входа. `cmd/tes3mp-easy-panel` проверяет
+`reset-password` с `--root`, повторный сброс, восстановление после битого
+`auth.json`, сохранность TLS/uploads/бэкапов и код 2 на пустой флаг.
+
+Ограничение: сессии и pre-session CSRF-токены хранятся только в памяти, поэтому
+рестарт панели разлогинивает админа; ACME и публичные маршруты по-прежнему не
+входят в P02. Сброс пароля требует остановленной панели, чтобы не было двух
+писателей `auth.json`.
+
+### P03 — Ops-клиент и маппинг ошибок (done)
+
+Сделано: `internal/panel/ops.go` содержит `Ops`-интерфейс из `05-panel.md`
+§7 и production-клиент `OpsClient`. Клиент запускает фиксированный массив
+аргументов без `sh -c`:
+
+```text
+sudo -n -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root <root> --json <command> [args...]
+```
+
+`NewOpsClient` по умолчанию использует `/opt/tes3mp-easy/bin/tes3mp-easy-ops`,
+пользователя `tes3mp` и `sudo`; `Direct`/`NewDirectOpsClient` нужны только для
+локального запуска и тестов. `stdout` разбирается как ровно один
+JSON-envelope; второй объект, мусор, пустой ответ или отсутствие `data` дают
+`internal`, а `stderr` пишется в переданный logger (journald). Вывод ограничен
+1 MiB, `stderr` — 64 KiB, поэтому сбойный ops не может раздуть память панели.
+
+Таймауты соответствуют `03-contracts.md` §8: `status`, `logs`,
+`backups list`, `config get` — 5 с; `start`, `stop`, `restart`, `staff set`,
+`config set` — 2 мин; `backups create`, `mods import`, `mods deploy`,
+`state deploy` — 10 мин. Мутации не повторяются после таймаута.
+
+`OpsError` хранит exit code, `error.code`, сообщение и `details`; HTTP-статус
+строится по exit code: 1→500, 2/8→400, 3→404, 4→409, 5→507, 6/10→503,
+7/9→422; неизвестный код → 500. Exit code авторитетнее `error.code`, а
+`OpsHTTPStatus`/`OpsHTTPStatusForCode` доступны обработчикам. `doctor` —
+исключение контракта: при exit 10 клиент сохраняет отчёт и возвращает его
+вместе с `checks_failed`/503, чтобы админка показала проблемные проверки.
+Остальные команды декодируются в типизированные `Status`, `Backups`, `Backup`,
+`ImportResult`, `DeployResult` и `ConfigSnapshot`; `ConfigGet` возвращает
+`values`, а `ConfigSnapshot` добавляет `read_only` для P05.
+
+Тесты: `internal/panel/ops_test.go` проверяет полную таблицу exit codes,
+точный argv для всех методов (включая sudo и имя игрока с пробелом), разбор
+успешных `data`, все варианты битого envelope, таймаут/отмену, отсутствие
+shell, ограничение вывода, `checks_failed` с сохранённым отчётом и реальный
+`execOpsRunner` через helper-процесс (код выхода, stdout/stderr, timeout).
+Ручной smoke настоящего бинарника на пустом root: `status` вернул
+`service_unavailable`/503, `backups list` — пустой список/200.
+
+Ограничение: P03 добавляет только клиент; маршруты панели начинают
+использовать его в P04–P05. `start`/`stop`/`restart` реализованы в P06 и
+проверены contract-тестами ops и панели.
+
+### P04 — Публичный API и страницы (done)
+
+Сделано: `internal/panel/public.go` и шаблоны `home.html`/`backups.html`.
+`GET /` показывает имя и порт сервера, статус из `ops status`, текущий
+mod-архив и ссылки на бэкапы/вход. `GET /backups` вызывает
+`ops backups list` для `state` (по умолчанию) или `mods`, принимает
+`limit=1..500` (по умолчанию 200) и безопасный `before`, строит `next_before`
+и группирует только отображение: дни для свежих архивов, ISO-недели для
+старше 7 дней, месяцы для старше года. Скачивание `/backups/{mods,state}/<name>`
+отдаёт только регулярный `.tar.gz` с проверкой `path.Base`, без symlink и
+directory listing.
+
+`GET /api/v1/server` берёт `hostname`/`port` из
+`configs/tes3mp-server-default.cfg`, `mods_sha256` из текущего `current.txt`,
+адрес — из `public_address` или Host запроса, и всегда отдаёт `no-store`.
+`GET /api/v1/mods/current` возвращает точную схему `name/sha256/size/url`;
+отсутствующий, битый или указывающий на отсутствующий файл `current.txt` даёт
+`404 no_mods`. `GET /api/v1/mods/current/archive` отдаёт `application/gzip`,
+`Content-Disposition`, `ETag` из sha256 и `304` по `If-None-Match`.
+
+Скачивания и архив модов делят sliding-window лимит 60 запросов в минуту на
+IP: HTML получает `429` с `Retry-After`, API — `429 rate_limited`. Публичный
+HTML показывает только безопасные сообщения (`service_unavailable`,
+`locked`, `no_space` и т.п.), без stderr, путей и stack trace. При падении
+systemd `/api/v1/server` отвечает `503 service_unavailable`; главная остаётся
+`200` и показывает предупреждение вместо выдуманного `running`.
+
+Тесты: `internal/panel/public_test.go` проверяет точные JSON-поля и
+`Cache-Control`, `mods_sha256: null`, 503/500 API, `no_mods` для трёх видов
+поломки, ETag/304, заголовки и тело архива, пагинацию и группировку, лимиты
+и `next_before`, `429` и `Retry-After`, скачивание и отказ для traversal,
+symlink, каталога, чужого типа и не-`.tar.gz`, главную страницу, 404/405 и
+отсутствие утечки ops-сообщений. `limiter_test.go` дополнительно проверяет
+окно и cap клиентов download-лимитера.
+
+Ограничение: публичные бэкапы по-прежнему без авторизации — это осознанное
+решение MVP; ACME остаётся отдельным шагом. `current.txt` проверяется по
+формату и наличию файла, но sha256 не пересчитывается на каждом публичном
+запросе (это дорого для 512 MiB); клиент проверяет скачанный архив сам.
+
+### P05 — Админка и upload (done)
+
+Сделано: `internal/panel/admin.go` и шаблоны `dashboard.html`, `admin_logs.html`,
+`admin_mods.html`, `admin_state.html`, `admin_config.html`, `admin_staff.html`.
+Дашборд показывает статус/health из `ops status`, таймер
+`tes3mp-easy-backup.timer`, отчёт `ops doctor` и текущий mod-архив; статус и
+логи обновляются раз в 5 секунд через `/api/v1/admin/status` и
+`/api/v1/admin/logs` (same-origin `static/admin.js`, без inline JS).
+
+`/admin/server/{start,stop,restart}` вызывает соответствующую команду ops.
+`/admin/mods` показывает список, `current` и `sha256`, делает deploy и
+rollback через `mods deploy`, а upload принимает multipart до 512 MiB потоково:
+`MaxBytesReader` + `MultipartReader`, UUID-имя в `panel-data/uploads/`,
+CSRF-поле проверяется во время чтения, после `mods import` (успех или ошибка)
+файл удаляется. `/admin/state` группирует архивы по дням/неделям/месяцам,
+принимает `limit`/`before`, делает `backups create --manual` и `state deploy`.
+`/admin/config/{server,config,banlist}` показывает формы из `config get`,
+сохраняет один ключ через `config set`, перечитывает значения, показывает
+`restart_required` и подсвечивает `config_invalid`; `customScripts.lua` и
+таблицы read-only. `/admin/staff` читает `players/*.json` только для
+отображения и вызывает `ops staff set`. Все POST требуют CSRF; аудит пишется
+в journald без паролей, сессий и содержимого файлов.
+
+Тесты: `internal/panel/admin_test.go` на fake `Ops` проверяет дашборд
+(status/doctor/timer/name), три server action, CSRF и ошибки, HTML/API логов,
+`tail`, JSON статуса, статический скрипт, deploy/rollback/защиту имён,
+потоковый upload (UUID, байты, удаление, отказ без CSRF, `archive_invalid`),
+state (группировка, `limit`/`before`, create/deploy, `no_space`), конфиги
+(формы, сохранение, bool, `config_invalid` рядом с полем, неизвестный файл),
+staff (`players/*.json`, повреждённый JSON, ранг, restart-баннер) и анонимные
+мутации. Проверено: `go test ./... -count=1`, `go test -race ./internal/panel`,
+`go vet ./...`, `go build ./...`, `gofmt`, `git diff --check`.
+
+Ограничение: раньше `start`/`stop`/`restart` в ops возвращали `internal`;
+P06 реализовал их и закрыл сквозной сценарий contract-тестами. ACME и
+real-host systemd smoke остаются за пределами M4.
+
+### P06 — Contract-тесты и лимиты (done)
+
+Сделано: `cmd/tes3mp-easy-ops` получил `start`/`stop`/`restart` через
+`sudo -n /usr/local/libexec/tes3mp-easy-rootctl`, общий exclusive lock и
+`--dry-run`; `test/contract/ops/control_test.go` проверяет реальный бинарник,
+точный argv, JSON `unit/action`, exit 6 rootctl и exit 4 при удержанном lock.
+
+`test/contract/panel` собирает настоящий `tes3mp-easy-panel`, поднимает его на
+loopback и подменяет `sudo` скриптом, который проверяет точный production argv
+`sudo -n -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops --root <root> --json
+<command>`. Бинарник панели не запускает настоящие systemctl/rootctl.
+
+`TestPanelHTTPContract` проверяет HTTP→HTTPS `308`, ACME `404`, `/healthz`,
+`/`, `/backups`, публичный API `/api/v1/server` и `/api/v1/mods/current`,
+`no_mods`, `503 service_unavailable`, `no-store` и security headers.
+`TestPanelAuthContract` — login CSRF, неверный пароль, cookie-флаги,
+обязательную смену первого пароля, ротацию сессии, logout и отказ старому
+паролю. `TestPanelAdminServerActionsContract` — формы старта/остановки/restart,
+успешный `303`, `fail`→503 и `locked`→409, отсутствие вызова ops без CSRF и
+аудит `action=server.*`.
+
+Проверено: `go test ./... -count=1`, `go vet ./...`, `gofmt`, `git diff
+--check`; `test/resource` по-прежнему проверяет 64 MiB cgroup best-effort и RSS
+там, где cgroup v2 недоступен для записи. Ограничение: fake `sudo` и fake ops
+не заменяют real-host `rootctl`/systemd smoke на чистой VM (E03).
+
 Критерий milestone: панель не пишет игровые данные напрямую, не хранит
 админский пароль в ops и корректно показывает `service_unavailable`,
 `no_space`, `archive_invalid` и `locked`.
@@ -911,8 +1123,8 @@ unit-тесты слушают эфемерные порты, реальный b
 
 | ID | Статус | Задача | Результат |
 |---|---|---|---|
-| K01 | planned | Каркас Fyne, config, i18n | окно и профили без бизнес-логики в UI |
-| K02 | planned | Morrowind и TES3MP | поиск, проверка ESM, установка |
+| K01 | done | Каркас Fyne, config, i18n | окно и профили без бизнес-логики в UI |
+| K02 | done | Morrowind и TES3MP | поиск, проверка ESM, установка |
 | K03 | planned | Server API и моды | скачивание, sha256, распаковка |
 | K04 | planned | Шрифты, локализация, launcher | запуск Windows/Linux/Proton |
 | K05 | planned | Мастер и ошибки | понятные сообщения и путь к логу |
@@ -920,6 +1132,62 @@ unit-тесты слушают эфемерные порты, реальный b
 
 Критерий milestone: битый `current.txt`, отсутствующий ESM и офлайн-режим
 показывают понятную ошибку; клиент не запускает vanilla-сервер молча.
+
+### K01 — Каркас Fyne, config, i18n (done)
+
+`cmd/tes3mp-easy-client` запускает Fyne-окно со списком профилей, добавлением,
+редактированием, удалением и выбором активного сервера. Язык переключается
+между English и Русский и сохраняется. Кнопка «Играть» пока только объясняет,
+что сценарий запуска появится в K04: UI не содержит логики установки или
+запуска.
+
+`internal/config` хранит `config.json` в `%APPDATA%\tes3mp-easy` (Windows) или
+`$XDG_CONFIG_HOME/tes3mp-easy` (Linux), а данные — в
+`%LOCALAPPDATA%\tes3mp-easy` / `$XDG_DATA_HOME/tes3mp-easy`. Файл пишется
+атомарно с правами `0600`; отсутствие файла — первый запуск, битый JSON,
+неизвестная версия, дубли ID или неверный профиль — ошибка запуска. Пароль
+сервера не попадает в ошибки. `server-id` выводится из `address:port`, поэтому
+папки профилей не зависят от названия и не содержат слэшей. `panel_url`
+требует HTTPS, кроме loopback-панели для разработки.
+
+`internal/i18n` содержит обе таблицы строк, выбирает язык по
+`LC_ALL`/`LC_MESSAGES`/`LANG`/`LANGUAGE`, поддерживает явную настройку и
+английский fallback. `internal/app` — единственная точка, которую вызывает UI;
+`config`, `i18n` и `app` не импортируют Fyne.
+
+Тесты: пути Windows/Linux/XDG, missing/corrupt config, права `0600`, атомарная
+запись, rollback `Store.Update`, CRUD профилей, смена ID при смене адреса,
+языковые приоритеты и паритет ключей. CI ставит `libgl1-mesa-dev`/`xorg-dev` и
+собирает клиент; сам GUI в CI не запускается. Ограничение: реальный показ окна
+и smoke на Windows/Linux — K06.
+
+### K02 — Morrowind и TES3MP (done)
+
+`internal/morrowind` ищет Morrowind в двух ключах реестра, Steam
+(`libraryfolders.vdf` modern/legacy), GOG и стандартных Windows-путях; на Linux
+— в Steam, `~/.steam/root` и Flatpak. Настроенная папка проверяется первой.
+`Inspect` требует `Data Files` и три ESM, ищет имена сначала точно, затем
+регистронезависимо, и только читает оригинальную установку.
+
+`internal/tes3mp` фиксирует TES3MP 0.8.1 Win64, URL и SHA256
+`72d35d…597e2bad`. Установка идёт в `cache/tes3mp-0.8.1-win64.zip` с тремя
+попытками, проверкой размера и SHA256, распаковкой в соседний
+`tes3mp.staging-*` и заменой через `tes3mp.old`. Маркер `.tes3mp-version`
+позволяет не скачивать текущую версию повторно. ZIP проходит общий
+`internal/archive` с pathguard, запретом symlink/дублей и лимитами 512 MiB /
+1 GiB / 10 000 записей.
+
+`internal/app` добавил `DetectMorrowind`, `CheckMorrowind`, `TES3MPState` и
+`InstallTES3MP` с прогрессом; Fyne-оболочка получила диалог «Подготовка» с
+автопоиском, выбором папки, проверкой ESM и установкой. Полный мастер и
+отмена установки остаются в K05.
+
+Тесты: fake registry/VDF, регистр ESM, missing files, Linux/Windows candidates,
+ZIP traversal/symlink/limits, httptest-скачивание, retry, checksum, кеш,
+skip, staging/rollback и wiring `app`; официальный архив проверяется
+опциональным `TestOfficialArchive`. Ограничение: реальный GUI и smoke на
+Windows/Linux — K06.
+
 
 ## 10. M6 — упаковка и E2E
 
