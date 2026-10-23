@@ -90,7 +90,10 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
 - W05 закрыт: `state deploy` проверяет state и `current.txt`, делает
   `state-predeploy-*`, staging, подмену `players` и `world` через rename,
   stop/start и полный rollback при сбое.
-- Следующая задача — W06 (`staff set`, `config get/set`).
+- W06 закрыт: `staff set`, `config get/set` и `internal/gameconfig` с
+  whitelist-проверкой типов, сохранением комментариев, `.bak-*` и атомарной
+  записью.
+- Следующая задача — W07 (fault/resource-тесты).
 
 Схема веток на момент старта:
 
@@ -591,7 +594,7 @@ lock `lock_linux_test.go`; для не-Linux платформ тест lock пр
 | W03 | done | `mods import` | проверка и импорт архива |
 | W04 | done | `mods deploy` | predeploy, остановка, restart |
 | W05 | done | `state deploy` | staging, проверка, rollback |
-| W06 | planned | `staff set`, `config get/set` | точечные изменения |
+| W06 | done | `staff set`, `config get/set` | точечные изменения |
 | W07 | planned | Fault/resource-тесты | отказы, 512 MiB архив, 64 MiB cgroup |
 
 Критерий milestone: любая мутация либо завершается успешно, либо оставляет
@@ -754,6 +757,39 @@ exit-кодов; contract-тесты реального бинарника на 
 `mods_archive`, `state-predeploy`, пропуск predeploy в `--latest`,
 stop/start, rollback при распаковке, старый/отсутствующий/чужой `current.txt`,
 lock и отсутствие следов.
+
+### W06 — `staff set`, `config get/set` (done)
+
+Сделано: `staff set --player <name> --rank 0..3` проверяет имя через
+`pathguard.Base`, берёт exclusive `flock` (shared для `--dry-run`), меняет
+`settings.staffRank` в `players/<name>.json` и не создаёт отсутствующего
+игрока (`not_found`). Остальные поля JSON сохраняются, запись идёт через
+`atomicfile`, рядом остаётся `players/<name>.json.bak-<timestamp>`. Ошибки
+имени — `unsafe_path`, битый JSON или не-объект `settings` — `config_invalid`.
+
+`internal/gameconfig` разбирает `configs/tes3mp-server-default.cfg` (INI),
+`configs/config.lua` и `configs/banlist.json` без экспорта сырых файлов.
+`config get` отдаёт только известные ключи, а Lua-таблицы и списки — в
+`read_only`; `config set` принимает только whitelist, проверяет тип и диапазон,
+заменяет одну строку/значение и сохраняет комментарии (полнострочные и
+inline) и CRLF. Для server поддерживается alias `enabled` →
+`masterServerEnabled`; ответ содержит канонический ключ. Banlist принимает
+JSON-массив или по одному значению на строку, проверяет имена и IP. Любая
+запись сначала создаёт `.bak-<timestamp>` (с collision-суффиксом) и заменяет
+файл атомарно. `config get` lock не берёт; `config set` берёт exclusive, а
+`--dry-run` — shared и не пишет ни байта. Обе мутации возвращают
+`restart_required: true` и не перезапускают сервер.
+
+Тесты: unit-тесты `internal/gameconfig` на чтение всех трёх файлов, типы,
+диапазоны, inline-комментарии, read-only таблицы, alias, `.bak`, collision,
+dry-run, symlink, отсутствующие файлы и валидацию banlist; unit-тесты команд на
+разбор аргументов, mapping ошибок, human output, `locked`, unsafe player и
+сбой записи; contract-тесты реального бинарника на точные JSON-ключи,
+`config_invalid` с `file`/`key`, exit 2/3/8/9, human output, dry-run без
+изменений и сохранность чужих полей player JSON.
+
+Ограничение: таблицы и списки `config.lua` в MVP только показываются в
+`read_only` и не редактируются.
 
 ## 8. M4 — панель MVP
 

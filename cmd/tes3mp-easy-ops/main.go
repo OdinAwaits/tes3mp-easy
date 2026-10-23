@@ -1,8 +1,9 @@
 // Command tes3mp-easy-ops is the administrative CLI for tes3mp-easy.
 //
 // This step implements the process contract, the read-only doctor, status,
-// logs and backups commands, and mods/state deploy commands. Remaining command
-// bodies arrive in later steps from docs/v2/04-ops.md.
+// logs, backups and config get commands, and the mutating mods/state deploy,
+// staff set and config set commands. start/stop/restart arrive later from
+// docs/v2/04-ops.md.
 package main
 
 import (
@@ -44,9 +45,12 @@ Commands:
   mods import --file <path>
   mods deploy (--current|--latest|--archive <name>) [--no-restart]
   state deploy (--latest|--archive <name>) [--no-restart]
+  staff set --player <name> --rank 0..3
+  config get --file server|config|banlist
+  config set --file server|config|banlist --key <key> --value <value>
 
-Other commands (start, stop, restart, staff, config) are not implemented yet;
-they return internal until later steps.
+start, stop and restart are not implemented yet; they return internal until a
+later step.
 See docs/v2/04-ops.md for the target command set.
 `
 
@@ -122,6 +126,10 @@ func runWithClient(args []string, stdout, stderr io.Writer, client *systemd.Clie
 		return runMods(opts, rest[1:], client, stdout, stderr)
 	case "state":
 		return runState(opts, rest[1:], client, stdout, stderr)
+	case "staff":
+		return runStaff(opts, rest[1:], stdout, stderr)
+	case "config":
+		return runConfig(opts, rest[1:], stdout, stderr)
 	default:
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInternal,
