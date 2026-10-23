@@ -158,6 +158,9 @@ func (s *shell) showSettings() {
 
 	fontsHint := widget.NewLabel(tr.T(i18n.KeySettingsFontsHint))
 	fontsHint.Wrapping = fyne.TextWrapWord
+	logHint := widget.NewLabel(tr.T(i18n.KeySettingsLogHint))
+	logHint.Wrapping = fyne.TextWrapWord
+	openLog := widget.NewButton(tr.T(i18n.KeySettingsOpenLog), s.showLogs)
 	hint := widget.NewLabel(tr.T(i18n.KeySettingsHint))
 	hint.Wrapping = fyne.TextWrapWord
 	items := []*widget.FormItem{
@@ -172,6 +175,8 @@ func (s *shell) showSettings() {
 		widget.NewFormItem(tr.T(i18n.KeySettingsVoiceover), voiceover),
 		widget.NewFormItem("", localizationStatus),
 		widget.NewFormItem("", fontsHint),
+		widget.NewFormItem(tr.T(i18n.KeySettingsOpenLog), openLog),
+		widget.NewFormItem("", logHint),
 		widget.NewFormItem("", hint),
 	)
 	dialog.NewForm(

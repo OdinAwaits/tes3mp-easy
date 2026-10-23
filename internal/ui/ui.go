@@ -35,7 +35,11 @@ func Run(service *app.Service) error {
 	shell := &shell{service: service, window: window}
 	shell.render()
 	window.CenterOnScreen()
-	window.ShowAndRun()
+	window.Show()
+	if service.NeedsSetup() {
+		shell.showSetup()
+	}
+	fyneApp.Run()
 	return nil
 }
 
@@ -81,10 +85,11 @@ func (s *shell) headerActions(tr *i18n.Translator) fyne.CanvasObject {
 		s.showServerDialog("", config.Server{Port: 25565})
 	})
 	language := s.languageSelect(tr)
+	logs := widget.NewButton(tr.T(i18n.KeyLogsTitle), s.showLogs)
 	setup := widget.NewButton(tr.T(i18n.KeyCommonSetup), s.showSetup)
 	settings := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonSettings), theme.SettingsIcon(), s.showSettings)
 	about := widget.NewButton(tr.T(i18n.KeyCommonAbout), s.showAbout)
-	return container.NewHBox(add, language, setup, settings, about)
+	return container.NewHBox(add, language, logs, setup, settings, about)
 }
 
 func (s *shell) languageSelect(tr *i18n.Translator) *widget.Select {
@@ -216,14 +221,6 @@ func (s *shell) showAbout() {
 		tr.Tf(i18n.KeyAboutBody, app.Version, app.TES3MPVersion, app.ProjectURL),
 		s.window,
 	)
-}
-
-func (s *shell) showError(err error) {
-	if err == nil {
-		return
-	}
-	tr := s.service.Translator()
-	dialog.ShowError(fmt.Errorf("%s: %w", tr.T(i18n.KeyCommonError), err), s.window)
 }
 
 func (s *shell) settings() app.Settings {

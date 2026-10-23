@@ -8,11 +8,14 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
+	"github.com/Saagilat/tes3mp-easy/internal/clientlog"
 	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/fonts"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
@@ -22,6 +25,9 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/serverapi"
 	"github.com/Saagilat/tes3mp-easy/internal/tes3mp"
 )
+
+// TailLines is the number of recent client log lines shown by the UI.
+const TailLines = 300
 
 const (
 	// Version is the client version shown in About and the CLI.
@@ -66,6 +72,8 @@ type Service struct {
 	// httpClient is used by the public API and archive download; nil means the
 	// production default from serverapi.New.
 	httpClient *http.Client
+	// logFile receives diagnostics and user-facing error details.
+	logFile *clientlog.Logger
 }
 
 // Open loads the configuration at paths.ConfigFile.
@@ -85,14 +93,89 @@ func OpenWithEnv(paths config.Paths, getenv func(string) string) (*Service, erro
 	if err != nil {
 		return nil, err
 	}
+	logFile, err := clientlog.Open(paths.LogsDir)
+	if err != nil {
+		return nil, fmt.Errorf("open client log: %w", err)
+	}
 	homeDir, _ := os.UserHomeDir()
-	return &Service{
+	service := &Service{
 		store:   store,
 		paths:   paths,
 		getenv:  getenv,
 		goos:    runtime.GOOS,
 		homeDir: homeDir,
-	}, nil
+		logFile: logFile,
+	}
+	service.LogInfof("client started; config=%s work=%s", paths.ConfigFile,
+		service.WorkDir())
+	return service, nil
+}
+
+// Close releases the client log. It is safe to call more than once.
+func (s *Service) Close() error {
+	if s == nil || s.logFile == nil {
+		return nil
+	}
+	return s.logFile.Close()
+}
+
+// NeedsSetup reports whether the local installation has not been completed.
+// Server profiles deliberately do not affect this: adding a server is a
+// separate step, not part of installing TES3MP and fonts.
+func (s *Service) NeedsSetup() bool {
+	return s == nil || !s.Config().SetupComplete
+}
+
+// CompleteSetup records that the first-run wizard reached its final step.
+func (s *Service) CompleteSetup() error {
+	if s == nil {
+		return errors.New("app service is nil")
+	}
+	return s.store.Update(func(cfg *config.Config) error {
+		cfg.SetupComplete = true
+		return nil
+	})
+}
+
+// LogPath returns the client log path even if logging is not available.
+func (s *Service) LogPath() string {
+	if s == nil {
+		return ""
+	}
+	if s.logFile != nil {
+		return s.logFile.Path()
+	}
+	return filepath.Join(s.paths.LogsDir, clientlog.FileName)
+}
+
+// LogInfof writes an informational entry to the client log.
+func (s *Service) LogInfof(format string, args ...any) {
+	if s != nil && s.logFile != nil {
+		s.logFile.Infof(format, args...)
+	}
+}
+
+// LogWarnf writes a warning entry to the client log.
+func (s *Service) LogWarnf(format string, args ...any) {
+	if s != nil && s.logFile != nil {
+		s.logFile.Warnf(format, args...)
+	}
+}
+
+// LogError records a failed operation without changing the returned error.
+func (s *Service) LogError(scope string, err error) {
+	if s == nil || s.logFile == nil || err == nil {
+		return
+	}
+	s.logFile.Errorf("%s: %v", strings.TrimSpace(scope), err)
+}
+
+// ReadLogTail returns the last lines of the client log for the Logs dialog.
+func (s *Service) ReadLogTail(maxLines int) ([]string, error) {
+	if s == nil {
+		return nil, errors.New("app service is nil")
+	}
+	return clientlog.Tail(s.LogPath(), maxLines)
 }
 
 // Config returns an independent configuration snapshot.

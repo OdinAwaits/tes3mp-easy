@@ -47,10 +47,22 @@ func (s *Service) InstallFonts(ctx context.Context) (fonts.Result, error) {
 	if s.httpClient != nil {
 		options.Client = s.httpClient
 	}
+	result := fonts.Result{}
 	if s.installFonts != nil {
-		return s.installFonts(ctx, options)
+		result, err = s.installFonts(ctx, options)
+	} else {
+		result, err = fonts.Install(ctx, options)
 	}
-	return fonts.Install(ctx, options)
+	if err != nil {
+		s.LogError("install fonts", err)
+		return result, err
+	}
+	if len(result.Warnings) > 0 {
+		s.LogWarnf("fonts: %s", strings.Join(result.Warnings, "; "))
+	} else {
+		s.LogInfof("fonts are installed")
+	}
+	return result, nil
 }
 
 // FontsState verifies the files in the active OpenMW Fonts directory.

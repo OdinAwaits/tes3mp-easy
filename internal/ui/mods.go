@@ -59,7 +59,7 @@ func (s *shell) showModsUpdate(profile config.Server) {
 		fyne.Do(func() {
 			if err != nil {
 				progress.SetValue(0)
-				status.SetText(tr.Tf(i18n.KeyModsFailed, err))
+				status.SetText(s.failureBody(err))
 				return
 			}
 			progress.SetValue(1)

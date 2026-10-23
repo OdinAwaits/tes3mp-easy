@@ -54,12 +54,16 @@ func (s *Service) InstallLocalization(ctx context.Context, serverID string,
 		result, err = locale.Install(ctx, options)
 	}
 	if err != nil {
+		s.LogError("install localization", err)
 		return result, err
 	}
+	s.LogInfof("localization for %s is installed (voiceover=%t)",
+		serverID, voiceover)
 	if err := s.store.Update(func(cfg *config.Config) error {
 		cfg.Localization = true
 		return nil
 	}); err != nil {
+		s.LogError("save localization setting", err)
 		return result, fmt.Errorf("save localization setting: %w", err)
 	}
 	state, stateErr := mods.Inspect(workDir, serverID)
@@ -90,11 +94,14 @@ func (s *Service) RemoveLocalization(serverID string) ([]string, error) {
 	}
 	warnings, err := locale.RemoveOverlay(workDir, serverID)
 	if err != nil {
+		s.LogError("remove localization overlay", err)
 		return nil, err
 	}
 	if err := locale.Remove(workDir, serverID); err != nil {
+		s.LogError("remove localization files", err)
 		return nil, err
 	}
+	s.LogInfof("localization for %s was removed", serverID)
 	if err := s.store.Update(func(cfg *config.Config) error {
 		cfg.Localization = false
 		return nil

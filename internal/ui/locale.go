@@ -52,8 +52,9 @@ func (s *shell) showLocalization(profile config.Server, install, voiceover bool)
 			popup.Hide()
 			s.render()
 			if err != nil {
-				status.SetText(tr.Tf(i18n.KeyLocaleFailed, err.Error()))
-				dialog.ShowError(err, s.window)
+				s.showErrorWithRetry(err, func() {
+					s.showLocalization(profile, install, voiceover)
+				})
 				return
 			}
 			progress.SetValue(1)

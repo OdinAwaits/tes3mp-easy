@@ -82,6 +82,91 @@ const (
 	KeyAdvancedStarted = "advanced.started"
 	KeyAdvancedFailed  = "advanced.failed"
 
+	KeyErrorWhat       = "error.what"
+	KeyErrorDetail     = "error.detail"
+	KeyErrorActionLine = "error.action_line"
+	KeyErrorLogLine    = "error.log_line"
+	KeyErrorRetry      = "error.retry"
+	KeyErrorUnknown    = "error.unknown"
+	KeyErrorUnknownAct = "error.unknown_action"
+
+	KeyErrorMorrowindNotFound      = "error.morrowind_not_found"
+	KeyErrorMorrowindNotFoundAct   = "error.morrowind_not_found_action"
+	KeyErrorMorrowindIncomplete    = "error.morrowind_incomplete"
+	KeyErrorMorrowindIncompleteAct = "error.morrowind_incomplete_action"
+	KeyErrorMorrowindMissing       = "error.morrowind_not_configured"
+	KeyErrorMorrowindMissingAct    = "error.morrowind_not_configured_action"
+	KeyErrorNetwork                = "error.network"
+	KeyErrorNetworkAct             = "error.network_action"
+	KeyErrorCertificate            = "error.certificate"
+	KeyErrorCertificateAct         = "error.certificate_action"
+	KeyErrorNoMods                 = "error.no_mods"
+	KeyErrorNoModsAct              = "error.no_mods_action"
+	KeyErrorServerAPI              = "error.server_api"
+	KeyErrorServerAPIAct           = "error.server_api_action"
+	KeyErrorFileSystem             = "error.file_system"
+	KeyErrorFileSystemAct          = "error.file_system_action"
+	KeyErrorWorkDir                = "error.work_dir"
+	KeyErrorWorkDirAct             = "error.work_dir_action"
+	KeyErrorModsMissing            = "error.mods_missing"
+	KeyErrorModsMissingAct         = "error.mods_missing_action"
+	KeyErrorLocaleMissing          = "error.locale_missing"
+	KeyErrorLocaleMissingAct       = "error.locale_missing_action"
+
+	KeyLogsTitle      = "logs.title"
+	KeyLogsPath       = "logs.path"
+	KeyLogsEmpty      = "logs.empty"
+	KeyLogsRefresh    = "logs.refresh"
+	KeyLogsOpenFolder = "logs.open_folder"
+	KeyLogsHint       = "logs.hint"
+	KeyLogsExitHint   = "logs.exit_hint"
+
+	KeySettingsOpenLog = "settings.open_log"
+	KeySettingsLogHint = "settings.log_hint"
+
+	KeyWizardTitle              = "wizard.title"
+	KeyWizardStep               = "wizard.step"
+	KeyWizardCancel             = "wizard.cancel"
+	KeyWizardBack               = "wizard.back"
+	KeyWizardNext               = "wizard.next"
+	KeyWizardFinish             = "wizard.finish"
+	KeyWizardRetry              = "wizard.retry"
+	KeyWizardLanguageTitle      = "wizard.language.title"
+	KeyWizardLanguageHint       = "wizard.language.hint"
+	KeyWizardMorrowindTitle     = "wizard.morrowind.title"
+	KeyWizardMorrowindHint      = "wizard.morrowind.hint"
+	KeyWizardWorkDirTitle       = "wizard.work_dir.title"
+	KeyWizardWorkDirHint        = "wizard.work_dir.hint"
+	KeyWizardServerTitle        = "wizard.server.title"
+	KeyWizardServerHint         = "wizard.server.hint"
+	KeyWizardConnectionTitle    = "wizard.connection.title"
+	KeyWizardConnectionHint     = "wizard.connection.hint"
+	KeyWizardConnectionChecking = "wizard.connection.checking"
+	KeyWizardConnectionOK       = "wizard.connection.ok"
+	KeyWizardConnectionNeeded   = "wizard.connection.needed"
+	KeyWizardTES3MPNeeded       = "wizard.connection.tes3mp_needed"
+	KeyWizardTES3MPTitle        = "wizard.tes3mp.title"
+	KeyWizardTES3MPHint         = "wizard.tes3mp.hint"
+	KeyWizardFontsTitle         = "wizard.fonts.title"
+	KeyWizardFontsHint          = "wizard.fonts.hint"
+	KeyWizardModsTitle          = "wizard.mods.title"
+	KeyWizardModsHint           = "wizard.mods.hint"
+	KeyWizardModsStarting       = "wizard.mods.starting"
+	KeyWizardModsReady          = "wizard.mods.ready"
+	KeyWizardLocaleTitle        = "wizard.locale.title"
+	KeyWizardLocaleHint         = "wizard.locale.hint"
+	KeyWizardFontsChecking      = "wizard.fonts.checking"
+	KeyWizardFontsReady         = "wizard.fonts.ready"
+	KeyWizardFontsWarning       = "wizard.fonts.warning"
+	KeyWizardLocaleInstall      = "wizard.locale.install"
+	KeyWizardLocaleInstalled    = "wizard.locale.installed"
+	KeyWizardLocaleSkipped      = "wizard.locale.skipped"
+	KeyWizardLocaleNeeded       = "wizard.locale.needed"
+	KeyWizardReadyTitle         = "wizard.ready.title"
+	KeyWizardReadyHint          = "wizard.ready.hint"
+	KeyWizardSummary            = "wizard.ready.summary"
+	KeyWizardPlay               = "wizard.ready.play"
+
 	KeySetupTitle               = "setup.title"
 	KeySetupMorrowind           = "setup.morrowind"
 	KeySetupFind                = "setup.find"
@@ -191,6 +276,91 @@ var catalogs = map[Language]map[string]string{
 		KeyAdvancedStarted: "OpenMW-CS is running.",
 		KeyAdvancedFailed:  "OpenMW-CS failed to start: %v",
 
+		KeyErrorWhat:       "What happened: %s",
+		KeyErrorDetail:     "Technical details: %s",
+		KeyErrorActionLine: "What to do: %s",
+		KeyErrorLogLine:    "Log: %s",
+		KeyErrorRetry:      "Retry",
+		KeyErrorUnknown:    "The operation failed.",
+		KeyErrorUnknownAct: "Open the log, check the details and try again.",
+
+		KeyErrorMorrowindNotFound:      "Morrowind was not found.",
+		KeyErrorMorrowindNotFoundAct:   "Select the folder that contains Data Files/Morrowind.esm, or install Morrowind first.",
+		KeyErrorMorrowindIncomplete:    "The Morrowind folder is incomplete.",
+		KeyErrorMorrowindIncompleteAct: "Select a folder with Data Files/Morrowind.esm, Tribunal.esm and Bloodmoon.esm.",
+		KeyErrorMorrowindMissing:       "No Morrowind folder is selected.",
+		KeyErrorMorrowindMissingAct:    "Choose the Morrowind folder in Setup or Settings.",
+		KeyErrorNetwork:                "The server did not respond.",
+		KeyErrorNetworkAct:             "Check the panel URL, the internet connection and the firewall, then retry.",
+		KeyErrorCertificate:            "The panel certificate could not be verified.",
+		KeyErrorCertificateAct:         "Check the system date and the panel URL. Do not disable certificate checks.",
+		KeyErrorNoMods:                 "The panel has no current mod pack.",
+		KeyErrorNoModsAct:              "Ask the server owner to publish mods in the panel and try again.",
+		KeyErrorServerAPI:              "The panel returned an error.",
+		KeyErrorServerAPIAct:           "Check the panel URL and retry. If it repeats, send the log to the server owner.",
+		KeyErrorFileSystem:             "A file could not be read or written.",
+		KeyErrorFileSystemAct:          "Check free disk space and write permissions for the work folder, then retry.",
+		KeyErrorWorkDir:                "The work folder is invalid.",
+		KeyErrorWorkDirAct:             "Choose an existing writable folder with an absolute path in Setup or Settings.",
+		KeyErrorModsMissing:            "Server mods are not installed.",
+		KeyErrorModsMissingAct:         "Run Setup or press Update mods, then retry.",
+		KeyErrorLocaleMissing:          "Russian localization is enabled but not installed.",
+		KeyErrorLocaleMissingAct:       "Open Settings, install the localization again or disable it.",
+
+		KeyLogsTitle:      "Client log",
+		KeyLogsPath:       "File: %s",
+		KeyLogsEmpty:      "The log is empty yet.",
+		KeyLogsRefresh:    "Refresh",
+		KeyLogsOpenFolder: "Open log folder",
+		KeyLogsHint:       "The last %d lines are shown. The full file is in the log folder.",
+		KeyLogsExitHint:   "If the game closed unexpectedly, open the client log.",
+
+		KeySettingsOpenLog: "Client log",
+		KeySettingsLogHint: "Open the log if setup or a launch fails.",
+
+		KeyWizardTitle:              "First-run setup",
+		KeyWizardStep:               "Step %d of %d",
+		KeyWizardCancel:             "Cancel setup",
+		KeyWizardBack:               "Back",
+		KeyWizardNext:               "Next",
+		KeyWizardFinish:             "Finish",
+		KeyWizardRetry:              "Retry",
+		KeyWizardLanguageTitle:      "Interface language",
+		KeyWizardLanguageHint:       "Choose the language. You can change it later in Settings.",
+		KeyWizardMorrowindTitle:     "Morrowind",
+		KeyWizardMorrowindHint:      "Select the original game folder. The client only reads it.",
+		KeyWizardWorkDirTitle:       "Work folder",
+		KeyWizardWorkDirHint:        "TES3MP, mods and logs are stored here. Leave it empty to use the default folder.",
+		KeyWizardServerTitle:        "Server",
+		KeyWizardServerHint:         "Enter the address and panel URL you received from the server owner.",
+		KeyWizardConnectionTitle:    "Connection and TES3MP",
+		KeyWizardConnectionHint:     "The client checks the panel and the installed TES3MP build.",
+		KeyWizardConnectionChecking: "Checking the panel...",
+		KeyWizardConnectionOK:       "The panel is reachable. Server status: %s.",
+		KeyWizardConnectionNeeded:   "The panel must be reachable before continuing.",
+		KeyWizardTES3MPNeeded:       "TES3MP %s must be installed before continuing.",
+		KeyWizardTES3MPTitle:        "TES3MP",
+		KeyWizardTES3MPHint:         "The client downloads and verifies TES3MP %s. No server details are needed for this step.",
+		KeyWizardFontsTitle:         "Fonts",
+		KeyWizardFontsHint:          "Cyrillic fonts are installed into the OpenMW configuration. The Morrowind folder is not modified.",
+		KeyWizardModsTitle:          "Server mods",
+		KeyWizardModsHint:           "The client downloads and verifies the current mod pack.",
+		KeyWizardModsStarting:       "Installing server mods...",
+		KeyWizardModsReady:          "Server mods are installed.",
+		KeyWizardLocaleTitle:        "Fonts and localization",
+		KeyWizardLocaleHint:         "Cyrillic fonts are installed automatically. Russian localization is optional.",
+		KeyWizardFontsChecking:      "Installing Cyrillic fonts...",
+		KeyWizardFontsReady:         "Cyrillic fonts are ready.",
+		KeyWizardFontsWarning:       "Fonts could not be installed: %s. The game will use the default font.",
+		KeyWizardLocaleInstall:      "Install Russian localization",
+		KeyWizardLocaleInstalled:    "Russian localization is installed.",
+		KeyWizardLocaleSkipped:      "Russian localization is not installed.",
+		KeyWizardLocaleNeeded:       "Russian localization is not installed yet.",
+		KeyWizardReadyTitle:         "Ready to play",
+		KeyWizardReadyHint:          "Setup is complete. Add a server from the main window when you are ready to play.",
+		KeyWizardSummary:            "Morrowind: %s\nWork folder: %s\nTES3MP: %s\nLog: %s",
+		KeyWizardPlay:               "Play",
+
 		KeySetupTitle:               "Prepare the client",
 		KeySetupMorrowind:           "Morrowind",
 		KeySetupFind:                "Find automatically",
@@ -297,6 +467,91 @@ var catalogs = map[Language]map[string]string{
 		KeyAdvancedCSHint:  "OpenMW-CS не входит в TES3MP. Если его нет, скачайте с https://openmw.org/downloads/ и положите openmw-cs.exe рядом с tes3mp.exe.",
 		KeyAdvancedStarted: "OpenMW-CS запущен.",
 		KeyAdvancedFailed:  "Не удалось запустить OpenMW-CS: %v",
+
+		KeyErrorWhat:       "Что случилось: %s",
+		KeyErrorDetail:     "Технические подробности: %s",
+		KeyErrorActionLine: "Что сделать: %s",
+		KeyErrorLogLine:    "Лог: %s",
+		KeyErrorRetry:      "Повторить",
+		KeyErrorUnknown:    "Операция не удалась.",
+		KeyErrorUnknownAct: "Откройте лог, проверьте подробности и попробуйте ещё раз.",
+
+		KeyErrorMorrowindNotFound:      "Morrowind не найден.",
+		KeyErrorMorrowindNotFoundAct:   "Выберите папку, в которой есть Data Files/Morrowind.esm, или сначала установите Morrowind.",
+		KeyErrorMorrowindIncomplete:    "Папка Morrowind неполная.",
+		KeyErrorMorrowindIncompleteAct: "Выберите папку с Data Files/Morrowind.esm, Tribunal.esm и Bloodmoon.esm.",
+		KeyErrorMorrowindMissing:       "Папка Morrowind не выбрана.",
+		KeyErrorMorrowindMissingAct:    "Выберите папку Morrowind в мастере настройки или в Настройках.",
+		KeyErrorNetwork:                "Сервер не отвечает.",
+		KeyErrorNetworkAct:             "Проверьте адрес панели, интернет, VPN и файрвол, затем повторите.",
+		KeyErrorCertificate:            "Не удалось проверить сертификат панели.",
+		KeyErrorCertificateAct:         "Проверьте системную дату и адрес панели. Не отключайте проверку сертификатов.",
+		KeyErrorNoMods:                 "На панели нет актуального набора модов.",
+		KeyErrorNoModsAct:              "Попросите владельца сервера опубликовать моды в панели и повторите.",
+		KeyErrorServerAPI:              "Панель вернула ошибку.",
+		KeyErrorServerAPIAct:           "Проверьте адрес панели и повторите. Если ошибка повторяется, отправьте лог владельцу сервера.",
+		KeyErrorFileSystem:             "Не удалось прочитать или записать файл.",
+		KeyErrorFileSystemAct:          "Проверьте свободное место и права на запись в рабочей папке, затем повторите.",
+		KeyErrorWorkDir:                "Рабочая папка некорректна.",
+		KeyErrorWorkDirAct:             "Выберите существующую папку с абсолютным путём, доступную для записи, в мастере или Настройках.",
+		KeyErrorModsMissing:            "Моды сервера не установлены.",
+		KeyErrorModsMissingAct:         "Запустите мастер настройки или нажмите «Обновить моды», затем повторите.",
+		KeyErrorLocaleMissing:          "Русская локализация включена, но не установлена.",
+		KeyErrorLocaleMissingAct:       "Откройте Настройки, установите локализацию заново или отключите её.",
+
+		KeyLogsTitle:      "Лог клиента",
+		KeyLogsPath:       "Файл: %s",
+		KeyLogsEmpty:      "Лог пока пуст.",
+		KeyLogsRefresh:    "Обновить",
+		KeyLogsOpenFolder: "Открыть папку с логом",
+		KeyLogsHint:       "Показаны последние %d строк. Полный файл лежит в папке с логом.",
+		KeyLogsExitHint:   "Если игра закрылась неожиданно, откройте лог клиента.",
+
+		KeySettingsOpenLog: "Лог клиента",
+		KeySettingsLogHint: "Откройте лог, если настройка или запуск не удались.",
+
+		KeyWizardTitle:              "Первая настройка",
+		KeyWizardStep:               "Шаг %d из %d",
+		KeyWizardCancel:             "Отменить настройку",
+		KeyWizardBack:               "Назад",
+		KeyWizardNext:               "Далее",
+		KeyWizardFinish:             "Готово",
+		KeyWizardRetry:              "Повторить",
+		KeyWizardLanguageTitle:      "Язык интерфейса",
+		KeyWizardLanguageHint:       "Выберите язык. Его можно изменить позже в Настройках.",
+		KeyWizardMorrowindTitle:     "Morrowind",
+		KeyWizardMorrowindHint:      "Выберите папку с оригинальной игрой. Клиент только читает её.",
+		KeyWizardWorkDirTitle:       "Рабочая папка",
+		KeyWizardWorkDirHint:        "Здесь будут TES3MP, моды и логи. Оставьте пустой, чтобы использовать папку по умолчанию.",
+		KeyWizardServerTitle:        "Сервер",
+		KeyWizardServerHint:         "Введите адрес и адрес панели, которые вам дал владелец сервера.",
+		KeyWizardConnectionTitle:    "Связь и TES3MP",
+		KeyWizardConnectionHint:     "Клиент проверит панель и установленную сборку TES3MP.",
+		KeyWizardConnectionChecking: "Проверка панели...",
+		KeyWizardConnectionOK:       "Панель доступна. Статус сервера: %s.",
+		KeyWizardConnectionNeeded:   "Чтобы продолжить, панель должна быть доступна.",
+		KeyWizardTES3MPNeeded:       "Чтобы продолжить, установите TES3MP %s.",
+		KeyWizardTES3MPTitle:        "TES3MP",
+		KeyWizardTES3MPHint:         "Клиент скачает и проверит TES3MP %s. Адрес сервера для этого шага не нужен.",
+		KeyWizardFontsTitle:         "Шрифты",
+		KeyWizardFontsHint:          "Кириллические шрифты ставятся в конфигурацию OpenMW. Папка Morrowind не изменяется.",
+		KeyWizardModsTitle:          "Моды сервера",
+		KeyWizardModsHint:           "Клиент скачает и проверит актуальный набор модов.",
+		KeyWizardModsStarting:       "Установка модов сервера...",
+		KeyWizardModsReady:          "Моды сервера установлены.",
+		KeyWizardLocaleTitle:        "Шрифты и локализация",
+		KeyWizardLocaleHint:         "Кириллические шрифты ставятся автоматически. Русская локализация необязательна.",
+		KeyWizardFontsChecking:      "Установка кириллических шрифтов...",
+		KeyWizardFontsReady:         "Кириллические шрифты готовы.",
+		KeyWizardFontsWarning:       "Не удалось установить шрифты: %s. Игра будет использовать стандартный шрифт.",
+		KeyWizardLocaleInstall:      "Установить русскую локализацию",
+		KeyWizardLocaleInstalled:    "Русская локализация установлена.",
+		KeyWizardLocaleSkipped:      "Русская локализация не установлена.",
+		KeyWizardLocaleNeeded:       "Русская локализация ещё не установлена.",
+		KeyWizardReadyTitle:         "Можно играть",
+		KeyWizardReadyHint:          "Настройка завершена. Добавьте сервер в главном окне, когда захотите играть.",
+		KeyWizardSummary:            "Morrowind: %s\nРабочая папка: %s\nTES3MP: %s\nЛог: %s",
+		KeyWizardPlay:               "Играть",
 
 		KeySetupTitle:               "Подготовка клиента",
 		KeySetupMorrowind:           "Morrowind",

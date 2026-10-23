@@ -26,8 +26,7 @@ Flags:
   --help            print this help and exit
 
 The client stores config.json with mode 0600 because it contains server
-passwords. Pressing Play in this step only explains that the launch scenario
-arrives in a later client version.
+passwords. Diagnostics go to logs/client.log in the per-user data directory.
 `
 
 type options struct {
@@ -80,6 +79,7 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer,
 		fmt.Fprintf(stderr, "tes3mp-easy-client: %v\n", err)
 		return 1
 	}
+	defer service.Close()
 	if launch == nil {
 		fmt.Fprintln(stderr, "tes3mp-easy-client: ui launcher is nil")
 		return 1

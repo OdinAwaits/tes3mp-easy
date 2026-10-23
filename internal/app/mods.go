@@ -88,8 +88,17 @@ func (s *Service) UpdateMods(ctx context.Context, id string,
 	} else {
 		result, err = mods.Install(ctx, options)
 	}
-	if err != nil || result.Skipped || !s.Config().Localization {
+	if err != nil {
+		s.LogError("update mods", err)
 		return result, err
+	}
+	s.LogInfof("mods for %s are installed (skipped=%t, sha256=%s)",
+		profile.ID, result.Skipped, result.State.SHA256)
+	if result.Skipped {
+		return result, nil
+	}
+	if !s.Config().Localization {
+		return result, nil
 	}
 	state, stateErr := locale.Inspect(workDir, profile.ID)
 	if stateErr != nil {

@@ -1,12 +1,16 @@
 package app
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/Saagilat/tes3mp-easy/internal/clientlog"
 	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
+	"github.com/Saagilat/tes3mp-easy/internal/morrowind"
 )
 
 func testPaths(t *testing.T) config.Paths {
@@ -42,11 +46,19 @@ func TestOpenDefaultsAndLanguage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenWithEnv: %v", err)
 	}
+	t.Cleanup(func() { service.Close() })
+	if !service.NeedsSetup() {
+		t.Fatal("fresh service does not need setup")
+	}
 	if got := service.Config(); got.Version != config.CurrentVersion || len(got.Servers) != 0 {
 		t.Fatalf("config = %+v", got)
 	}
 	if got := service.WorkDir(); got != paths.DataDir {
 		t.Fatalf("WorkDir = %q, want %q", got, paths.DataDir)
+	}
+	if got, want := service.LogPath(), filepath.Join(paths.LogsDir,
+		clientlog.FileName); got != want {
+		t.Fatalf("LogPath = %q, want %q", got, want)
 	}
 	if got := service.Language(); got != i18n.Russian {
 		t.Fatalf("Language = %q", got)
@@ -135,6 +147,64 @@ func TestSaveServerRenamesIDAndActiveProfile(t *testing.T) {
 	}
 	if cfg.ActiveServer != newID {
 		t.Fatalf("ActiveServer = %q, want %q", cfg.ActiveServer, newID)
+	}
+}
+
+func TestClientLogRecordsErrorsAndTail(t *testing.T) {
+	paths := testPaths(t)
+	service, err := OpenWithEnv(paths, nil)
+	if err != nil {
+		t.Fatalf("OpenWithEnv: %v", err)
+	}
+	defer service.Close()
+	service.LogInfof("setup step %d", 1)
+	service.LogWarnf("optional voice archive skipped")
+	service.LogError("check server", errors.New("connection refused"))
+	lines, err := service.ReadLogTail(20)
+	if err != nil {
+		t.Fatalf("ReadLogTail: %v", err)
+	}
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{
+		"client started", "setup step 1", "optional voice archive skipped",
+		"ERROR", "check server: connection refused",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("log does not contain %q:\n%s", want, joined)
+		}
+	}
+	if info, err := os.Stat(service.LogPath()); err != nil ||
+		info.Size() == 0 {
+		t.Fatalf("log stat = %+v, %v", info, err)
+	}
+}
+
+func TestNeedsSetupIgnoresProfilesUntilComplete(t *testing.T) {
+	service, err := OpenWithEnv(testPaths(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	if _, err := service.CheckMorrowind(""); !errors.Is(err,
+		ErrMorrowindNotConfigured) {
+		t.Fatalf("CheckMorrowind(empty) = %v", err)
+	}
+	if _, err := service.SaveServer("", testServer()); err != nil {
+		t.Fatal(err)
+	}
+	if !service.NeedsSetup() {
+		t.Fatal("NeedsSetup is false before setup is completed")
+	}
+	if err := service.CompleteSetup(); err != nil {
+		t.Fatal(err)
+	}
+	if service.NeedsSetup() {
+		t.Fatal("NeedsSetup is true after setup is completed")
+	}
+	root := makeMorrowind(t, "Morrowind.esm")
+	if _, err := service.CheckMorrowind(root); !errors.Is(err,
+		morrowind.ErrIncomplete) {
+		t.Fatalf("CheckMorrowind(incomplete) = %v", err)
 	}
 }
 

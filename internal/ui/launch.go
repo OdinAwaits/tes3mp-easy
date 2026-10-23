@@ -31,7 +31,7 @@ func (s *shell) showLaunch(profile config.Server) {
 			popup.Hide()
 			s.render()
 			if err != nil {
-				s.showError(err)
+				s.showErrorWithRetry(err, func() { s.showLaunch(profile) })
 				return
 			}
 			s.showNotice(tr.T(i18n.KeyCommonPlay),
@@ -47,10 +47,19 @@ func (s *shell) showLaunch(profile config.Server) {
 					tr.T(i18n.KeyServerExited), waitErr))
 				return
 			}
-			dialog.ShowInformation(tr.T(i18n.KeyCommonPlay),
-				tr.T(i18n.KeyServerExited), s.window)
+			s.showGameExited()
 		})
 	}()
+}
+
+func (s *shell) showGameExited() {
+	tr := s.service.Translator()
+	hint := widget.NewLabel(tr.T(i18n.KeyLogsExitHint))
+	hint.Wrapping = fyne.TextWrapWord
+	open := widget.NewButton(tr.T(i18n.KeyLogsTitle), s.showLogs)
+	content := container.NewVBox(hint, container.NewHBox(open))
+	dialog.NewCustom(tr.T(i18n.KeyCommonPlay), tr.T(i18n.KeyCommonClose),
+		content, s.window).Show()
 }
 
 func (s *shell) showAdvanced(profile config.Server) {

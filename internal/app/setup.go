@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -46,10 +47,52 @@ func (s *Service) CheckMorrowind(path string) (morrowind.Installation, error) {
 		path = s.Config().MorrowindPath
 	}
 	if path == "" {
-		return morrowind.Installation{}, errors.New(
-			"Morrowind folder is not configured")
+		return morrowind.Installation{}, ErrMorrowindNotConfigured
 	}
 	return morrowind.Inspect(path)
+}
+
+// CheckWorkDir validates an explicitly selected work directory. An empty value
+// means the platform default. Existing paths must be directories; a missing
+// path is accepted when its parent exists, matching the directory creation the
+// install scenarios perform later.
+func (s *Service) CheckWorkDir(path string) (string, error) {
+	if s == nil {
+		return "", errors.New("app service is nil")
+	}
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = s.paths.DataDir
+	}
+	if path == "" {
+		return "", WrapWorkDir(errors.New("client work directory is empty"))
+	}
+	if !filepath.IsAbs(path) {
+		return "", WrapWorkDir(fmt.Errorf(
+			"client work directory %q is not absolute", path))
+	}
+	clean := filepath.Clean(path)
+	info, err := os.Stat(clean)
+	switch {
+	case err == nil && !info.IsDir():
+		return "", WrapWorkDir(fmt.Errorf(
+			"client work directory %q is not a directory", clean))
+	case err == nil:
+		return clean, nil
+	case !errors.Is(err, os.ErrNotExist):
+		return "", WrapWorkDir(fmt.Errorf("inspect client work directory: %w", err))
+	}
+	parent := filepath.Dir(clean)
+	parentInfo, parentErr := os.Stat(parent)
+	if parentErr != nil {
+		return "", WrapWorkDir(fmt.Errorf(
+			"parent of client work directory %q is unavailable: %w", clean, parentErr))
+	}
+	if !parentInfo.IsDir() {
+		return "", WrapWorkDir(fmt.Errorf(
+			"parent of client work directory %q is not a directory", clean))
+	}
+	return clean, nil
 }
 
 // TES3MPState reports whether the pinned TES3MP release is installed in the
@@ -87,20 +130,29 @@ func (s *Service) InstallTES3MP(ctx context.Context,
 	}
 	options := tes3mp.DefaultOptions(tes3mp.Dir(workDir), filepath.Clean(cacheDir))
 	options.Progress = progress
+	var result tes3mp.Result
 	if s.installTES3MP != nil {
-		return s.installTES3MP(ctx, options)
+		result, err = s.installTES3MP(ctx, options)
+	} else {
+		result, err = tes3mp.Install(ctx, options)
 	}
-	return tes3mp.Install(ctx, options)
+	if err != nil {
+		s.LogError("install TES3MP", err)
+		return result, err
+	}
+	s.LogInfof("TES3MP %s is ready (skipped=%t, downloaded=%t)",
+		result.State.Version, result.Skipped, result.Downloaded)
+	return result, nil
 }
 
 func (s *Service) absoluteWorkDir() (string, error) {
 	workDir := strings.TrimSpace(s.WorkDir())
 	if workDir == "" {
-		return "", errors.New("client work directory is empty")
+		return "", WrapWorkDir(errors.New("client work directory is empty"))
 	}
 	if !filepath.IsAbs(workDir) {
-		return "", fmt.Errorf("client work directory %q is not absolute",
-			workDir)
+		return "", WrapWorkDir(fmt.Errorf(
+			"client work directory %q is not absolute", workDir))
 	}
 	return filepath.Clean(workDir), nil
 }

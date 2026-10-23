@@ -28,12 +28,12 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 		return launcher.Result{}, err
 	}
 	if !modsState.Installed {
-		return launcher.Result{}, errors.New(
-			"server mods are not installed; update mods before launching")
+		return launcher.Result{}, fmt.Errorf(
+			"%w; update mods before launching", ErrModsNotInstalled)
 	}
 	cfg := s.Config()
 	if cfg.MorrowindPath == "" {
-		return launcher.Result{}, errors.New("Morrowind folder is not configured")
+		return launcher.Result{}, ErrMorrowindNotConfigured
 	}
 	if cfg.Localization {
 		state, err := locale.Inspect(workDir, serverID)
@@ -41,8 +41,9 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 			return launcher.Result{}, err
 		}
 		if !state.Installed {
-			return launcher.Result{}, errors.New(
-				"Russian localization is enabled but not installed; open Settings and install it again")
+			return launcher.Result{}, fmt.Errorf(
+				"%w; open Settings and install it again",
+				ErrLocalizationNotInstalled)
 		}
 	}
 
@@ -71,8 +72,10 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 		result, err = launcher.Launch(ctx, options)
 	}
 	if err != nil {
+		s.LogError("launch", err)
 		return result, err
 	}
+	s.LogInfof("launch %s started", serverID)
 	result.Warnings = append(warnings, result.Warnings...)
 	return result, nil
 }
@@ -96,8 +99,8 @@ func (s *Service) OpenMWCS(ctx context.Context,
 		return launcher.Result{}, err
 	}
 	if !modsState.Installed {
-		return launcher.Result{}, errors.New(
-			"server mods are not installed; update mods before launching OpenMW-CS")
+		return launcher.Result{}, fmt.Errorf(
+			"%w; update mods before launching OpenMW-CS", ErrModsNotInstalled)
 	}
 	cfg := s.Config()
 	options := launcher.LaunchOptions{
