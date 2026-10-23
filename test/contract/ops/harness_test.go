@@ -72,6 +72,15 @@ func (h *harness) RunArgs(t *testing.T, args ...string) result {
 	return h.run(t, t.TempDir(), args, nil)
 }
 
+// RunArgsEnv executes the binary without injecting --root and with extra
+// environment. It lets tests place global flags after the command.
+func (h *harness) RunArgsEnv(t *testing.T, env map[string]string,
+	args ...string,
+) result {
+	t.Helper()
+	return h.run(t, t.TempDir(), args, env)
+}
+
 func (h *harness) run(t *testing.T, dir string, args []string,
 	extraEnv map[string]string,
 ) result {

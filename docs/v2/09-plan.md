@@ -425,7 +425,7 @@ state-бэкап. `tes3mp.service` и таймер включаются в ав�
 | O03 | done | `doctor` core | root, OS, arch, systemd, units, диск |
 | O04 | done | `doctor` deep | владельцы/режимы, current, конфиги, архивы, бюджеты |
 | O05 | done | `backups list` | пагинация, сортировка, `--sha256` |
-| O06 | planned | Contract-тесты read-команд | реальный бинарник на temp-root |
+| O06 | done | Contract-тесты read-команд | реальный бинарник на temp-root |
 
 Критерий milestone: read-команды не берут lock, не меняют файлы, а при
 недоступном systemd/journald возвращают `service_unavailable` и exit 6.
@@ -532,6 +532,29 @@ contract-тесты с полным temp-root, fake `ldconfig`/`ldd` и точн
 contract-тесты реального бинарника на temp-root — пустой/отсутствующий
 каталог, точные ключи JSON, `items: []`, state `current: null`, битый
 `current.txt`, коды 2/8 и обход 2016 архивов страницами по 500.
+
+### O06 — Contract-тесты read-команд (done)
+
+Сделано: сквозной contract-набор для `status`, `logs`, `backups list` и
+`doctor` на реальном бинарнике и полном temp-root. Проверяются точный набор
+ключей envelope (`ok`/`data`) и `data` каждой команды, отсутствие `backend` и
+`error` в успешном ответе, пустой stderr и ровно один JSON-объект.
+
+Read-команды запускаются на одном дереве с `.locks/`: снимок root до и после
+совпадает, `.locks/ops.lock` не создаётся. Отдельный тест удерживает
+эксклюзивный `flock` на `.locks/ops.lock` и запускает все четыре команды с
+`--lock-timeout=1ns`; они завершаются с exit 0, то есть lock не берут.
+
+`status` и `logs` работают, даже если `--root` указывает на обычный файл:
+systemd-команды data root не читают. Глобальные `--root`/`--json` после
+команды проверены для всех четырёх команд. При недоступном systemd/journald
+`status`/`logs` дают exit 6 `service_unavailable`, `doctor` остаётся
+диагностическим (exit 10, `ok: true`, без `error`), а `backups list` работает
+без вызовов systemctl/journalctl.
+
+Тесты: `test/contract/ops/read_commands_test.go`, Linux-помощник удержания
+lock `lock_linux_test.go`; для не-Linux платформ тест lock пропускается.
+Обновлён `--help`: `backups list` перечислен как реализованная read-команда.
 
 ## 7. M3 — ops мутации
 

@@ -1,8 +1,8 @@
 // Command tes3mp-easy-ops is the administrative CLI for tes3mp-easy.
 //
-// This step implements the process contract and the read-only doctor, status
-// and logs commands. Remaining command bodies arrive in later steps from
-// docs/v2/04-ops.md.
+// This step implements the process contract and the read-only doctor, status,
+// logs and backups list commands. Remaining command bodies arrive in later
+// steps from docs/v2/04-ops.md.
 package main
 
 import (
@@ -39,9 +39,10 @@ Commands:
   doctor
   status [--unit tes3mp.service|tes3mp-easy-backup.timer]
   logs --tail <n>
-  start, stop, restart, backups, mods, state, staff, config.
+  backups list --type mods|state [--limit <n>] [--before <name>] [--sha256]
 
-Other commands are not implemented yet; they return internal until later steps.
+Other commands (start, stop, restart, backups create, mods, state, staff,
+config) are not implemented yet; they return internal until later steps.
 See docs/v2/04-ops.md for the target command set.
 `
 
