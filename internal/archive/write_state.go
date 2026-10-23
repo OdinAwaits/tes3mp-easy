@@ -78,7 +78,7 @@ func WriteState(w io.Writer, src StateSource) (StateStats, error) {
 	if err != nil {
 		return StateStats{}, fmt.Errorf("%s: %w", src.CurrentFile, err)
 	}
-	currentData = []byte(current.SHA256 + " " + current.Name + "\n")
+	currentData = FormatCurrent(current)
 
 	dirs, err := collectStateDirectories(src)
 	if err != nil {

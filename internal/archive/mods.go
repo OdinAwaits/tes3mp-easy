@@ -52,12 +52,19 @@ type ModsInfo struct {
 
 // ValidateModsFile validates a mods tar.gz archive on disk.
 func ValidateModsFile(name string) (ModsInfo, error) {
+	info, _, err := ValidateModsFileWithSize(name)
+	return info, err
+}
+
+// ValidateModsFileWithSize validates a mods tar.gz archive on disk and also
+// returns the total uncompressed size of its files.
+func ValidateModsFileWithSize(name string) (ModsInfo, int64, error) {
 	reader, err := Open(name)
 	if err != nil {
-		return ModsInfo{}, err
+		return ModsInfo{}, 0, err
 	}
 	defer reader.Close()
-	return ValidateMods(reader)
+	return ValidateModsWithSize(reader)
 }
 
 // ValidateModsReader validates a mods tar.gz archive from an io.Reader.
@@ -74,17 +81,26 @@ func ValidateModsReader(r io.Reader) (ModsInfo, error) {
 // docs/v2/03-contracts.md §6.1 and §6.3. It streams every entry through the
 // reader, so plugin contents are never buffered in memory.
 func ValidateMods(r *Reader) (ModsInfo, error) {
+	info, _, err := ValidateModsWithSize(r)
+	return info, err
+}
+
+// ValidateModsWithSize is ValidateMods plus the total uncompressed size of the
+// archive's files. The mods deploy disk-space policy uses that number before
+// extracting a pack.
+func ValidateModsWithSize(r *Reader) (ModsInfo, int64, error) {
 	if r == nil {
-		return ModsInfo{}, errors.New("archive: nil mods reader")
+		return ModsInfo{}, 0, errors.New("archive: nil mods reader")
 	}
 
 	var (
 		requirements []RequiredFile
 		hasJSON      bool
 
-		pluginCRCs  = make(map[string]uint32)
-		pluginNames []string
-		scriptCount int
+		pluginCRCs   = make(map[string]uint32)
+		pluginNames  []string
+		scriptCount  int
+		uncompressed int64
 
 		buf = make([]byte, 32*1024)
 	)
@@ -95,7 +111,7 @@ func ValidateMods(r *Reader) (ModsInfo, error) {
 			break
 		}
 		if err != nil {
-			return ModsInfo{}, err
+			return ModsInfo{}, 0, err
 		}
 
 		switch entry.Type {
@@ -105,91 +121,94 @@ func ValidateMods(r *Reader) (ModsInfo, error) {
 				continue
 			case strings.HasPrefix(entry.Name, "plugins/"),
 				strings.HasPrefix(entry.Name, "scripts/"):
-				return ModsInfo{}, archiveInvalidf(
+				return ModsInfo{}, 0, archiveInvalidf(
 					"%q: nested directories are not allowed", entry.Name)
 			default:
-				return ModsInfo{}, archiveInvalidf(
+				return ModsInfo{}, 0, archiveInvalidf(
 					"%q: unexpected top-level directory", entry.Name)
 			}
 		case TypeFile:
+			uncompressed += entry.Size
 			// Continue below.
 		default:
-			return ModsInfo{}, archiveInvalidf("%q: unsupported entry type", entry.Name)
+			return ModsInfo{}, 0, archiveInvalidf(
+				"%q: unsupported entry type", entry.Name)
 		}
 
 		top, rest, hasDir := strings.Cut(entry.Name, "/")
 		if !hasDir {
 			if entry.Name == requiredDataFilesName {
-				return ModsInfo{}, archiveInvalidf(
+				return ModsInfo{}, 0, archiveInvalidf(
 					"%s must be inside plugins/, not at archive root", requiredDataFilesName)
 			}
-			return ModsInfo{}, archiveInvalidf(
+			return ModsInfo{}, 0, archiveInvalidf(
 				"%q: unexpected top-level file", entry.Name)
 		}
 
 		switch top {
 		case "plugins":
 			if strings.Contains(rest, "/") {
-				return ModsInfo{}, archiveInvalidf(
+				return ModsInfo{}, 0, archiveInvalidf(
 					"%q: nested directories are not allowed", entry.Name)
 			}
 			if rest == requiredDataFilesName {
 				if hasJSON {
-					return ModsInfo{}, archiveInvalidf(
+					return ModsInfo{}, 0, archiveInvalidf(
 						"%s: duplicate metadata file", requiredDataFilesName)
 				}
 				data, err := readRequiredDataFiles(r, entry.Size)
 				if err != nil {
-					return ModsInfo{}, err
+					return ModsInfo{}, 0, err
 				}
 				requirements, err = ParseRequiredDataFiles(data)
 				if err != nil {
-					return ModsInfo{}, err
+					return ModsInfo{}, 0, err
 				}
 				hasJSON = true
 				continue
 			}
 
 			if err := validatePluginExtension(rest); err != nil {
-				return ModsInfo{}, fmt.Errorf("plugins/%s: %w", rest, err)
+				return ModsInfo{}, 0, fmt.Errorf("plugins/%s: %w", rest, err)
 			}
 			if isBaseESM(rest) {
-				return ModsInfo{}, archiveInvalidf(
+				return ModsInfo{}, 0, archiveInvalidf(
 					"plugins/%s: base ESM must not be archived", rest)
 			}
 
 			sum := crc32.NewIEEE()
 			if _, err := io.CopyBuffer(sum, r, buf); err != nil {
-				return ModsInfo{}, err
+				return ModsInfo{}, 0, err
 			}
 			pluginNames = append(pluginNames, rest)
 			pluginCRCs[rest] = sum.Sum32()
 
 		case "scripts":
 			if strings.Contains(rest, "/") {
-				return ModsInfo{}, archiveInvalidf(
+				return ModsInfo{}, 0, archiveInvalidf(
 					"%q: nested directories are not allowed", entry.Name)
 			}
 			if err := validateScriptFilename(rest); err != nil {
-				return ModsInfo{}, fmt.Errorf("scripts/%s: %w", rest, err)
+				return ModsInfo{}, 0, fmt.Errorf("scripts/%s: %w", rest, err)
 			}
 			scriptCount++
 
 		default:
-			return ModsInfo{}, archiveInvalidf(
+			return ModsInfo{}, 0, archiveInvalidf(
 				"%q: unexpected top-level entry", entry.Name)
 		}
 	}
 
 	if !hasJSON {
-		return ModsInfo{}, archiveInvalidf(
+		return ModsInfo{}, 0, archiveInvalidf(
 			"%s is missing from plugins/", requiredDataFilesName)
 	}
 	if err := validateModsRequirements(requirements, pluginNames, pluginCRCs); err != nil {
-		return ModsInfo{}, err
+		return ModsInfo{}, 0, err
 	}
 
-	return ModsInfo{Plugins: len(pluginNames), Scripts: scriptCount}, nil
+	return ModsInfo{Plugins: len(pluginNames), Scripts: scriptCount},
+		uncompressed, nil
 }
 
 // ParseRequiredDataFiles parses the metadata format from

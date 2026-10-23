@@ -86,6 +86,20 @@ is-active)
 esac
 `
 
+const fakeSudo = `#!/bin/sh
+set -eu
+
+if [ -n "${FAKE_SUDO_LOG:-}" ]; then
+	printf '%s\n' "$@" >> "$FAKE_SUDO_LOG"
+	printf '%s\n' '--' >> "$FAKE_SUDO_LOG"
+fi
+
+if [ "${FAKE_SUDO_MODE:-ok}" = "fail" ]; then
+	printf '%s\n' 'rootctl failed' >&2
+	exit 1
+fi
+`
+
 const fakeUname = `#!/bin/sh
 set -eu
 
@@ -153,6 +167,7 @@ func writeFakeBin(dir string) error {
 	for name, body := range map[string]string{
 		"ldconfig": fakeLdconfig,
 		"ldd":      fakeLdd,
+		"sudo":     fakeSudo,
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
 			return err

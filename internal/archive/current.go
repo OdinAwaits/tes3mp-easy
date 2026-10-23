@@ -110,6 +110,29 @@ func ReadCurrentFile(name string) (Current, error) {
 	return current, nil
 }
 
+// FormatCurrent returns the canonical current.txt bytes for current.
+func FormatCurrent(current Current) []byte {
+	return []byte(current.SHA256 + " " + current.Name + "\n")
+}
+
+// VerifyCurrentMods checks that current.txt references an existing mods archive
+// with the recorded sha256. It is used before a deploy so a damaged current
+// archive is reported as archive_invalid instead of breaking rollback.
+func VerifyCurrentMods(modsDir string) (Current, error) {
+	if modsDir == "" {
+		return Current{}, errors.New("archive: mods directory is required")
+	}
+	current, err := ReadCurrentFile(filepath.Join(modsDir, currentFileName))
+	if err != nil {
+		return Current{}, err
+	}
+	if err := verifyArchiveSHA256(
+		filepath.Join(modsDir, current.Name), current.SHA256); err != nil {
+		return Current{}, err
+	}
+	return current, nil
+}
+
 // VerifyStateMods checks that the state metadata points at the current mods
 // archive and that the archive exists with the recorded sha256. A state archive
 // never replaces mods by itself, so any mismatch is archive_invalid.

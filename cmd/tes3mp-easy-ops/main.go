@@ -1,9 +1,8 @@
 // Command tes3mp-easy-ops is the administrative CLI for tes3mp-easy.
 //
 // This step implements the process contract, the read-only doctor, status,
-// logs and backups list commands, backups create with retention, and mods
-// import. Remaining command bodies arrive in later steps from
-// docs/v2/04-ops.md.
+// logs and backups commands, and mods import/deploy. Remaining command bodies
+// arrive in later steps from docs/v2/04-ops.md.
 package main
 
 import (
@@ -43,8 +42,9 @@ Commands:
   backups list --type mods|state [--limit <n>] [--before <name>] [--sha256]
   backups create --type state [--manual] [--if-running]
   mods import --file <path>
+  mods deploy (--current|--latest|--archive <name>) [--no-restart]
 
-Other commands (start, stop, restart, mods deploy, state, staff, config) are not
+Other commands (start, stop, restart, state, staff, config) are not
 implemented yet; they return internal until later steps.
 See docs/v2/04-ops.md for the target command set.
 `
@@ -118,7 +118,7 @@ func runWithClient(args []string, stdout, stderr io.Writer, client *systemd.Clie
 	case "backups":
 		return runBackups(opts, rest[1:], client, stdout, stderr)
 	case "mods":
-		return runMods(opts, rest[1:], stdout, stderr)
+		return runMods(opts, rest[1:], client, stdout, stderr)
 	default:
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInternal,

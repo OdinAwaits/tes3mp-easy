@@ -565,9 +565,9 @@ func TestRunModsSubcommands(t *testing.T) {
 			exit: ops.ExitInvalidArgument, want: "unknown subcommand",
 		},
 		{
-			name: "deploy is unfinished",
+			name: "deploy requires a selector",
 			args: []string{"--json", "mods", "deploy"},
-			exit: ops.ExitInternal, want: "not implemented",
+			exit: ops.ExitInvalidArgument, want: "one of --archive, --latest or --current",
 		},
 	}
 

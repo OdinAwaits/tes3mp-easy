@@ -84,7 +84,10 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
 - W03 закрыт: `mods import` потоково валидирует upload, проверяет одну
   файловую систему, переименовывает его в `backups/mods/mods-*`, применяет
   retention и не меняет `current.txt`.
-- Следующая задача — W04 (`mods deploy`).
+- W04 закрыт: `mods deploy` делает `state-predeploy-*`, staging, подмену
+  `mods/plugins` и `mods/scripts` через rename, `customScripts.lua`,
+  `current.txt`, stop/start и полный rollback при сбое.
+- Следующая задача — W05 (`state deploy`).
 
 Схема веток на момент старта:
 
@@ -583,7 +586,7 @@ lock `lock_linux_test.go`; для не-Linux платформ тест lock пр
 | W01 | done | Lock, atomicfile, pathguard | общие примитивы записи |
 | W02 | done | `backups create` + retention | автобэкап и `--if-running` |
 | W03 | done | `mods import` | проверка и импорт архива |
-| W04 | planned | `mods deploy` | predeploy, остановка, restart |
+| W04 | done | `mods deploy` | predeploy, остановка, restart |
 | W05 | planned | `state deploy` | staging, проверка, rollback |
 | W06 | planned | `staff set`, `config get/set` | точечные изменения |
 | W07 | planned | Fault/resource-тесты | отказы, 512 MiB архив, 64 MiB cgroup |
@@ -677,6 +680,38 @@ oversized-файла, cross-FS через подменяемую `modsImportDevi
 на точные ключи, sha256, `ValidateModsFile`, отсутствие upload после успеха,
 exit 3/7/8/4/2 и Linux cross-FS. Добавлен экспорт `atomicfile.SyncDir`;
 device-проверка вынесена в build-tagged `device_unix.go`/`device_other.go`.
+
+### W04 — `mods deploy` (done)
+
+Сделано: `mods deploy (--current|--latest|--archive <name>) [--no-restart]`
+парсит аргументы до lock, берёт exclusive `flock` (shared для `--dry-run`) и
+разрешает ровно один селектор. `--current` читает канонический `current.txt`
+и проверяет sha256 referenced-архива; отсутствие или порча метаданных дают
+`archive_invalid`, а не «первый деплой». `--latest` выбирает новейший
+`mods-*`/`mods-init-*` по времени и collision-суффиксу. Архив проверяется
+потоково (`ValidateModsFileWithSize`), имя — по §6.6, опасные имена —
+`unsafe_path`, размер сверх лимита — `archive_invalid`.
+
+Перед подменой проверяется свободное место (state-бэкап + распакованный размер
++ 512 MiB), затем `createStateBackupLocked` создаёт `state-predeploy-*` без
+повторного lock. Транзакция распаковывает архив в `.staging/mods-<id>/`,
+повторно валидирует дерево, переименовывает `mods/plugins` и `mods/scripts` в
+`.old-<id>`, ставит новые каталоги, генерирует сортированный
+`configs/customScripts.lua`, пишет `backups/mods/current.txt` и только после
+этого удаляет `.old-*` и staging. `--dry-run` возвращает план (`previous`,
+`state_backup`, `restarted=false`) и не пишет байта.
+
+Сервер опрашивается через `systemctl is-active`; если он был активен,
+выполняется rootctl stop, а после успеха — start (если не `--no-restart`).
+Сбой stop/start — `service_unavailable` (exit 6). Любая ошибка после подмены
+восстанавливает каталоги и оба файла, удаляет staging и запускает сервер, если
+он работал до операции; `restarted` истинно только после успешного start.
+
+Тесты: unit-тесты аргументов, `--current/--latest`, active/inactive,
+`--no-restart`, rollback при сбое распаковки, customScripts, current.txt,
+stop/start, диска и mapping exit-кодов; contract-тесты реального бинарника на
+точные ключи, sha256, `state-predeploy`, stop/start и отсутствие следов,
+exit 3/4/6/7/8 и неизменность данных при ошибках.
 
 ## 8. M4 — панель MVP
 

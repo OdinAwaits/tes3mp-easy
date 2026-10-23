@@ -20,6 +20,7 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/ops"
 	"github.com/Saagilat/tes3mp-easy/internal/pathguard"
 	"github.com/Saagilat/tes3mp-easy/internal/retention"
+	"github.com/Saagilat/tes3mp-easy/internal/systemd"
 )
 
 type modsImportArgs struct {
@@ -59,20 +60,20 @@ var (
 	modsImportDeviceOfPathFunc = deviceOfPath
 )
 
-func runMods(opts options, args []string, stdout, stderr io.Writer) int {
+func runMods(opts options, args []string, client *systemd.Client,
+	stdout, stderr io.Writer,
+) int {
 	if len(args) == 0 {
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInvalidArgument,
-				"mods: subcommand is required; want import"))
+				"mods: subcommand is required; want import or deploy"))
 	}
 
 	switch args[0] {
 	case "import":
 		return runModsImport(opts, args[1:], stdout, stderr)
 	case "deploy":
-		return writeError(stdout, stderr, opts.json,
-			ops.NewError(ops.ExitInternal,
-				"command \"mods deploy\" is not implemented yet"))
+		return runModsDeploy(opts, args[1:], client, stdout, stderr)
 	default:
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInvalidArgument,
