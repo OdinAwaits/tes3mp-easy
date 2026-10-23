@@ -42,3 +42,6 @@ jobs:
 
       - name: Build ops
         run: go build -o /tmp/tes3mp-easy-ops ./cmd/tes3mp-easy-ops
+
+      - name: Build panel
+        run: go build -o /tmp/tes3mp-easy-panel ./cmd/tes3mp-easy-panel

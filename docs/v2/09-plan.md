@@ -99,7 +99,12 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
   state при `GOMEMLIMIT=64MiB`, пик RSS через `wait4`); ENOSPC проверен fake
   writer-ом в `WriteState`. Cgroup `MemoryMax` применяется только при writable
   cgroup v2.
-- Следующая задача — P01 (HTTP-сервер, TLS, конфиг, lifecycle).
+- P01 закрыт: добавлены `cmd/tes3mp-easy-panel` и `internal/panel` с
+  конфигом из env/флагов, self-signed TLS при отсутствии пары, HTTP→HTTPS
+  redirect, `/healthz`, security headers, bind-rollback и graceful shutdown.
+  ACME-выпуск по IP ещё не реализован: `:80` резервирует challenge-path и
+  отдаёт 404, панель использует готовую пару или self-signed.
+- Следующая задача — P02 (auth, сессии, Argon2id, CSRF).
 
 Схема веток на момент старта:
 
@@ -854,12 +859,47 @@ SIGKILL-тест требуют Linux; cgroup-часть без writable cgroup 
 
 | ID | Статус | Задача | Результат |
 |---|---|---|---|
-| P01 | planned | HTTP-сервер, TLS, конфиг, lifecycle | панель слушает 80/443 |
+| P01 | done | HTTP-сервер, TLS, конфиг, lifecycle | панель слушает 80/443 |
 | P02 | planned | Auth, сессии, Argon2id, CSRF | вход и смена первого пароля |
 | P03 | planned | Ops-клиент и маппинг ошибок | HTTP-коды из exit codes |
 | P04 | planned | Публичный API и страницы | server, mods, backups, healthz |
 | P05 | planned | Админка и upload | статус, логи, моды, state, конфиги |
 | P06 | planned | Contract-тесты и лимиты | 64 MiB cgroup, cookie, ошибки |
+
+### P01 — HTTP-сервер, TLS, конфиг, lifecycle (done)
+
+Сделано: `cmd/tes3mp-easy-panel` читает `TES3MP_PANEL_ROOT`,
+`TES3MP_PANEL_DATA_DIR`, `TES3MP_PANEL_HTTP_ADDR`, `TES3MP_PANEL_HTTPS_ADDR`,
+`TES3MP_PANEL_PUBLIC_ADDRESS`, `TES3MP_PANEL_TLS_CERT` и
+`TES3MP_PANEL_TLS_KEY`; одноимённые флаги (`--root`, `--data-dir`,
+`--http-addr`, `--https-addr`, `--public-address`, `--tls-cert`, `--tls-key`)
+перекрывают env. По умолчанию root `/tes3mp-easy`, порты `:80`/`:443`,
+`panel-data/tls/{cert,key}.pem`; `--version` и `--help` завершаются с кодом 0,
+ошибка конфигурации — 2, ошибка TLS/listen/runtime — 1.
+
+`internal/panel` загружает существующую пару, если есть оба файла. Если нет
+обоих, создаёт self-signed ECDSA P-256 на 365 дней с SAN `localhost`,
+hostname, IP интерфейсов и `public_address`, файлы `0600`, каталог `tls`
+`0700`. Неполная или невалидная пара — ошибка без перезаписи. HTTP-listener
+отдаёт `308` на HTTPS с сохранением path/query, а `/.well-known/acme-challenge/`
+пока возвращает `404`; HTTPS-listener использует TLS ≥ 1.2. `/healthz` отдаёт
+`200 ok\n`, все ответы получают CSP, `X-Frame-Options`, `nosniff` и
+`Referrer-Policy`. `Listen` закрывает уже открытый HTTP-listener при отказе
+HTTPS; `SIGINT/SIGTERM` вызывают graceful shutdown с таймаутом 10 с.
+
+Тесты: `internal/panel` проверяет defaults/derive/env, валидацию адресов,
+генерацию/повторное использование сертификата, режимы файлов, неполную и
+битую пару, redirect для IP/host/IPv6, ACME-резерв, `/healthz`, 405, TLS 1.2,
+заголовки, rollback bind, отмену до старта и остановку listener-ов.
+`cmd/tes3mp-easy-panel` проверяет help/version, env и flags, коды 0/2,
+генерацию TLS по env-root и graceful выход. Ручной smoke на непривилегированных
+портах: `308` → `https://.../admin?x=1`, HTTP/2 `/healthz` = `ok`, `SIGTERM` →
+`stopped`.
+
+Ограничение: ACME-выпуск по IP не реализован в P01; панель использует готовую
+пару или self-signed. Bind на привилегированные 80/443 в CI не проверяется:
+unit-тесты слушают эфемерные порты, реальный bind требует
+`CAP_NET_BIND_SERVICE` на VM.
 
 Критерий milestone: панель не пишет игровые данные напрямую, не хранит
 админский пароль в ops и корректно показывает `service_unavailable`,

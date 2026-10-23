@@ -1,0 +1,152 @@
+// Command tes3mp-easy-panel serves the tes3mp-easy HTTPS panel.
+//
+// This step provides the HTTP/HTTPS listener pair, TLS material, configuration
+// and graceful lifecycle. Authentication, public API routes and admin pages are
+// added in later steps.
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/Saagilat/tes3mp-easy/internal/panel"
+)
+
+const usage = `Usage: tes3mp-easy-panel [flags]
+
+Flags:
+  --root <path>             data root (default /tes3mp-easy; env TES3MP_PANEL_ROOT)
+  --data-dir <path>         panel data directory (default <root>/panel-data;
+                            env TES3MP_PANEL_DATA_DIR)
+  --http-addr <addr>        HTTP redirect listener (default :80;
+                            env TES3MP_PANEL_HTTP_ADDR)
+  --https-addr <addr>       HTTPS listener (default :443;
+                            env TES3MP_PANEL_HTTPS_ADDR)
+  --public-address <host>   public IP or host[:port] for redirects
+                            (env TES3MP_PANEL_PUBLIC_ADDRESS)
+  --tls-cert <path>         certificate (default <data-dir>/tls/cert.pem;
+                            env TES3MP_PANEL_TLS_CERT)
+  --tls-key <path>          private key (default <data-dir>/tls/key.pem;
+                            env TES3MP_PANEL_TLS_KEY)
+  --version                 print version and exit
+  --help                    print this help and exit
+
+If both TLS files are absent, the panel creates a self-signed certificate with
+mode 0600 under <data-dir>/tls and logs a warning. If only one file exists or the
+pair is invalid, startup fails without overwriting it. Ports 80/443 require
+CAP_NET_BIND_SERVICE in the systemd unit; logs go to stdout/stderr.
+`
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(),
+		os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	os.Exit(runContext(ctx, os.Args[1:], os.Getenv, os.Stdout, os.Stderr))
+}
+
+func run(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
+	return runContext(context.Background(), args, getenv, stdout, stderr)
+}
+
+func runContext(ctx context.Context, args []string, getenv func(string) string,
+	stdout, stderr io.Writer) int {
+	if wantsHelp(args) {
+		fmt.Fprint(stdout, usage)
+		return 0
+	}
+
+	cfg, showVersion, err := parseConfig(args, getenv)
+	if err != nil {
+		fmt.Fprintf(stderr, "tes3mp-easy-panel: %v\n", err)
+		return 2
+	}
+	if showVersion {
+		fmt.Fprintf(stdout, "tes3mp-easy-panel %s\n", panel.Version)
+		return 0
+	}
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintf(stderr, "tes3mp-easy-panel: invalid config: %v\n", err)
+		return 2
+	}
+
+	logger := log.New(stderr, "panel: ", log.LstdFlags|log.LUTC)
+	server, err := panel.New(cfg, nil, logger)
+	if err != nil {
+		fmt.Fprintf(stderr, "tes3mp-easy-panel: %v\n", err)
+		return 1
+	}
+	if err := server.Serve(ctx); err != nil {
+		fmt.Fprintf(stderr, "tes3mp-easy-panel: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func parseConfig(args []string, getenv func(string) string) (panel.Config, bool, error) {
+	cfg := panel.ConfigFromEnv(getenv)
+
+	fs := flag.NewFlagSet("tes3mp-easy-panel", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {}
+
+	fs.StringVar(&cfg.Root, "root", cfg.Root, "")
+	fs.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "")
+	fs.StringVar(&cfg.HTTPAddr, "http-addr", cfg.HTTPAddr, "")
+	fs.StringVar(&cfg.HTTPSAddr, "https-addr", cfg.HTTPSAddr, "")
+	fs.StringVar(&cfg.PublicAddress, "public-address", cfg.PublicAddress, "")
+	fs.StringVar(&cfg.CertFile, "tls-cert", cfg.CertFile, "")
+	fs.StringVar(&cfg.KeyFile, "tls-key", cfg.KeyFile, "")
+	showVersion := fs.Bool("version", false, "")
+
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return panel.Config{}, false, errors.New("use --help for usage")
+		}
+		return panel.Config{}, false, err
+	}
+	if fs.NArg() != 0 {
+		return panel.Config{}, false,
+			fmt.Errorf("unexpected argument %q", fs.Arg(0))
+	}
+
+	set := make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	for _, check := range []struct {
+		name  string
+		value string
+	}{
+		{name: "root", value: cfg.Root},
+		{name: "data-dir", value: cfg.DataDir},
+		{name: "http-addr", value: cfg.HTTPAddr},
+		{name: "https-addr", value: cfg.HTTPSAddr},
+		{name: "tls-cert", value: cfg.CertFile},
+		{name: "tls-key", value: cfg.KeyFile},
+	} {
+		if set[check.name] && check.value == "" {
+			return panel.Config{}, false,
+				fmt.Errorf("--%s must not be empty", check.name)
+		}
+	}
+
+	return cfg.Normalize(), *showVersion, nil
+}
+
+func wantsHelp(args []string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			return false
+		}
+		switch arg {
+		case "-h", "-help", "--help":
+			return true
+		}
+	}
+	return false
+}

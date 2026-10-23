@@ -53,9 +53,9 @@ master
 
 ## Разработка
 
-Требуется Go 1.24+. Сейчас в `v2` есть каркас `tes3mp-easy-ops`: бинарник
-собирается и проверяет аргументы, команды появятся по мере реализации
-контрактов.
+Требуется Go 1.24+. В `v2` есть `tes3mp-easy-ops`; для панели добавлен
+`tes3mp-easy-panel` с HTTP/HTTPS listener-ами, TLS и graceful lifecycle.
+Команды панели появляются по мере реализации P02–P06.
 
 Перед реализацией любой подсистемы сначала обновляется
 `docs/v2/03-contracts.md`, затем фикстуры и тесты.
@@ -65,7 +65,9 @@ bash -n bootstrap.sh
 go test ./...
 go vet ./...
 go build -o /tmp/tes3mp-easy-ops ./cmd/tes3mp-easy-ops
+go build -o /tmp/tes3mp-easy-panel ./cmd/tes3mp-easy-panel
 go run ./cmd/tes3mp-easy-ops --help
+go run ./cmd/tes3mp-easy-panel --help
 ```
 
 Preflight bootstrap можно проверить без изменений на диске:

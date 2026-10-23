@@ -352,6 +352,9 @@ Contract-тесты реального бинарника проверяют т�
 - сессия: idle 12 ч, absolute 7 дней, рестарт панели = разлогин;
 - публичные страницы: `/`, `/backups`, `/api/v1/server`,
   `/api/v1/mods/current`, `/api/v1/mods/current/archive`, `/healthz`;
+- P01 lifecycle: env/flags и derived paths, self-signed generation/reuse,
+  неполная/битая пара, режимы `0600`/`0700`, SAN, HTTP `308`, ACME `404`,
+  TLS ≥ 1.2, security headers, `/healthz`, bind rollback, graceful `SIGTERM`;
 - пагинация: `limit`/`before`, `next_before`, 2016 записей, группировка
   день/неделя/месяц;
 - скачивание: `..`, абсолютный путь, не `.tar.gz`, отсутствующий файл,
@@ -367,7 +370,10 @@ Contract-тесты реального бинарника проверяют т�
 - неактивный backup timer показывает предупреждение.
 
 Панель не тестирует tar и CRC: это тесты ops. Она тестирует, что правильно
-вызывает ops и правильно показывает результат.
+вызывает ops и правильно показывает результат. P01 не тестирует ACME-выпуск:
+он ещё не реализован, а `:80` проверяет только redirect и `404` на
+challenge-path. Unit-тесты слушают эфемерные порты; реальный bind 80/443
+проверяется на VM с `CAP_NET_BIND_SERVICE`.
 
 ## 6. Клиент
 
