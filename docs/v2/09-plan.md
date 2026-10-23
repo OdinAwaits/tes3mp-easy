@@ -424,7 +424,7 @@ state-бэкап. `tes3mp.service` и таймер включаются в ав�
 | O02 | done | `status` и `logs` | состояния unit и журнал |
 | O03 | done | `doctor` core | root, OS, arch, systemd, units, диск |
 | O04 | done | `doctor` deep | владельцы/режимы, current, конфиги, архивы, бюджеты |
-| O05 | planned | `backups list` | пагинация, сортировка, `--sha256` |
+| O05 | done | `backups list` | пагинация, сортировка, `--sha256` |
 | O06 | planned | Contract-тесты read-команд | реальный бинарник на temp-root |
 
 Критерий milestone: read-команды не берут lock, не меняют файлы, а при
@@ -511,6 +511,27 @@ state-архивов; `configs` разбирает INI/Lua/JSON и генери�
 contract-тесты с полным temp-root, fake `ldconfig`/`ldd` и точным argv
 `systemctl show --property=MemoryHigh,MemoryMax`; проверено, что `doctor`
 по-прежнему не пишет в root.
+
+### O05 — `backups list` (done)
+
+Сделано: CLI-команда `backups list` читает `backups/mods` или
+`backups/state`, отбирает только имена из §6.6, сортирует по mtime (новые
+сверху, ничья — по имени по убыванию) и отдаёт страницу `items` с
+`current`/`next_before`. `mods` включает `mods-*` и `mods-init-*`, `state` —
+все три класса state. Symlink и файлы вне шаблонов игнорируются.
+
+`--limit` 1..500 (по умолчанию 200). `--before` проверяется через
+`pathguard` (exit 8 `unsafe_path`) и как архив выбранного типа (exit 2); при
+удалённом курсоре используется UTC-время из имени. `current` для `mods`
+читается каноническим `archive.ReadCurrentFile` (битый — exit 7), для `state`
+всегда `null`. `--sha256` считает хеш только для элементов страницы; без флага
+поле отсутствует.
+
+Тесты: unit-тесты разбора флагов, фильтрации, сортировки, пагинации,
+удалённого курсора, `current`, sha256 и человекочитаемого вывода;
+contract-тесты реального бинарника на temp-root — пустой/отсутствующий
+каталог, точные ключи JSON, `items: []`, state `current: null`, битый
+`current.txt`, коды 2/8 и обход 2016 архивов страницами по 500.
 
 ## 7. M3 — ops мутации
 

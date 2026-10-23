@@ -111,6 +111,8 @@ func runWithClient(args []string, stdout, stderr io.Writer, client *systemd.Clie
 		return runStatus(opts, rest[1:], client, stdout, stderr)
 	case "logs":
 		return runLogs(opts, rest[1:], client, stdout, stderr)
+	case "backups":
+		return runBackups(opts, rest[1:], stdout, stderr)
 	default:
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInternal,
