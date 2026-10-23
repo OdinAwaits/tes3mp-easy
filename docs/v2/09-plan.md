@@ -423,7 +423,7 @@ state-бэкап. `tes3mp.service` и таймер включаются в ав�
 | O01 | done | Systemd/journald adapter | интерфейс + fake для тестов |
 | O02 | done | `status` и `logs` | состояния unit и журнал |
 | O03 | done | `doctor` core | root, OS, arch, systemd, units, диск |
-| O04 | planned | `doctor` deep | владельцы/режимы, current, конфиги, архивы, бюджеты |
+| O04 | done | `doctor` deep | владельцы/режимы, current, конфиги, архивы, бюджеты |
 | O05 | planned | `backups list` | пагинация, сортировка, `--sha256` |
 | O06 | planned | Contract-тесты read-команд | реальный бинарник на temp-root |
 
@@ -484,6 +484,33 @@ context, отсутствие shell).
 бинарника с fake `systemctl`/`uname` в `PATH` и `TES3MP_EASY_OS_RELEASE` для
 `/etc/os-release`; проверены точный argv, отсутствие записи в root и
 data-only-форма ошибки.
+
+### O04 — `doctor` deep (done)
+
+Сделано: после шести проверок O03 добавлены `ownership`, `journald`, `runtime`,
+`memory`, `cgroup`, `filesystems`, `budgets`, `current`, `datafiles`,
+`archives`, `configs`, `cleanup` и `journald-config`. Порядок стабилен и
+зафиксирован тестами.
+
+`ownership` сверяет точные владельцы и режимы §4 `02-architecture.md`, включая
+`panel-data/uploads 2770`, `.locks/`/`.staging/` `0700`, HOME-каталоги OpenMW и
+файлы конфигов `0600`. `journald` читает последнюю строку через
+`journalctl`; `runtime` проверяет файлы TES3MP, `ldconfig -p` и `ldd` без
+`not found`; `memory` — RAM/swap 512 MiB и `vm.swappiness=10`; `cgroup` —
+`MemoryHigh`/`MemoryMax` всех service-юнитов через новый
+`systemd.Client.ShowProperties`.
+
+`filesystems` сравнивает `stat.Dev` uploads и backups; `budgets` даёт `warn`
+выше 1 GiB/512 MiB; `current` проверяет канонический `current.txt` и sha256;
+`datafiles` сверяет JSON с `mods/plugins/` и CRC32; `archives` читает до трёх
+state-архивов; `configs` разбирает INI/Lua/JSON и генерируемый
+`customScripts.lua`; `cleanup` ищет `.part`, `.old-*`, непустой `.staging/` и
+лишние lock-файлы; `journald-config` проверяет кэпы journald.
+
+Тесты: unit-тесты каждой проверки и отдельных парсеров, обновлённые
+contract-тесты с полным temp-root, fake `ldconfig`/`ldd` и точным argv
+`systemctl show --property=MemoryHigh,MemoryMax`; проверено, что `doctor`
+по-прежнему не пишет в root.
 
 ## 7. M3 — ops мутации
 

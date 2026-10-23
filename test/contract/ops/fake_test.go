@@ -38,12 +38,28 @@ show)
 		printf '%s\n' 'Failed to connect to bus: No such file or directory' >&2
 		exit 1
 	fi
+	case "$2" in
+	tes3mp.service)
+		memory_high=402653184
+		memory_max=469762048
+		;;
+	tes3mp-panel.service|tes3mp-easy-backup.service)
+		memory_high=50331648
+		memory_max=67108864
+		;;
+	*)
+		memory_high=0
+		memory_max=0
+		;;
+	esac
 	printf 'ActiveState=%s\n' "$state"
 	printf 'SubState=%s\n' "$substate"
 	printf 'ActiveEnterTimestamp=%s\n' "$active_enter"
 	printf 'LastTriggerUSec=%s\n' "$last_trigger"
 	printf 'LoadState=%s\n' "$loadstate"
 	printf 'UnitFileState=%s\n' "$unitfile"
+	printf 'MemoryHigh=%s\n' "$memory_high"
+	printf 'MemoryMax=%s\n' "$memory_max"
 	;;
 is-active)
 	case "$mode" in
@@ -81,6 +97,29 @@ fi
 printf '%s\n' "${FAKE_UNAME_M:-x86_64}"
 `
 
+const fakeLdconfig = `#!/bin/sh
+set -eu
+
+if [ "$#" -ne 1 ] || [ "$1" != "-p" ]; then
+	printf 'unexpected ldconfig call: %s\n' "$*" >&2
+	exit 99
+fi
+
+printf '%s\n' 'libluajit-5.1.so.2 (libc6,x86-64) => /lib/libluajit-5.1.so.2'
+`
+
+const fakeLdd = `#!/bin/sh
+set -eu
+
+if [ "$#" -ne 1 ]; then
+	printf 'unexpected ldd call: %s\n' "$*" >&2
+	exit 99
+fi
+
+printf '%s\n' 'linux-vdso.so.1'
+printf '%s\n' 'libluajit-5.1.so.2 => /lib/libluajit-5.1.so.2'
+`
+
 const fakeJournalctl = `#!/bin/sh
 set -eu
 
@@ -110,6 +149,14 @@ func writeFakeBin(dir string) error {
 	if err := os.WriteFile(filepath.Join(dir, "journalctl"),
 		[]byte(fakeJournalctl), 0o755); err != nil {
 		return err
+	}
+	for name, body := range map[string]string{
+		"ldconfig": fakeLdconfig,
+		"ldd":      fakeLdd,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+			return err
+		}
 	}
 	return os.WriteFile(filepath.Join(dir, "uname"),
 		[]byte(fakeUname), 0o755)

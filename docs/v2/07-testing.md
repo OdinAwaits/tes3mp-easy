@@ -256,18 +256,25 @@ testdata/
 | `staff set` | 0..3, неверный ранг, имя с `/`, отсутствующий игрок, `.bak` |
 | `config get/set` | типы, диапазоны, комментарии, read-only, `.bak`, `config_invalid` |
 
-Для O03 `doctor` проверен на уровне пакета и реального бинарника: точный
-порядок `root`, `os`, `arch`, `systemd`, `units`, `disk`; ok/warn/error и
-exit 0/0/10; отсутствие `error` в JSON при найденных ошибках; недоступный
-systemd (только `systemctl --version`, без `show`); незнакомая ОС, старые
-Debian/Ubuntu, non-x86_64, отсутствующие каталоги, symlink вместо каталога,
-недоступный на запись каталог и пороги диска 512 MiB/1 GiB. Contract-тесты
-подменяют `systemctl` и `uname` через `PATH`, а `/etc/os-release` — переменной
-`TES3MP_EASY_OS_RELEASE`; она нужна только для тестов и не является публичным
-флагом. Отдельный тест сверяет дерево temp-root до и после `doctor`.
+Для O03/O04 `doctor` проверен на уровне пакета и реального бинарника: точный
+порядок `root`, `os`, `arch`, `systemd`, `units`, `disk`, `ownership`,
+`journald`, `runtime`, `memory`, `cgroup`, `filesystems`, `budgets`, `current`,
+`datafiles`, `archives`, `configs`, `cleanup`, `journald-config`; ok/warn/error
+и exit 0/0/10; отсутствие `error` в JSON при найденных ошибках; недоступный
+systemd (только `systemctl --version`, без `show`/`journalctl`); незнакомая ОС,
+старые Debian/Ubuntu, non-x86_64, отсутствующие каталоги, symlink вместо
+каталога, недоступный на запись каталог и пороги диска 512 MiB/1 GiB.
 
-Остальные случаи строки `doctor` (journald, runtime, память, cgroup, current,
-конфиги, архивы, FS и бюджеты) относятся к O04.
+O04 дополнительно покрыт тестами владельцев/режимов, journald, runtime
+(`ldconfig`/`ldd`), памяти и swappiness, cgroup-лимитов, `stat.Dev`, бюджетов,
+`current.txt`+sha256, `requiredDataFiles.json`+CRC32, state-архивов, разбора
+INI/Lua/JSON, `customScripts.lua`, `.part`/`.old-*`/`.staging`/lock-файлов и
+journald-кэпов. Contract-тесты подменяют `systemctl`, `journalctl`, `uname`,
+`ldconfig` и `ldd` через `PATH`; `/etc/os-release`, `/proc`, sysctl и journald
+drop-in — переменными `TES3MP_EASY_*`; они нужны только для тестов и не
+являются публичными флагами. Полный temp-root собирается с точными режимами,
+а `TES3MP_EASY_DOCTOR_SKIP_OWNERS=1` позволяет non-root CI проверить режимы без
+`chown`. Отдельный тест сверяет дерево temp-root до и после `doctor`.
 
 ## 5. Панель
 

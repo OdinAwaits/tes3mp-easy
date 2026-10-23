@@ -12,6 +12,7 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/ops"
 	"github.com/Saagilat/tes3mp-easy/internal/systemd"
 	"github.com/Saagilat/tes3mp-easy/internal/systemd/systemdtest"
+	"github.com/Saagilat/tes3mp-easy/test/fixtures"
 )
 
 type doctorPayload struct {
@@ -47,6 +48,155 @@ func doctorOSRelease(t *testing.T, content string) string {
 	return path
 }
 
+func doctorMode(mode uint32) os.FileMode {
+	out := os.FileMode(mode & 0o777)
+	if mode&0o2000 != 0 {
+		out |= os.ModeSetgid
+	}
+	return out
+}
+
+func doctorHealthyRoot(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	dirs := []struct {
+		path string
+		mode uint32
+	}{
+		{path: "", mode: 0o755},
+		{path: "configs", mode: 0o700},
+		{path: "players", mode: 0o750},
+		{path: "world", mode: 0o750},
+		{path: "mods", mode: 0o750},
+		{path: "backups", mode: 0o750},
+		{path: "panel-data", mode: 0o750},
+		{path: "panel-data/tls", mode: 0o700},
+		{path: "panel-data/uploads", mode: 0o2770},
+		{path: ".locks", mode: 0o700},
+		{path: ".staging", mode: 0o700},
+		{path: ".config", mode: 0o700},
+		{path: ".config/openmw", mode: 0o700},
+		{path: ".local", mode: 0o700},
+		{path: ".local/share", mode: 0o700},
+		{path: ".local/share/openmw", mode: 0o700},
+		{path: "world/cell", mode: 0o750},
+		{path: "world/world", mode: 0o750},
+		{path: "world/map", mode: 0o750},
+		{path: "world/recordstore", mode: 0o750},
+		{path: "world/custom", mode: 0o750},
+		{path: "mods/plugins", mode: 0o750},
+		{path: "mods/scripts", mode: 0o750},
+		{path: "backups/mods", mode: 0o750},
+		{path: "backups/state", mode: 0o750},
+	}
+	for _, dir := range dirs {
+		path := root
+		if dir.path != "" {
+			path = filepath.Join(root, dir.path)
+		}
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("create %s: %v", path, err)
+		}
+	}
+	for _, dir := range dirs {
+		path := root
+		if dir.path != "" {
+			path = filepath.Join(root, dir.path)
+		}
+		if err := os.Chmod(path, doctorMode(dir.mode)); err != nil {
+			t.Fatalf("chmod %s: %v", path, err)
+		}
+	}
+
+	fixtures.WriteConfigs(t, filepath.Join(root, "configs"))
+	fixtures.WriteFile(t,
+		filepath.Join(root, "configs", "customScripts.lua"), "")
+
+	mods := fixtures.DefaultModsInit()
+	manifest := mods.Install(t, filepath.Join(root, "backups", "mods"))
+	if err := os.Chmod(filepath.Join(root, "backups", "mods", "current.txt"),
+		0o640); err != nil {
+		t.Fatalf("chmod current.txt: %v", err)
+	}
+	fixtures.WriteFile(t,
+		filepath.Join(root, "mods", "plugins", "requiredDataFiles.json"),
+		string(mods.RequiredJSON()))
+	fixtures.DefaultState(manifest).Write(t,
+		filepath.Join(root, "backups", "state", fixtures.StateName(fixtures.DefaultTime)))
+	return root
+}
+
+func doctorRuntimeRoot(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	paths := []struct {
+		path       string
+		executable bool
+	}{
+		{path: "tes3mp-server", executable: true},
+		{path: "tes3mp-server.x86_64", executable: true},
+		{path: "tes3mp-prelaunch", executable: true},
+		{path: "openmw.cfg"},
+		{path: "tes3mp-server-default.cfg"},
+		{path: "server/scripts/config.lua"},
+		{path: "server/scripts/customScripts.lua"},
+		{path: "server/scripts/serverCore.lua"},
+		{path: "server/data/requiredDataFiles.json"},
+	}
+	for _, item := range paths {
+		path := filepath.Join(root, item.path)
+		mode := os.FileMode(0o644)
+		if item.executable {
+			mode = 0o755
+		}
+		fixtures.WriteFile(t, path, "synthetic runtime\n")
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatalf("chmod %s: %v", path, err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, "lib"), 0o755); err != nil {
+		t.Fatalf("create lib: %v", err)
+	}
+	return root
+}
+
+func setDoctorEnv(t *testing.T) {
+	t.Helper()
+
+	procRoot := t.TempDir()
+	fixtures.WriteFile(t, filepath.Join(procRoot, "meminfo"),
+		"MemTotal: 1048576 kB\nSwapTotal: 1048576 kB\n")
+	fixtures.WriteFile(t, filepath.Join(procRoot, "sys/vm/swappiness"), "10\n")
+
+	sysctlPath := filepath.Join(t.TempDir(), "99-tes3mp-easy.conf")
+	fixtures.WriteFile(t, sysctlPath, "vm.swappiness=10\n")
+
+	journaldPath := filepath.Join(t.TempDir(), "tes3mp-easy.conf")
+	fixtures.WriteFile(t, journaldPath,
+		"[Journal]\nSystemMaxUse=100M\nRuntimeMaxUse=32M\n")
+
+	binDir := t.TempDir()
+	for name, body := range map[string]string{
+		"ldconfig": "#!/bin/sh\nprintf '%s\\n' 'libluajit-5.1.so.2 (libc6,x86-64)'\n",
+		"ldd":      "#!/bin/sh\nprintf '%s\\n' 'libc.so.6 => /lib/libc.so.6'\n",
+	} {
+		if err := os.WriteFile(filepath.Join(binDir, name), []byte(body), 0o755); err != nil {
+			t.Fatalf("write fake %s: %v", name, err)
+		}
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	t.Setenv(osReleaseEnv,
+		doctorOSRelease(t, "ID=debian\nVERSION_ID=\"12\"\n"))
+	t.Setenv(procRootEnv, procRoot)
+	t.Setenv(sysctlConfEnv, sysctlPath)
+	t.Setenv(journaldConfEnv, journaldPath)
+	t.Setenv(runtimeRootEnv, doctorRuntimeRoot(t))
+	t.Setenv(skipOwnerCheckEnv, "1")
+}
+
 func doctorClient(t *testing.T, versionErr error) (*systemd.Client, *systemdtest.Runner) {
 	t.Helper()
 
@@ -64,6 +214,20 @@ func doctorClient(t *testing.T, versionErr error) (*systemd.Client, *systemdtest
 			"--timestamp=utc",
 		}, "ActiveState=active\nLoadState=loaded\nUnitFileState=enabled\n", nil)
 	}
+	cgroups := map[string]string{
+		systemd.UnitTES3MPService: "MemoryHigh=402653184\nMemoryMax=469762048\n",
+		systemd.UnitPanelService:  "MemoryHigh=50331648\nMemoryMax=67108864\n",
+		systemd.UnitBackupService: "MemoryHigh=50331648\nMemoryMax=67108864\n",
+	}
+	for unit, properties := range cgroups {
+		runner.Respond("systemctl", []string{
+			"show", unit, "--property=MemoryHigh,MemoryMax",
+		}, properties, nil)
+	}
+	runner.Respond("journalctl", []string{
+		"-u", systemd.UnitTES3MPService,
+		"-n", "1", "--no-pager", "-o", "cat",
+	}, "", nil)
 	return systemd.New(runner), runner
 }
 
@@ -98,9 +262,8 @@ func doctorCheck(t *testing.T, data doctorPayload, name string) (string, string)
 }
 
 func TestDoctorJSONOK(t *testing.T) {
-	root := doctorRoot(t)
-	t.Setenv(osReleaseEnv,
-		doctorOSRelease(t, "ID=debian\nVERSION_ID=\"12\"\n"))
+	root := doctorHealthyRoot(t)
+	setDoctorEnv(t)
 	client, runner := doctorClient(t, nil)
 
 	var stdout, stderr bytes.Buffer
@@ -115,13 +278,18 @@ func TestDoctorJSONOK(t *testing.T) {
 	}
 
 	data := decodeDoctor(t, stdout.String())
-	if len(data.Checks) != 6 {
-		t.Fatalf("checks = %d, want 6: %#v", len(data.Checks), data.Checks)
+	if len(data.Checks) != 19 {
+		t.Fatalf("checks = %d, want 19: %#v", len(data.Checks), data.Checks)
 	}
 	if data.Status != "ok" && data.Status != "warn" {
-		t.Fatalf("status = %q, want ok or warn", data.Status)
+		t.Fatalf("status = %q (%#v), want ok or warn", data.Status, data.Checks)
 	}
-	for _, name := range []string{"root", "os", "arch", "systemd", "units"} {
+	for _, name := range []string{
+		"root", "os", "arch", "systemd", "units",
+		"ownership", "journald", "runtime", "memory", "cgroup",
+		"filesystems", "budgets", "current", "datafiles", "archives",
+		"configs", "cleanup", "journald-config",
+	} {
 		status, message := doctorCheck(t, data, name)
 		if status != "ok" {
 			t.Errorf("%s = %q (%s), want ok", name, status, message)
@@ -129,8 +297,8 @@ func TestDoctorJSONOK(t *testing.T) {
 	}
 
 	calls := runner.Calls()
-	if len(calls) != 4 {
-		t.Fatalf("systemd calls = %#v, want version + 3 units", calls)
+	if len(calls) != 8 {
+		t.Fatalf("systemd calls = %#v, want version + 3 units + journal + 3 cgroups", calls)
 	}
 	if calls[0].Name != "systemctl" || len(calls[0].Args) != 1 ||
 		calls[0].Args[0] != "--version" {
@@ -139,7 +307,8 @@ func TestDoctorJSONOK(t *testing.T) {
 }
 
 func TestDoctorJSONWarningStillExitsZero(t *testing.T) {
-	root := doctorRoot(t)
+	root := doctorHealthyRoot(t)
+	setDoctorEnv(t)
 	t.Setenv(osReleaseEnv,
 		doctorOSRelease(t, "ID=cachyos\nVERSION_ID=rolling\n"))
 	client, _ := doctorClient(t, nil)
@@ -189,9 +358,8 @@ func TestDoctorJSONErrorUsesChecksFailed(t *testing.T) {
 }
 
 func TestDoctorSystemdUnavailableIsACheckError(t *testing.T) {
-	root := doctorRoot(t)
-	t.Setenv(osReleaseEnv,
-		doctorOSRelease(t, "ID=debian\nVERSION_ID=\"12\"\n"))
+	root := doctorHealthyRoot(t)
+	setDoctorEnv(t)
 	client, runner := doctorClient(t, errors.New("systemctl: command not found"))
 
 	var stdout, stderr bytes.Buffer
@@ -239,9 +407,8 @@ func TestDoctorRejectsArgumentsBeforeCallingSystemd(t *testing.T) {
 }
 
 func TestDoctorHumanOutput(t *testing.T) {
-	root := doctorRoot(t)
-	t.Setenv(osReleaseEnv,
-		doctorOSRelease(t, "ID=debian\nVERSION_ID=\"12\"\n"))
+	root := doctorHealthyRoot(t)
+	setDoctorEnv(t)
 	client, _ := doctorClient(t, nil)
 
 	var stdout, stderr bytes.Buffer

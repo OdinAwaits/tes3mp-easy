@@ -175,6 +175,36 @@ func (c *Client) Show(ctx context.Context, unit string) (Properties, error) {
 	return properties, nil
 }
 
+// ShowProperties reads an explicit property set for unit. Doctor uses it for
+// cgroup limits so it does not need the timestamp fields requested by status.
+func (c *Client) ShowProperties(ctx context.Context, unit string,
+	properties ...string,
+) (Properties, error) {
+	if err := ValidateUnit(unit); err != nil {
+		return nil, err
+	}
+	if len(properties) == 0 {
+		return nil, errors.New("systemd: at least one property is required")
+	}
+	for _, property := range properties {
+		if !validPropertyName(property) {
+			return nil, fmt.Errorf("systemd: invalid property name %q", property)
+		}
+	}
+
+	out, err := c.run(ctx, "systemctl", "show", unit,
+		"--property="+strings.Join(properties, ","))
+	if err != nil {
+		return nil, err
+	}
+
+	parsed, err := parseProperties(out)
+	if err != nil {
+		return nil, fmt.Errorf("systemd: parse systemctl show %s: %w", unit, err)
+	}
+	return parsed, nil
+}
+
 // Version returns the first line of systemctl --version, for example
 // "systemd 261 (261.2-1-arch)". It is used by doctor to distinguish a working
 // systemd from a host where systemctl is missing or unusable.
@@ -311,6 +341,23 @@ func (c *Client) run(ctx context.Context, name string, args ...string) ([]byte, 
 		Args: append([]string(nil), args...),
 		Err:  err,
 	}
+}
+
+func validPropertyName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		ch := name[i]
+		switch {
+		case ch >= 'a' && ch <= 'z':
+		case ch >= 'A' && ch <= 'Z':
+		case ch >= '0' && ch <= '9':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func parseProperties(data []byte) (Properties, error) {

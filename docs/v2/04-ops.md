@@ -142,7 +142,7 @@ internal/
   sha256 совпадает;
 - `requiredDataFiles.json` читается и соответствует `mods/plugins/` (кроме трёх
   базовых ESM, которых в `mods/plugins/` нет);
-- state-архивы (последний и несколько случайных) имеют вложенную структуру;
+- state-архивы (последний, средний и самый старый) имеют вложенную структуру;
 - конфиги парсятся, `customScripts.lua` соответствует `mods/scripts/`;
 - нет осиротевших `.part`, `.old-*`, `.staging/` и старых lock-файлов;
 - journald-капы `SystemMaxUse=100M`, `RuntimeMaxUse=32M`.
@@ -150,12 +150,12 @@ internal/
 Результат — список проверок в форме `doctor` из `03-contracts.md` §4; схема
 здесь не дублируется.
 
-В O03 реализованы первые шесть проверок; порядок в `data.checks` стабилен:
+Порядок в `data.checks` стабилен; O04 дополняет O03 в конец списка:
 
 - `root` — `--root` существует, является каталогом и читается; есть
   `configs/`, `players/`, `world/`, `mods/`, `backups/`, `panel-data/`;
   каталоги игровых данных не являются symlink и доступны на запись текущему
-  процессу. Точные владельцы и режимы из §4 `02-architecture.md` добавит O04;
+  процессу;
 - `os` — `/etc/os-release` читается и разбирается; Debian 12+ и Ubuntu 24.04+
   дают `ok`, другая ОС или старая версия — `warn`, отсутствие файла или
   `ID`/`VERSION_ID` — `error`;
@@ -165,11 +165,46 @@ internal/
   (`LoadState=loaded`) и не в `failed`; `tes3mp-easy-backup.timer` активен и
   `enabled`;
 - `disk` — свободное место на файловой системе `--root`: `warn` меньше 1 GiB,
-  `error` меньше 512 MiB.
+  `error` меньше 512 MiB;
+- `ownership` — точные владельцы и режимы из §4 `02-architecture.md`:
+  `/` `root:root 0755`, игровые каталоги и их файлы `tes3mp:tes3mp`,
+  `panel-data/` `tes3mp-panel:tes3mp 0750`, `uploads/` `2770`, `.locks/` и
+  `.staging/` `0700`, HOME-каталоги OpenMW `0700`; symlink вместо каталога —
+  `error`;
+- `journald` — `journalctl -u tes3mp.service -n 1 --no-pager -o cat` не
+  требует пароля; при недоступном systemd проверка не вызывается и даёт
+  `error`;
+- `runtime` — обязательные файлы TES3MP 0.8.1 на месте и исполняемые,
+  `libluajit-5.1.so.2` виден в `ldconfig -p`, а `ldd tes3mp-server.x86_64` не
+  содержит `not found`;
+- `memory` — RAM и swap не меньше 512 MiB, `vm.swappiness=10` в drop-in и,
+  если доступно, в `/proc/sys/vm/swappiness`;
+- `cgroup` — `MemoryHigh`/`MemoryMax` трёх service-юнитов совпадают с §3
+  `02-architecture.md` (`384M/448M`, `48M/64M`, `48M/64M`);
+- `filesystems` — `panel-data/uploads` и `backups/` имеют одинаковый
+  `stat.Dev`, иначе `mods import` не сможет сделать rename;
+- `budgets` — `backups/state` не больше 1 GiB, `backups/mods` не больше
+  512 MiB; превышение — `warn`, не `error`;
+- `current` — `backups/mods/current.txt` канонический, указывает на
+  существующий обычный архив, sha256 совпадает;
+- `datafiles` — `mods/plugins/requiredDataFiles.json` читается, все три
+  базовых ESM перечислены, каждый плагин в каталоге есть в JSON и наоборот;
+  указанные CRC32 проверяются по локальным файлам;
+- `archives` — последний, средний и самый старый state-архивы (до трёх)
+  читаются как tar.gz и имеют вложенную структуру; если архивов ещё нет —
+  `warn`;
+- `configs` — `tes3mp-server-default.cfg` (INI), `config.lua`
+  (`config.key = value`) и `banlist.json` разбираются; `customScripts.lua`
+  содержит ровно `require("custom.<name>")` из `mods/scripts/*.lua` в
+  лексикографическом порядке;
+- `cleanup` — нет `.part`, `.old-*`, непустого `.staging/` и посторонних
+  файлов в `.locks/` (разрешён только `ops.lock`);
+- `journald-config` — drop-in содержит `SystemMaxUse=100M` и
+  `RuntimeMaxUse=32M`.
 
-Остальные пункты списка выше (`journald`, runtime, память, cgroup, current,
-конфиги, архивы и бюджеты) относятся к O04. `doctor` не берёт lock и не
-изменяет data root.
+Новые проверки, кроме `budgets` и пустого `archives`, при нарушении дают
+`error`; `warn` не меняет код выхода. `doctor` не берёт lock и не изменяет
+data root.
 
 `doctor` возвращает 0, если нет `error` (предупреждения допустимы), и 10
 (`checks_failed`), если есть хотя бы одна ошибка. Код 2 зарезервирован за

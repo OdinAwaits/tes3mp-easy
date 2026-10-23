@@ -3,6 +3,7 @@ package doctor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -76,23 +77,33 @@ func newTestClient(t *testing.T, version string, versionErr error,
 			"--timestamp=utc",
 		}, response.stdout, response.err)
 	}
+	for _, limit := range cgroupLimits {
+		runner.Respond("systemctl", []string{
+			"show", limit.unit,
+			"--property=MemoryHigh,MemoryMax",
+		}, fmt.Sprintf("MemoryHigh=%d\nMemoryMax=%d\n", limit.high, limit.max), nil)
+	}
+	runner.Respond("journalctl", []string{
+		"-u", systemd.UnitTES3MPService,
+		"-n", "1", "--no-pager", "-o", "cat",
+	}, "", nil)
 	return systemd.New(runner)
 }
 
 func TestRunAllChecksOK(t *testing.T) {
-	client := newTestClient(t, "systemd 255 (255.1)\nextra output\n", nil, nil)
-	report := Run(context.Background(), Options{
-		Root:          writeTestRoot(t),
-		OSReleasePath: writeOSRelease(t, "ID=debian\nVERSION_ID=\"12\"\n"),
-		Systemd:       client,
-		Uname:         fixedUname("x86_64\n", nil),
-		DiskFree:      fixedFree(2<<30, nil),
-	})
+	opts := deepOptions(t)
+	opts.Systemd = newTestClient(t, "systemd 255 (255.1)\nextra output\n", nil, nil)
+	report := Run(context.Background(), opts)
 
 	if report.Status != StatusOK {
 		t.Fatalf("status = %q, want ok; checks=%#v", report.Status, report.Checks)
 	}
-	wantNames := []string{"root", "os", "arch", "systemd", "units", "disk"}
+	wantNames := []string{
+		"root", "os", "arch", "systemd", "units", "disk",
+		"ownership", "journald", "runtime", "memory", "cgroup",
+		"filesystems", "budgets", "current", "datafiles", "archives",
+		"configs", "cleanup", "journald-config",
+	}
 	gotNames := make([]string, 0, len(report.Checks))
 	for _, check := range report.Checks {
 		gotNames = append(gotNames, check.Name)
@@ -107,30 +118,24 @@ func TestRunAllChecksOK(t *testing.T) {
 }
 
 func TestRunAggregatesWarningsAndErrors(t *testing.T) {
-	client := newTestClient(t, "systemd 255", nil, nil)
-
-	warnReport := Run(context.Background(), Options{
-		Root:          writeTestRoot(t),
-		OSReleasePath: writeOSRelease(t, "ID=cachyos\nVERSION_ID=rolling\n"),
-		Systemd:       client,
-		Uname:         fixedUname("x86_64", nil),
-		DiskFree:      fixedFree(2<<30, nil),
-	})
+	warnOpts := deepOptions(t)
+	warnOpts.OSReleasePath = writeOSRelease(t,
+		"ID=cachyos\nVERSION_ID=rolling\n")
+	warnOpts.Systemd = newTestClient(t, "systemd 255", nil, nil)
+	warnReport := Run(context.Background(), warnOpts)
 	if warnReport.Status != StatusWarn {
-		t.Fatalf("warning status = %q, want warn", warnReport.Status)
+		t.Fatalf("warning status = %q (%#v), want warn",
+			warnReport.Status, warnReport.Checks)
 	}
 	osCheck := checkByName(warnReport, "os")
 	if osCheck.Status != StatusWarn || !strings.Contains(osCheck.Message, "unsupported") {
 		t.Fatalf("os check = %#v, want unsupported warning", osCheck)
 	}
 
-	errorReport := Run(context.Background(), Options{
-		Root:          writeTestRoot(t),
-		OSReleasePath: writeOSRelease(t, "ID=cachyos\nVERSION_ID=rolling\n"),
-		Systemd:       client,
-		Uname:         fixedUname("arm64", nil),
-		DiskFree:      fixedFree(2<<30, nil),
-	})
+	errorOpts := deepOptions(t)
+	errorOpts.Systemd = newTestClient(t, "systemd 255", nil, nil)
+	errorOpts.Uname = fixedUname("arm64", nil)
+	errorReport := Run(context.Background(), errorOpts)
 	if errorReport.Status != StatusError {
 		t.Fatalf("error status = %q, want error", errorReport.Status)
 	}
@@ -177,8 +182,15 @@ func TestDefaultOptions(t *testing.T) {
 	if opts.CommandTimeout != DefaultCommandTimeout {
 		t.Fatalf("CommandTimeout = %v, want %v", opts.CommandTimeout, DefaultCommandTimeout)
 	}
-	if opts.Uname == nil || opts.DiskFree == nil {
+	if opts.Uname == nil || opts.DiskFree == nil || opts.DeviceOf == nil ||
+		opts.RunCommand == nil || opts.OwnerNames == nil {
 		t.Fatal("default probes are nil")
+	}
+	if opts.ProcRoot != DefaultProcRoot ||
+		opts.SysctlPath != DefaultSysctlPath ||
+		opts.JournaldConfig != DefaultJournaldConfigPath ||
+		opts.RuntimeRoot != DefaultRuntimeRoot {
+		t.Fatalf("deep defaults = %#v", opts)
 	}
 }
 

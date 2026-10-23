@@ -80,6 +80,49 @@ func TestClientShow(t *testing.T) {
 	}})
 }
 
+func TestClientShowProperties(t *testing.T) {
+	args := []string{
+		"show", systemd.UnitTES3MPService,
+		"--property=MemoryHigh,MemoryMax",
+	}
+	runner := systemdtest.New()
+	runner.Respond("systemctl", args,
+		"MemoryHigh=402653184\nMemoryMax=469762048\n", nil)
+
+	properties, err := systemd.New(runner).ShowProperties(
+		context.Background(), systemd.UnitTES3MPService,
+		"MemoryHigh", "MemoryMax")
+	if err != nil {
+		t.Fatalf("ShowProperties: %v", err)
+	}
+	if got := properties.Get("MemoryHigh"); got != "402653184" {
+		t.Fatalf("MemoryHigh = %q, want 402653184", got)
+	}
+	if got := properties.Get("MemoryMax"); got != "469762048" {
+		t.Fatalf("MemoryMax = %q, want 469762048", got)
+	}
+	assertCalls(t, runner.Calls(), []systemdtest.Call{{
+		Name: "systemctl",
+		Args: args,
+	}})
+}
+
+func TestClientShowPropertiesRejectsInvalidInput(t *testing.T) {
+	client := systemd.New(systemdtest.New())
+	if _, err := client.ShowProperties(context.Background(),
+		systemd.UnitTES3MPService); err == nil {
+		t.Fatal("ShowProperties without properties error = nil")
+	}
+	if _, err := client.ShowProperties(context.Background(),
+		systemd.UnitTES3MPService, "Memory-High"); err == nil {
+		t.Fatal("ShowProperties accepted an invalid property name")
+	}
+	if _, err := client.ShowProperties(context.Background(),
+		"bad unit", "MemoryHigh"); !errors.Is(err, systemd.ErrInvalidUnit) {
+		t.Fatalf("ShowProperties invalid unit error = %v", err)
+	}
+}
+
 func TestClientVersion(t *testing.T) {
 	args := []string{"--version"}
 	runner := systemdtest.New()

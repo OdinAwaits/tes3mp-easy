@@ -13,7 +13,14 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/systemd"
 )
 
-const osReleaseEnv = "TES3MP_EASY_OS_RELEASE"
+const (
+	osReleaseEnv      = "TES3MP_EASY_OS_RELEASE"
+	procRootEnv       = "TES3MP_EASY_PROC_ROOT"
+	sysctlConfEnv     = "TES3MP_EASY_SYSCTL_CONF"
+	journaldConfEnv   = "TES3MP_EASY_JOURNALD_CONF"
+	runtimeRootEnv    = "TES3MP_EASY_RUNTIME_ROOT"
+	skipOwnerCheckEnv = "TES3MP_EASY_DOCTOR_SKIP_OWNERS"
+)
 
 func runDoctor(opts options, args []string, client *systemd.Client,
 	stdout, stderr io.Writer,
@@ -22,16 +29,16 @@ func runDoctor(opts options, args []string, client *systemd.Client,
 		return writeError(stdout, stderr, opts.json, parseErr)
 	}
 
-	osReleasePath := doctor.DefaultOSReleasePath
-	if path := os.Getenv(osReleaseEnv); path != "" {
-		osReleasePath = path
-	}
-
 	report := doctor.Run(context.Background(), doctor.Options{
 		Root:           opts.root,
-		OSReleasePath:  osReleasePath,
+		OSReleasePath:  envPath(osReleaseEnv, doctor.DefaultOSReleasePath),
+		ProcRoot:       envPath(procRootEnv, doctor.DefaultProcRoot),
+		SysctlPath:     envPath(sysctlConfEnv, doctor.DefaultSysctlPath),
+		JournaldConfig: envPath(journaldConfEnv, doctor.DefaultJournaldConfigPath),
+		RuntimeRoot:    envPath(runtimeRootEnv, doctor.DefaultRuntimeRoot),
 		CommandTimeout: opts.commandTimeout,
 		Systemd:        client,
+		SkipOwnership:  os.Getenv(skipOwnerCheckEnv) == "1",
 	})
 
 	if opts.json {
@@ -46,6 +53,13 @@ func runDoctor(opts options, args []string, client *systemd.Client,
 		return int(ops.ExitChecksFailed)
 	}
 	return int(ops.ExitOK)
+}
+
+func envPath(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func parseDoctorArgs(args []string) *ops.Error {

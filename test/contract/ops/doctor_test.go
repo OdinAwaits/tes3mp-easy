@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/Saagilat/tes3mp-easy/test/fixtures"
 )
 
 type doctorCheck struct {
@@ -35,6 +37,148 @@ func doctorRoot(t *testing.T) string {
 	return root
 }
 
+func contractMode(mode uint32) os.FileMode {
+	out := os.FileMode(mode & 0o777)
+	if mode&0o2000 != 0 {
+		out |= os.ModeSetgid
+	}
+	return out
+}
+
+func doctorHealthyRoot(t *testing.T) (string, map[string]string) {
+	t.Helper()
+
+	root := t.TempDir()
+	dirs := []struct {
+		path string
+		mode uint32
+	}{
+		{path: "", mode: 0o755},
+		{path: "configs", mode: 0o700},
+		{path: "players", mode: 0o750},
+		{path: "world", mode: 0o750},
+		{path: "mods", mode: 0o750},
+		{path: "backups", mode: 0o750},
+		{path: "panel-data", mode: 0o750},
+		{path: "panel-data/tls", mode: 0o700},
+		{path: "panel-data/uploads", mode: 0o2770},
+		{path: ".locks", mode: 0o700},
+		{path: ".staging", mode: 0o700},
+		{path: ".config", mode: 0o700},
+		{path: ".config/openmw", mode: 0o700},
+		{path: ".local", mode: 0o700},
+		{path: ".local/share", mode: 0o700},
+		{path: ".local/share/openmw", mode: 0o700},
+		{path: "world/cell", mode: 0o750},
+		{path: "world/world", mode: 0o750},
+		{path: "world/map", mode: 0o750},
+		{path: "world/recordstore", mode: 0o750},
+		{path: "world/custom", mode: 0o750},
+		{path: "mods/plugins", mode: 0o750},
+		{path: "mods/scripts", mode: 0o750},
+		{path: "backups/mods", mode: 0o750},
+		{path: "backups/state", mode: 0o750},
+	}
+	for _, dir := range dirs {
+		path := root
+		if dir.path != "" {
+			path = filepath.Join(root, dir.path)
+		}
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("create %s: %v", path, err)
+		}
+	}
+	for _, dir := range dirs {
+		path := root
+		if dir.path != "" {
+			path = filepath.Join(root, dir.path)
+		}
+		if err := os.Chmod(path, contractMode(dir.mode)); err != nil {
+			t.Fatalf("chmod %s: %v", path, err)
+		}
+	}
+
+	fixtures.WriteConfigs(t, filepath.Join(root, "configs"))
+	fixtures.WriteFile(t,
+		filepath.Join(root, "configs", "customScripts.lua"), "")
+
+	mods := fixtures.DefaultModsInit()
+	manifest := mods.Install(t, filepath.Join(root, "backups", "mods"))
+	if err := os.Chmod(filepath.Join(root, "backups", "mods", "current.txt"),
+		0o640); err != nil {
+		t.Fatalf("chmod current.txt: %v", err)
+	}
+	fixtures.WriteFile(t,
+		filepath.Join(root, "mods", "plugins", "requiredDataFiles.json"),
+		string(mods.RequiredJSON()))
+	fixtures.DefaultState(manifest).Write(t,
+		filepath.Join(root, "backups", "state", fixtures.StateName(fixtures.DefaultTime)))
+
+	runtimeRoot := writeContractRuntime(t)
+	procRoot, sysctlPath, journaldPath := writeContractHost(t)
+	env := map[string]string{
+		"TES3MP_EASY_OS_RELEASE":         doctorOSRelease(t, "ID=debian\nVERSION_ID=\"12\"\n"),
+		"TES3MP_EASY_PROC_ROOT":          procRoot,
+		"TES3MP_EASY_SYSCTL_CONF":        sysctlPath,
+		"TES3MP_EASY_JOURNALD_CONF":      journaldPath,
+		"TES3MP_EASY_RUNTIME_ROOT":       runtimeRoot,
+		"TES3MP_EASY_DOCTOR_SKIP_OWNERS": "1",
+	}
+	return root, env
+}
+
+func writeContractRuntime(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	files := []struct {
+		path       string
+		executable bool
+	}{
+		{path: "tes3mp-server", executable: true},
+		{path: "tes3mp-server.x86_64", executable: true},
+		{path: "tes3mp-prelaunch", executable: true},
+		{path: "openmw.cfg"},
+		{path: "tes3mp-server-default.cfg"},
+		{path: "server/scripts/config.lua"},
+		{path: "server/scripts/customScripts.lua"},
+		{path: "server/scripts/serverCore.lua"},
+		{path: "server/data/requiredDataFiles.json"},
+	}
+	for _, file := range files {
+		path := filepath.Join(root, file.path)
+		mode := os.FileMode(0o644)
+		if file.executable {
+			mode = 0o755
+		}
+		fixtures.WriteFile(t, path, "synthetic runtime\n")
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatalf("chmod %s: %v", path, err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, "lib"), 0o755); err != nil {
+		t.Fatalf("create lib: %v", err)
+	}
+	return root
+}
+
+func writeContractHost(t *testing.T) (procRoot, sysctlPath, journaldPath string) {
+	t.Helper()
+
+	procRoot = t.TempDir()
+	fixtures.WriteFile(t, filepath.Join(procRoot, "meminfo"),
+		"MemTotal: 1048576 kB\nSwapTotal: 1048576 kB\n")
+	fixtures.WriteFile(t, filepath.Join(procRoot, "sys/vm/swappiness"), "10\n")
+
+	sysctlPath = filepath.Join(t.TempDir(), "99-tes3mp-easy.conf")
+	fixtures.WriteFile(t, sysctlPath, "vm.swappiness=10\n")
+
+	journaldPath = filepath.Join(t.TempDir(), "tes3mp-easy.conf")
+	fixtures.WriteFile(t, journaldPath,
+		"[Journal]\nSystemMaxUse=100M\nRuntimeMaxUse=32M\n")
+	return procRoot, sysctlPath, journaldPath
+}
+
 func doctorOSRelease(t *testing.T, content string) string {
 	t.Helper()
 
@@ -43,6 +187,10 @@ func doctorOSRelease(t *testing.T, content string) string {
 		t.Fatalf("write os-release: %v", err)
 	}
 	return path
+}
+
+func cgroupCall(unit string) []string {
+	return []string{"show", unit, "--property=MemoryHigh,MemoryMax"}
 }
 
 func decodeDoctor(t *testing.T, env envelope) doctorPayload {
@@ -89,28 +237,34 @@ func doctorCheckByName(t *testing.T, data doctorPayload, name string) doctorChec
 }
 
 func TestDoctorOKContract(t *testing.T) {
+	root, env := doctorHealthyRoot(t)
 	callLog := filepath.Join(t.TempDir(), "calls.log")
-	res := testHarness.RunRootEnv(t, doctorRoot(t), map[string]string{
-		"FAKE_SYSTEMD_LOG":       callLog,
-		"TES3MP_EASY_OS_RELEASE": doctorOSRelease(t, "ID=debian\nVERSION_ID=\"12\"\n"),
-	}, "--json", "doctor")
+	journalLog := filepath.Join(t.TempDir(), "journal.log")
+	env["FAKE_SYSTEMD_LOG"] = callLog
+	env["FAKE_JOURNALD_LOG"] = journalLog
+	res := testHarness.RunRootEnv(t, root, env, "--json", "doctor")
 
 	res.requireExit(t, 0)
 	if res.Stderr != "" {
 		t.Fatalf("stderr = %q, want empty", res.Stderr)
 	}
-	env := res.decodeEnvelope(t)
-	if !env.OK {
+	payload := res.decodeEnvelope(t)
+	if !payload.OK {
 		t.Fatalf("ok = false, want true; stdout=%q", res.Stdout)
 	}
-	data := decodeDoctor(t, env)
+	data := decodeDoctor(t, payload)
 	if data.Status != "ok" && data.Status != "warn" {
 		t.Fatalf("status = %q, want ok or warn", data.Status)
 	}
-	if len(data.Checks) != 6 {
-		t.Fatalf("checks = %d, want 6", len(data.Checks))
+	if len(data.Checks) != 19 {
+		t.Fatalf("checks = %d, want 19", len(data.Checks))
 	}
-	for _, name := range []string{"root", "os", "arch", "systemd", "units"} {
+	for _, name := range []string{
+		"root", "os", "arch", "systemd", "units",
+		"ownership", "journald", "runtime", "memory", "cgroup",
+		"filesystems", "budgets", "current", "datafiles", "archives",
+		"configs", "cleanup", "journald-config",
+	} {
 		check := doctorCheckByName(t, data, name)
 		if check.Status != "ok" {
 			t.Errorf("%s = %q (%s), want ok", name, check.Status, check.Message)
@@ -122,14 +276,20 @@ func TestDoctorOKContract(t *testing.T) {
 		showCall(serviceUnit),
 		showCall("tes3mp-panel.service"),
 		showCall(timerUnit),
+		cgroupCall(serviceUnit),
+		cgroupCall("tes3mp-panel.service"),
+		cgroupCall("tes3mp-easy-backup.service"),
 	})
+	requireCalls(t, journalLog, [][]string{{
+		"-u", serviceUnit, "-n", "1", "--no-pager", "-o", "cat",
+	}})
 }
 
 func TestDoctorUnknownOSContract(t *testing.T) {
-	res := testHarness.RunRootEnv(t, doctorRoot(t), map[string]string{
-		"TES3MP_EASY_OS_RELEASE": doctorOSRelease(t,
-			"ID=cachyos\nVERSION_ID=rolling\n"),
-	}, "--json", "doctor")
+	root, env := doctorHealthyRoot(t)
+	env["TES3MP_EASY_OS_RELEASE"] = doctorOSRelease(t,
+		"ID=cachyos\nVERSION_ID=rolling\n")
+	res := testHarness.RunRootEnv(t, root, env, "--json", "doctor")
 
 	res.requireExit(t, 0)
 	data := decodeDoctor(t, res.decodeEnvelope(t))
@@ -143,10 +303,9 @@ func TestDoctorUnknownOSContract(t *testing.T) {
 }
 
 func TestDoctorNonX86Contract(t *testing.T) {
-	res := testHarness.RunRootEnv(t, doctorRoot(t), map[string]string{
-		"FAKE_UNAME_M":           "aarch64",
-		"TES3MP_EASY_OS_RELEASE": doctorOSRelease(t, "ID=debian\nVERSION_ID=12\n"),
-	}, "--json", "doctor")
+	root, extra := doctorHealthyRoot(t)
+	extra["FAKE_UNAME_M"] = "aarch64"
+	res := testHarness.RunRootEnv(t, root, extra, "--json", "doctor")
 
 	res.requireExit(t, 10)
 	env := res.decodeEnvelope(t)
@@ -167,12 +326,11 @@ func TestDoctorNonX86Contract(t *testing.T) {
 }
 
 func TestDoctorSystemdUnavailableContract(t *testing.T) {
+	root, extra := doctorHealthyRoot(t)
 	callLog := filepath.Join(t.TempDir(), "calls.log")
-	res := testHarness.RunRootEnv(t, doctorRoot(t), map[string]string{
-		"FAKE_SYSTEMD_LOG":       callLog,
-		"FAKE_SYSTEMD_MODE":      "unavailable",
-		"TES3MP_EASY_OS_RELEASE": doctorOSRelease(t, "ID=debian\nVERSION_ID=12\n"),
-	}, "--json", "doctor")
+	extra["FAKE_SYSTEMD_LOG"] = callLog
+	extra["FAKE_SYSTEMD_MODE"] = "unavailable"
+	res := testHarness.RunRootEnv(t, root, extra, "--json", "doctor")
 
 	res.requireExit(t, 10)
 	env := res.decodeEnvelope(t)
@@ -205,12 +363,10 @@ func TestDoctorInvalidArgumentContract(t *testing.T) {
 }
 
 func TestDoctorDoesNotModifyRootContract(t *testing.T) {
-	root := doctorRoot(t)
+	root, env := doctorHealthyRoot(t)
 	before := snapshotTree(t, root)
 
-	res := testHarness.RunRootEnv(t, root, map[string]string{
-		"TES3MP_EASY_OS_RELEASE": doctorOSRelease(t, "ID=debian\nVERSION_ID=12\n"),
-	}, "--json", "doctor")
+	res := testHarness.RunRootEnv(t, root, env, "--json", "doctor")
 	res.requireExit(t, 0)
 
 	after := snapshotTree(t, root)
