@@ -170,6 +170,28 @@ func TestRetentionManualAndPredeployCounts(t *testing.T) {
 	}
 }
 
+func TestRetentionProtectedStateArchiveIsKept(t *testing.T) {
+	stateDir := t.TempDir()
+	var oldest string
+	for i := 0; i < 7; i++ {
+		name := writeArchive(t, stateDir, archive.KindStateManual,
+			testNow.Add(-time.Duration(i)*time.Hour), 0, 1)
+		if i == 6 {
+			oldest = name
+		}
+	}
+
+	cfg := testConfig(stateDir, "")
+	cfg.ProtectedState = []string{oldest}
+	plan := planFor(t, cfg)
+	if !names(plan.Keep)[oldest] {
+		t.Fatalf("protected archive %s was pruned", oldest)
+	}
+	if got := len(filterKind(plan.Keep, archive.KindStateManual)); got != 6 {
+		t.Fatalf("manual kept = %d, want 6", got)
+	}
+}
+
 func TestRetentionCurrentModsArchiveIsProtected(t *testing.T) {
 	modsDir := t.TempDir()
 	var namesByAge []string

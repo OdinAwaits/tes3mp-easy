@@ -87,7 +87,10 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
 - W04 закрыт: `mods deploy` делает `state-predeploy-*`, staging, подмену
   `mods/plugins` и `mods/scripts` через rename, `customScripts.lua`,
   `current.txt`, stop/start и полный rollback при сбое.
-- Следующая задача — W05 (`state deploy`).
+- W05 закрыт: `state deploy` проверяет state и `current.txt`, делает
+  `state-predeploy-*`, staging, подмену `players` и `world` через rename,
+  stop/start и полный rollback при сбое.
+- Следующая задача — W06 (`staff set`, `config get/set`).
 
 Схема веток на момент старта:
 
@@ -587,7 +590,7 @@ lock `lock_linux_test.go`; для не-Linux платформ тест lock пр
 | W02 | done | `backups create` + retention | автобэкап и `--if-running` |
 | W03 | done | `mods import` | проверка и импорт архива |
 | W04 | done | `mods deploy` | predeploy, остановка, restart |
-| W05 | planned | `state deploy` | staging, проверка, rollback |
+| W05 | done | `state deploy` | staging, проверка, rollback |
 | W06 | planned | `staff set`, `config get/set` | точечные изменения |
 | W07 | planned | Fault/resource-тесты | отказы, 512 MiB архив, 64 MiB cgroup |
 
@@ -712,6 +715,45 @@ device-проверка вынесена в build-tagged `device_unix.go`/`devic
 stop/start, диска и mapping exit-кодов; contract-тесты реального бинарника на
 точные ключи, sha256, `state-predeploy`, stop/start и отсутствие следов,
 exit 3/4/6/7/8 и неизменность данных при ошибках.
+
+### W05 — `state deploy` (done)
+
+Сделано: `state deploy (--latest|--archive <name>) [--no-restart]` парсит
+аргументы до lock, берёт exclusive `flock` (shared для `--dry-run`) и
+разрешает ровно один селектор. `--latest` выбирает новейший `state-*` или
+`state-manual-*` и не рассматривает `state-predeploy-*`; predeploy
+восстанавливается только явным `--archive`. Имя проверяется по §6.6, опасные
+имена дают `unsafe_path`, отсутствующий архив — `not_found`.
+
+`internal/archive` получил `ValidateStateWithSize`/`ValidateStateFileWithSize`
+и потоковые `ExtractState`/`ExtractStateFile`. Извлечение принимает только
+вложенную структуру `players/`, `world/{cell,world,map,recordstore,custom}/`,
+`requiredDataFiles.json` и `current.txt`, сохраняет пустые каталоги и
+отклоняет плоские или вложенные пути. До остановки сервера проверяются
+канонический `current.txt`, sha256 referenced mods-архива и совпадение с
+живым `backups/mods/current.txt`; любое расхождение — `archive_invalid`.
+
+Перед подменой проверяется свободное место (predeploy + распакованный размер
++ 512 MiB), затем `createStateBackupLocked` создаёт `state-predeploy-*` без
+повторного lock. Выбранный архив защищён от retention на время операции.
+Транзакция распаковывает state в `.staging/state-<id>/`, переименовывает
+`players` и `world` в `.old-<id>`, ставит staging-каталоги на их место и
+только после успеха удаляет `.old-*` и staging.
+
+Сервер опрашивается через `systemctl is-active`; если он был активен,
+выполняется rootctl stop, а после успеха — start (если не `--no-restart`).
+Сбой stop/start — `service_unavailable` (exit 6). Любая ошибка после
+остановки восстанавливает `players` и `world`, удаляет staging и запускает
+сервер, если он работал до операции; `restarted` истинно только после
+успешного start. `--dry-run` возвращает план и не пишет байта.
+
+Тесты: unit-тесты аргументов, `--latest`, active/inactive, `--no-restart`,
+rollback при сбое распаковки, подмены и start, stop failure, no_space,
+dry-run без изменений, защита выбранного архива от retention, mapping
+exit-кодов; contract-тесты реального бинарника на точные ключи,
+`mods_archive`, `state-predeploy`, пропуск predeploy в `--latest`,
+stop/start, rollback при распаковке, старый/отсутствующий/чужой `current.txt`,
+lock и отсутствие следов.
 
 ## 8. M4 — панель MVP
 

@@ -84,10 +84,11 @@ type backupsCreateData struct {
 }
 
 type stateBackupOptions struct {
-	root   string
-	kind   archive.ArchiveKind
-	now    time.Time
-	dryRun bool
+	root    string
+	kind    archive.ArchiveKind
+	now     time.Time
+	dryRun  bool
+	protect []string
 }
 
 type stateBackupResult struct {
@@ -482,9 +483,10 @@ func createStateBackupLocked(opts stateBackupOptions) (stateBackupResult, *ops.E
 	}
 
 	cfg := retention.Config{
-		StateDir: stateDir,
-		ModsDir:  modsDir,
-		Now:      now,
+		StateDir:       stateDir,
+		ModsDir:        modsDir,
+		ProtectedState: opts.protect,
+		Now:            now,
 	}
 	if opts.dryRun {
 		plan, err := retention.Build(cfg)

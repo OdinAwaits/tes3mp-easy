@@ -55,6 +55,10 @@ type Config struct {
 	// useful when the caller already parsed current.txt.
 	CurrentMods string
 
+	// ProtectedState names state archives that must not be pruned by this
+	// run. State deploy uses it for the archive it is about to restore.
+	ProtectedState []string
+
 	Now         time.Time
 	StateBudget int64
 	ModsBudget  int64

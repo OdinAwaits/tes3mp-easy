@@ -386,8 +386,8 @@ func deployModsLocked(req modsDeployRequest,
 	if err != nil {
 		return modsDeployResult{}, modsDeployError("estimate state backup", err)
 	}
-	if spaceErr := checkModsDeploySpace(
-		stateDir, selection.uncompressed+stateEstimate); spaceErr != nil {
+	if spaceErr := checkDeploySpace(
+		"mods deploy", stateDir, selection.uncompressed+stateEstimate); spaceErr != nil {
 		return modsDeployResult{}, spaceErr
 	}
 
@@ -526,37 +526,37 @@ func estimateStateBackupSize(stateDir string) (int64, error) {
 	return largest, nil
 }
 
-func checkModsDeploySpace(stateDir string, additional int64) *ops.Error {
+func checkDeploySpace(command, stateDir string, additional int64) *ops.Error {
 	path := stateDir
 	for {
 		if _, err := os.Stat(path); err == nil {
 			break
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return ops.NewError(ops.ExitInternal,
-				fmt.Sprintf("mods deploy: stat %s: %v", path, err))
+				fmt.Sprintf("%s: stat %s: %v", command, path, err))
 		}
 		parent := filepath.Dir(path)
 		if parent == path {
 			return ops.NewError(ops.ExitInternal,
-				fmt.Sprintf("mods deploy: no existing directory for %s", stateDir))
+				fmt.Sprintf("%s: no existing directory for %s", command, stateDir))
 		}
 		path = parent
 	}
 	free, err := modsDeployDiskFreeFunc(path)
 	if err != nil {
 		return ops.NewError(ops.ExitInternal,
-			fmt.Sprintf("mods deploy: free space: %v", err))
+			fmt.Sprintf("%s: free space: %v", command, err))
 	}
 	if additional < 0 ||
 		additional > int64(^uint64(0)>>1)-retention.DefaultMinFree {
 		return ops.NewError(ops.ExitInternal,
-			"mods deploy: disk-space estimate overflow")
+			fmt.Sprintf("%s: disk-space estimate overflow", command))
 	}
 	required := retention.DefaultMinFree + additional
 	if free < required {
 		return ops.NewError(ops.ExitNoSpace,
-			fmt.Sprintf("mods deploy: free space %d is below %d bytes",
-				free, required))
+			fmt.Sprintf("%s: free space %d is below %d bytes",
+				command, free, required))
 	}
 	return nil
 }

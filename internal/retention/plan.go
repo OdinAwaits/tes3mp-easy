@@ -82,6 +82,9 @@ func Build(cfg Config) (Plan, error) {
 		newestState = state.files[0].Name
 	}
 	protected := map[string]bool{newestState: true, currentName: true}
+	for _, name := range cfg.ProtectedState {
+		protected[name] = true
+	}
 	for name := range automatic.monthlyReps {
 		protected[name] = true
 	}
@@ -112,7 +115,7 @@ func Build(cfg Config) (Plan, error) {
 	var pressurePrune []File
 	if pressureNeeded(cfg, stateAfter, plan.FreeBytesAfter) {
 		candidates := pressureCandidates(
-			state.files, automatic, prune, newestState, cfg.Now)
+			state.files, automatic, prune, protected, newestState, cfg.Now)
 		for _, file := range candidates {
 			if !pressureNeeded(cfg, stateAfter, plan.FreeBytesAfter) {
 				break
@@ -376,6 +379,7 @@ func pressureCandidates(
 	files []File,
 	automatic automaticBuckets,
 	prune map[string]bool,
+	protected map[string]bool,
 	newestState string,
 	now time.Time,
 ) []File {
@@ -384,6 +388,7 @@ func pressureCandidates(
 		if file.Kind != archive.KindStateAuto ||
 			file.Name == newestState ||
 			prune[file.Name] ||
+			protected[file.Name] ||
 			automatic.monthlyReps[file.Name] {
 			continue
 		}

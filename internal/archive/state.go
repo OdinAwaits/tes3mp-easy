@@ -31,20 +31,28 @@ var stateWorldDirSet = map[string]struct{}{
 // ValidateStateFile validates a state tar.gz archive on disk, including the
 // referenced mods archive under modsDir (normally <root>/backups/mods).
 func ValidateStateFile(name, modsDir string) (StateInfo, error) {
+	info, _, err := ValidateStateFileWithSize(name, modsDir)
+	return info, err
+}
+
+// ValidateStateFileWithSize is ValidateStateFile plus the total uncompressed
+// size of the state archive's files. State deploy uses that number before
+// extracting a backup.
+func ValidateStateFileWithSize(name, modsDir string) (StateInfo, int64, error) {
 	reader, err := Open(name)
 	if err != nil {
-		return StateInfo{}, err
+		return StateInfo{}, 0, err
 	}
 	defer reader.Close()
 
-	info, err := ValidateState(reader)
+	info, size, err := ValidateStateWithSize(reader)
 	if err != nil {
-		return StateInfo{}, err
+		return StateInfo{}, 0, err
 	}
 	if err := VerifyStateMods(info, modsDir); err != nil {
-		return StateInfo{}, err
+		return StateInfo{}, 0, err
 	}
-	return info, nil
+	return info, size, nil
 }
 
 // ValidateStateReader validates a state tar.gz archive from an io.Reader and
@@ -71,15 +79,23 @@ func ValidateStateReader(r io.Reader, modsDir string) (StateInfo, error) {
 // callers that need the full deploy-time check use ValidateStateFile,
 // ValidateStateReader or VerifyStateMods.
 func ValidateState(r *Reader) (StateInfo, error) {
+	info, _, err := ValidateStateWithSize(r)
+	return info, err
+}
+
+// ValidateStateWithSize is ValidateState plus the total uncompressed size of
+// the archive's files.
+func ValidateStateWithSize(r *Reader) (StateInfo, int64, error) {
 	if r == nil {
-		return StateInfo{}, errors.New("archive: nil state reader")
+		return StateInfo{}, 0, errors.New("archive: nil state reader")
 	}
 
 	var (
-		info       StateInfo
-		seen       = make(map[string]bool)
-		hasJSON    bool
-		hasCurrent bool
+		info         StateInfo
+		seen         = make(map[string]bool)
+		hasJSON      bool
+		hasCurrent   bool
+		uncompressed int64
 	)
 
 	for {
@@ -88,40 +104,41 @@ func ValidateState(r *Reader) (StateInfo, error) {
 			break
 		}
 		if err != nil {
-			return StateInfo{}, err
+			return StateInfo{}, 0, err
 		}
 
 		switch entry.Type {
 		case TypeDir:
 			if err := validateStateDir(entry.Name, seen); err != nil {
-				return StateInfo{}, err
+				return StateInfo{}, 0, err
 			}
 		case TypeFile:
 			if err := validateStateEntry(r, entry, seen, &info, &hasJSON, &hasCurrent); err != nil {
-				return StateInfo{}, err
+				return StateInfo{}, 0, err
 			}
+			uncompressed += entry.Size
 		default:
-			return StateInfo{}, archiveInvalidf(
+			return StateInfo{}, 0, archiveInvalidf(
 				"%q: unsupported entry type", entry.Name)
 		}
 	}
 
 	for _, name := range stateRequiredDirs() {
 		if !seen[name] {
-			return StateInfo{}, archiveInvalidf(
+			return StateInfo{}, 0, archiveInvalidf(
 				"state archive is missing %s/", name)
 		}
 	}
 	if !hasJSON {
-		return StateInfo{}, archiveInvalidf(
+		return StateInfo{}, 0, archiveInvalidf(
 			"state archive is missing %s", requiredDataFilesName)
 	}
 	if !hasCurrent {
-		return StateInfo{}, archiveInvalidf(
+		return StateInfo{}, 0, archiveInvalidf(
 			"state archive is missing %s", currentFileName)
 	}
 
-	return info, nil
+	return info, uncompressed, nil
 }
 
 func stateRequiredDirs() []string {
