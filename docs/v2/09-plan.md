@@ -66,7 +66,18 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
 - O03 закрыт: `doctor` проверяет root/layout, OS, arch, systemd, unit-ы и диск,
   отдаёт `data.checks` и exit 10 без объекта `error`; точные владельцы/режимы и
   остальные проверки — O04.
-- Следующая задача — O04 (`doctor` deep).
+- O04 закрыт: `doctor` проверяет владельцев/режимы, journald, runtime, память,
+  cgroup, файловые системы, бюджеты, `current.txt`, `requiredDataFiles.json`,
+  state-архивы, конфиги, cleanup и journald-кэпы.
+- O05 закрыт: `backups list` читает mods/state-архивы, отдаёт точные ключи,
+  `current`, `--limit`, `--before`, `--sha256`, безопасные коды 2/8.
+- O06 закрыт: сквозной contract-набор read-команд на реальном бинарнике:
+  envelope, неизменность temp-root, отсутствие ops lock, границы root и
+  недоступный systemd/journald.
+- W01 закрыт: добавлены `internal/lock` (exclusive/shared `flock` с timeout и
+  `ErrLocked`) и `internal/atomicfile` (`.part`, `fsync`, `rename`, `fsync`
+  каталога, `Abort`); `pathguard` переиспользован без изменений.
+- Следующая задача — W02 (`backups create` + retention).
 
 Схема веток на момент старта:
 
@@ -562,7 +573,7 @@ lock `lock_linux_test.go`; для не-Linux платформ тест lock пр
 
 | ID | Статус | Задача | Результат |
 |---|---|---|---|
-| W01 | planned | Lock, atomicfile, pathguard | общие примитивы записи |
+| W01 | done | Lock, atomicfile, pathguard | общие примитивы записи |
 | W02 | planned | `backups create` + retention | автобэкап и `--if-running` |
 | W03 | planned | `mods import` | проверка и импорт архива |
 | W04 | planned | `mods deploy` | predeploy, остановка, restart |
@@ -573,6 +584,29 @@ lock `lock_linux_test.go`; для не-Linux платформ тест lock пр
 Критерий milestone: любая мутация либо завершается успешно, либо оставляет
 сервер и данные в исходном состоянии; `--no-restart` и «если он работал до
 операции» проверены тестами.
+
+### W01 — Lock, atomicfile, pathguard (done)
+
+Сделано: `internal/lock` открывает `.locks/ops.lock` с режимом 0600 и берёт
+`flock` в режиме `Exclusive` для мутаций или `Shared` для `--dry-run`.
+`Acquire` делает неблокирующие попытки с коротким polling, по истечении
+timeout возвращает `ErrLocked`, а нулевой timeout означает ровно одну попытку.
+`Close` освобождает lock и оставляет файл на месте; повторный `Close`
+идемпотентен. Без `syscall.Flock` пакет возвращает `ErrUnsupported`, а не
+мнимый успех.
+
+`internal/atomicfile` пишет детерминированный `<target>.part` в целевом
+каталоге, делает `fsync` файла, `rename` поверх цели и `fsync` каталога.
+Ошибки `fsync`/`rename` до подмены оставляют старый файл нетронутым и убирают
+`.part`; kill -9 до `Commit` оставляет `.part` для `doctor`. Есть потоковый
+`Writer` (`Commit`/`Abort`) и удобный `WriteFile`. `pathguard.Base`/`Path`
+из C03 уже покрывают имена игроков, скриптов и архивные пути, поэтому новых
+функций не потребовалось.
+
+Тесты: эксклюзивная и разделяемая блокировки, ожидание освобождения, timeout
+0/50ms, повторный `Close`, права и тип lock-файла, ошибки валидации;
+атомарная замена, видимость старого файла до `rename`, `Abort`, ошибки
+`fsync`/`rename`/directory sync и default mode.
 
 ## 8. M4 — панель MVP
 

@@ -241,6 +241,14 @@ testdata/
   остаётся, `doctor` предупреждает;
 - запись конфига: старый файл цел при ошибке fsync/rename (fake writer).
 
+W01 проверяет эти примитивы отдельно. `internal/lock`: exclusive не пускает
+exclusive/shared, shared не пускает exclusive, два shared сосуществуют,
+ожидание освобождения, timeout 0 и 50ms, повторный `Close`, права 0600,
+regular-файл и ошибки пустого пути/отрицательного timeout/неизвестного режима.
+`internal/atomicfile`: старый файл виден до `rename`, `.part` имеет ожидаемое
+имя, `Abort` не меняет цель, ошибки `fsync`, `rename` и directory sync
+возвращаются, а при ошибке до `rename` старый файл цел и `.part` удалён.
+
 ### 4.6. Команды
 
 | Команда | Обязательные случаи |
