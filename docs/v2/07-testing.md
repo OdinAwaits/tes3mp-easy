@@ -325,6 +325,25 @@ skipped), проверка `archive.ValidateStateFile`, sha256 файла, от�
 systemd, exit 4 при удержанном lock, exit 7 для битого `current.txt` и
 неизменность всего дерева после `--dry-run`.
 
+W03 проверяет `mods import` на тех же уровнях. Архивный валидатор C04
+принимает `minimal`, `scripts` и `no-crc`; в CLI unit-тестах отклоняются
+`root-json`, missing metadata, bad CRC, базовый ESM в `plugins/`, symlink,
+duplicate, nested script, traversal и absolute path с кодами 7/8. Проверено,
+что при любой ошибке upload остаётся на месте, а `backups/mods` не получает
+новых файлов. Отдельные тесты покрывают отсутствующий upload (`not_found`),
+symlink/каталог вместо upload, превышение compressed-лимита, cross-FS через
+подменяемую `modsImportDeviceOfPathFunc`, symlink вместо `backups/mods`,
+удержанный exclusive lock, collision-имя `-01`, retention (5 старых mods),
+неизменность `current.txt` и `--dry-run`, который не создаёт ни `backups/`,
+ни `.locks`.
+
+Contract-тесты реального бинарника проверяют точные ключи
+`archive/sha256/plugins/scripts/pruned/warnings`, sha256 сжатого файла,
+`ValidateModsFile` перемещённого архива, удаление upload, неизменность
+`current.txt`, exit 3/7/8/4/2 и отсутствие новых файлов при ошибке. На Linux
+дополнительно проверяется настоящий cross-FS импорт с `/dev/shm`: если
+устройства совпадают, тест пропускается.
+
 ## 5. Панель
 
 - логин: верный/неверный пароль, 5 неудач/15 минут, 429, cookie-флаги;

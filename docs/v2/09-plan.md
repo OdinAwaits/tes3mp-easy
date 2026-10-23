@@ -81,7 +81,10 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
   берёт exclusive lock (shared для `--dry-run`), проверяет диск и
   `--if-running`, применяет retention и возвращает `pruned`/`warnings`.
   `--lock-timeout=0` принимается, `ErrLocked` маппится в exit 4.
-- Следующая задача — W03 (`mods import`).
+- W03 закрыт: `mods import` потоково валидирует upload, проверяет одну
+  файловую систему, переименовывает его в `backups/mods/mods-*`, применяет
+  retention и не меняет `current.txt`.
+- Следующая задача — W04 (`mods deploy`).
 
 Схема веток на момент старта:
 
@@ -579,7 +582,7 @@ lock `lock_linux_test.go`; для не-Linux платформ тест lock пр
 |---|---|---|---|
 | W01 | done | Lock, atomicfile, pathguard | общие примитивы записи |
 | W02 | done | `backups create` + retention | автобэкап и `--if-running` |
-| W03 | planned | `mods import` | проверка и импорт архива |
+| W03 | done | `mods import` | проверка и импорт архива |
 | W04 | planned | `mods deploy` | predeploy, остановка, restart |
 | W05 | planned | `state deploy` | staging, проверка, rollback |
 | W06 | planned | `staff set`, `config get/set` | точечные изменения |
@@ -643,6 +646,37 @@ CLI unit-тесты успеха, `--manual`, retention 5 ручных, `--if-ru
 stopped/unavailable, lock/timeout 0, dry-run без изменений, no_space,
 `current.txt`/mods-архив; contract-тесты реального бинарника на точные ключи,
 archive/sha256, lock, skipped, exit 6/7/4/2 и неизменность root.
+
+### W03 — `mods import` (done)
+
+Сделано: `mods import --file <path>` парсит аргументы до lock, берёт
+exclusive `flock` (shared для `--dry-run`) через общий `acquireOpsLock` и
+создаёт `backups/mods/`, если его ещё нет. Upload обязан быть regular file:
+symlink и каталог отклоняются. До чтения проверяется `stat.Dev` upload и
+каталога назначения; разные файловые системы дают `invalid_argument` (exit 2),
+как требует панель.
+
+Архив читается один раз: `archive.ValidateMods` потоково проверяет layout,
+JSON, CRC, скрипты и лимиты, а `io.TeeReader` одновременно считает sha256
+сжатого файла. Ошибки архива и лимитов маппятся в `archive_invalid`, опасные
+пути — в `unsafe_path`. При любой ошибке исходный upload остаётся на месте и
+`backups/mods` не получает нового файла.
+
+При успехе upload переименовывается в `mods-<UTC>.tar.gz` с collision-суффиксом
+`-01`, `-02`, каталог синхронизируется через `atomicfile.SyncDir`; копирования
+между файловыми системами нет. `current.txt` не меняется. После импорта
+применяется retention (`pruned`, `warnings`), ошибка retention не откатывает
+уже импортированный архив. `--dry-run` ничего не пишет: ни каталога, ни lock,
+ни архива, но отдаёт имя, sha256, количество плагинов/скриптов и планируемый
+`pruned`.
+
+Тесты: unit-тесты аргументов, успеха, collision-имени, `current.txt`,
+retention, lock, dry-run без изменений, отсутствующего/symlink/каталога upload,
+oversized-файла, cross-FS через подменяемую `modsImportDeviceOfPathFunc`, всех
+классов ошибок архива и mapping exit-кодов; contract-тесты реального бинарника
+на точные ключи, sha256, `ValidateModsFile`, отсутствие upload после успеха,
+exit 3/7/8/4/2 и Linux cross-FS. Добавлен экспорт `atomicfile.SyncDir`;
+device-проверка вынесена в build-tagged `device_unix.go`/`device_other.go`.
 
 ## 8. M4 — панель MVP
 

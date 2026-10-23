@@ -131,7 +131,8 @@ func runBackupsCreate(opts options, args []string, client *systemd.Client,
 	if opts.dryRun {
 		mode = lock.Shared
 	}
-	held, lockErr := acquireBackupsLock(opts.root, mode, opts.lockTimeout, opts.dryRun)
+	held, lockErr := acquireOpsLock(opts.root, "backups create", mode,
+		opts.lockTimeout, opts.dryRun)
 	if lockErr != nil {
 		return writeError(stdout, stderr, opts.json, lockErr)
 	}
@@ -224,17 +225,21 @@ func parseBackupsCreateArgs(args []string) (backupsCreateOptions, *ops.Error) {
 	}, nil
 }
 
-func acquireBackupsLock(root string, mode lock.Mode, timeout time.Duration,
+// acquireOpsLock validates root and takes the shared ops lock. command is used
+// in error messages so callers do not misattribute a lock failure. A dry run
+// with no lock file does not create one: no writer can hold an advisory lock on
+// a missing file, so there is nothing to wait for.
+func acquireOpsLock(root, command string, mode lock.Mode, timeout time.Duration,
 	readOnly bool,
 ) (*lock.Lock, *ops.Error) {
 	info, err := os.Stat(root)
 	switch {
 	case err != nil:
 		return nil, ops.NewError(ops.ExitInternal,
-			fmt.Sprintf("backups create: root %s: %v", root, err))
+			fmt.Sprintf("%s: root %s: %v", command, root, err))
 	case !info.IsDir():
 		return nil, ops.NewError(ops.ExitInternal,
-			fmt.Sprintf("backups create: root %s is not a directory", root))
+			fmt.Sprintf("%s: root %s is not a directory", command, root))
 	}
 
 	dir := filepath.Join(root, ".locks")
@@ -243,28 +248,26 @@ func acquireBackupsLock(root string, mode lock.Mode, timeout time.Duration,
 		lockInfo, statErr := os.Lstat(path)
 		switch {
 		case errors.Is(statErr, fs.ErrNotExist):
-			// A dry run must not create the lock file. Without it no writer can
-			// hold the advisory lock yet, so there is nothing to wait for.
 			return nil, nil
 		case statErr != nil:
 			return nil, ops.NewError(ops.ExitInternal,
-				fmt.Sprintf("backups create: stat %s: %v", path, statErr))
+				fmt.Sprintf("%s: stat %s: %v", command, path, statErr))
 		case lockInfo.Mode()&os.ModeSymlink != 0 || !lockInfo.Mode().IsRegular():
 			return nil, ops.NewError(ops.ExitInternal,
-				fmt.Sprintf("backups create: %s is not a regular file", path))
+				fmt.Sprintf("%s: %s is not a regular file", command, path))
 		}
 	} else {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, ops.NewError(ops.ExitInternal,
-				fmt.Sprintf("backups create: create %s: %v", dir, err))
+				fmt.Sprintf("%s: create %s: %v", command, dir, err))
 		}
 		if lockInfo, statErr := os.Lstat(path); statErr == nil &&
 			(lockInfo.Mode()&os.ModeSymlink != 0 || !lockInfo.Mode().IsRegular()) {
 			return nil, ops.NewError(ops.ExitInternal,
-				fmt.Sprintf("backups create: %s is not a regular file", path))
+				fmt.Sprintf("%s: %s is not a regular file", command, path))
 		} else if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
 			return nil, ops.NewError(ops.ExitInternal,
-				fmt.Sprintf("backups create: stat %s: %v", path, statErr))
+				fmt.Sprintf("%s: stat %s: %v", command, path, statErr))
 		}
 	}
 
@@ -272,10 +275,10 @@ func acquireBackupsLock(root string, mode lock.Mode, timeout time.Duration,
 	if err != nil {
 		if errors.Is(err, lock.ErrLocked) {
 			return nil, ops.NewError(ops.ExitLocked,
-				fmt.Sprintf("backups create: %v", err))
+				fmt.Sprintf("%s: %v", command, err))
 		}
 		return nil, ops.NewError(ops.ExitInternal,
-			fmt.Sprintf("backups create: acquire lock: %v", err))
+			fmt.Sprintf("%s: acquire lock: %v", command, err))
 	}
 	return held, nil
 }

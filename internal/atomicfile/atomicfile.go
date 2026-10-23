@@ -164,6 +164,13 @@ func (w *Writer) discard() error {
 	return errors.Join(errs...)
 }
 
+// SyncDir fsyncs a directory. Callers that rename or remove entries directly
+// use it to make the directory change durable; on platforms without directory
+// fsync it is a no-op.
+func SyncDir(path string) error {
+	return syncDir(path)
+}
+
 // WriteFile atomically replaces target with data.
 func WriteFile(target string, data []byte, mode os.FileMode) error {
 	writer, err := New(target, mode)
