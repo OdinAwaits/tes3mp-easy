@@ -488,11 +488,6 @@ func TestRunBackupsDispatchErrors(t *testing.T) {
 			args: []string{"--json", "backups", "bogus"},
 			exit: 2, code: "invalid_argument",
 		},
-		{
-			name: "create is not implemented",
-			args: []string{"--json", "backups", "create", "--type", "state"},
-			exit: 1, code: "internal",
-		},
 	}
 
 	for _, tt := range tests {

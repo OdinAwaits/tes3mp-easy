@@ -1,8 +1,8 @@
 // Command tes3mp-easy-ops is the administrative CLI for tes3mp-easy.
 //
-// This step implements the process contract and the read-only doctor, status,
-// logs and backups list commands. Remaining command bodies arrive in later
-// steps from docs/v2/04-ops.md.
+// This step implements the process contract, the read-only doctor, status,
+// logs and backups list commands, and backups create with retention. Remaining
+// command bodies arrive in later steps from docs/v2/04-ops.md.
 package main
 
 import (
@@ -40,9 +40,10 @@ Commands:
   status [--unit tes3mp.service|tes3mp-easy-backup.timer]
   logs --tail <n>
   backups list --type mods|state [--limit <n>] [--before <name>] [--sha256]
+  backups create --type state [--manual] [--if-running]
 
-Other commands (start, stop, restart, backups create, mods, state, staff,
-config) are not implemented yet; they return internal until later steps.
+Other commands (start, stop, restart, mods, state, staff, config) are not
+implemented yet; they return internal until later steps.
 See docs/v2/04-ops.md for the target command set.
 `
 
@@ -113,7 +114,7 @@ func runWithClient(args []string, stdout, stderr io.Writer, client *systemd.Clie
 	case "logs":
 		return runLogs(opts, rest[1:], client, stdout, stderr)
 	case "backups":
-		return runBackups(opts, rest[1:], stdout, stderr)
+		return runBackups(opts, rest[1:], client, stdout, stderr)
 	default:
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInternal,
@@ -175,9 +176,9 @@ func parseGlobal(args []string) (options, []string, bool, *ops.Error) {
 	case opts.root == "":
 		return opts, rest, false, ops.NewError(
 			ops.ExitInvalidArgument, "--root must not be empty")
-	case opts.lockTimeout <= 0:
+	case opts.lockTimeout < 0:
 		return opts, rest, false, ops.NewError(
-			ops.ExitInvalidArgument, "--lock-timeout must be positive")
+			ops.ExitInvalidArgument, "--lock-timeout must not be negative")
 	case opts.commandTimeout <= 0:
 		return opts, rest, false, ops.NewError(
 			ops.ExitInvalidArgument, "--command-timeout must be positive")

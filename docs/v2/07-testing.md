@@ -304,6 +304,27 @@ JSON-объект. Снимок root до и после серии совпад�
 `status`/`logs` дают exit 6, `doctor` — exit 10 без `error`, а `backups list`
 не вызывает systemctl/journalctl и продолжает отдавать архивы.
 
+W02 проверяет state-бэкап на трёх уровнях. `internal/archive` пишет архив в
+`bytes.Buffer` и валидирует его тем же `ValidateStateReader`: точный порядок
+`players/`, `world/`, пяти `world/*/`, затем `requiredDataFiles.json` и
+`current.txt`; сортировка файлов, uid/gid 0, одинаковые mtime дают
+байт-в-байт одинаковый gzip, пустые каталоги сохраняются, symlink, вложенный
+каталог, лишний `world/*` и отсутствующие метаданные отклоняются.
+
+CLI unit-тесты проверяют успешный JSON, `--manual`, retention ручных архивов,
+`--if-running` для active/stopped/unavailable, exclusive lock и
+`--lock-timeout=0`, shared lock у `--dry-run`, отсутствие lock-файла и архива
+после dry-run, `no_space` (<512 MiB) и warning (<1 GiB), отсутствие
+`current.txt` или текущего mods-архива. Для порогов диска используется
+подменяемая функция `backupDiskFreeFunc`.
+
+Contract-тесты запускают реальный бинарник на temp-root: точные ключи
+`archive/size/sha256/skipped/pruned/warnings` (и `reason` без archive-полей при
+skipped), проверка `archive.ValidateStateFile`, sha256 файла, отсутствие
+`.part`, создание `ops.lock`, stopped `--if-running`, exit 6 при недоступном
+systemd, exit 4 при удержанном lock, exit 7 для битого `current.txt` и
+неизменность всего дерева после `--dry-run`.
+
 ## 5. Панель
 
 - логин: верный/неверный пароль, 5 неудач/15 минут, 429, cookie-флаги;

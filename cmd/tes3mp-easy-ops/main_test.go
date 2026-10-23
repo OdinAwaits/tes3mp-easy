@@ -204,7 +204,6 @@ func TestRunRejectsInvalidGlobalValues(t *testing.T) {
 	}{
 		{name: "empty root", args: []string{"--root=", "status"}, want: "--root"},
 		{name: "missing root", args: []string{"--root"}, want: "root"},
-		{name: "zero lock", args: []string{"--lock-timeout=0s", "status"}, want: "lock-timeout"},
 		{name: "negative lock", args: []string{"--lock-timeout=-1s", "status"}, want: "lock-timeout"},
 		{name: "bad lock", args: []string{"--lock-timeout=bad", "status"}, want: "lock-timeout"},
 		{name: "zero command", args: []string{"--command-timeout=0s", "status"}, want: "command-timeout"},

@@ -73,7 +73,7 @@ func TestJSONErrorContract(t *testing.T) {
 		},
 		{
 			name: "invalid lock timeout",
-			args: []string{"--json", "--lock-timeout=0s", "status"},
+			args: []string{"--json", "--lock-timeout=-1s", "status"},
 			exit: 2,
 			code: "invalid_argument",
 		},

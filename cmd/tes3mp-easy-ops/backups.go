@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -12,11 +13,16 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Saagilat/tes3mp-easy/internal/archive"
+	"github.com/Saagilat/tes3mp-easy/internal/atomicfile"
+	"github.com/Saagilat/tes3mp-easy/internal/lock"
 	"github.com/Saagilat/tes3mp-easy/internal/ops"
 	"github.com/Saagilat/tes3mp-easy/internal/pathguard"
+	"github.com/Saagilat/tes3mp-easy/internal/retention"
+	"github.com/Saagilat/tes3mp-easy/internal/systemd"
 )
 
 const (
@@ -27,6 +33,8 @@ const (
 	maxBackupsLimit     = 500
 
 	backupsCurrentFile = "current.txt"
+
+	backupWarnFree int64 = 1 << 30
 )
 
 type backupsData struct {
@@ -59,25 +67,445 @@ type backupEntry struct {
 	mtime time.Time
 }
 
-func runBackups(opts options, args []string, stdout, stderr io.Writer) int {
+type backupsCreateOptions struct {
+	typ       string
+	manual    bool
+	ifRunning bool
+}
+
+type backupsCreateData struct {
+	Archive  string   `json:"archive,omitempty"`
+	Size     *int64   `json:"size,omitempty"`
+	SHA256   *string  `json:"sha256,omitempty"`
+	Skipped  bool     `json:"skipped"`
+	Reason   string   `json:"reason,omitempty"`
+	Pruned   []string `json:"pruned"`
+	Warnings []string `json:"warnings"`
+}
+
+type stateBackupOptions struct {
+	root   string
+	kind   archive.ArchiveKind
+	now    time.Time
+	dryRun bool
+}
+
+type stateBackupResult struct {
+	archive  string
+	size     int64
+	sha256   string
+	pruned   []string
+	warnings []string
+}
+
+func runBackups(opts options, args []string, client *systemd.Client,
+	stdout, stderr io.Writer,
+) int {
 	if len(args) == 0 {
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInvalidArgument,
-				"backups: subcommand is required; want list"))
+				"backups: subcommand is required; want list or create"))
 	}
 
 	switch args[0] {
 	case "list":
 		return runBackupsList(opts, args[1:], stdout, stderr)
 	case "create":
-		return writeError(stdout, stderr, opts.json,
-			ops.NewError(ops.ExitInternal,
-				`command "backups create" is not implemented yet`))
+		return runBackupsCreate(opts, args[1:], client, stdout, stderr)
 	default:
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInvalidArgument,
 				fmt.Sprintf("backups: unknown subcommand %q", args[0])))
 	}
+}
+
+func runBackupsCreate(opts options, args []string, client *systemd.Client,
+	stdout, stderr io.Writer,
+) int {
+	createOpts, parseErr := parseBackupsCreateArgs(args)
+	if parseErr != nil {
+		return writeError(stdout, stderr, opts.json, parseErr)
+	}
+
+	mode := lock.Exclusive
+	if opts.dryRun {
+		mode = lock.Shared
+	}
+	held, lockErr := acquireBackupsLock(opts.root, mode, opts.lockTimeout, opts.dryRun)
+	if lockErr != nil {
+		return writeError(stdout, stderr, opts.json, lockErr)
+	}
+	if held != nil {
+		defer func() { _ = held.Close() }()
+	}
+
+	if createOpts.ifRunning {
+		if client == nil {
+			return writeError(stdout, stderr, opts.json,
+				ops.NewError(ops.ExitInternal,
+					"backups create: systemd client is not configured"))
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), opts.commandTimeout)
+		active, err := client.IsActive(ctx, systemd.UnitTES3MPService)
+		cancel()
+		if err != nil {
+			return writeSystemdFailure(stdout, stderr, opts.json,
+				"backups create", err)
+		}
+		if !active {
+			data := backupsCreateData{
+				Skipped:  true,
+				Reason:   "not_running",
+				Pruned:   []string{},
+				Warnings: []string{},
+			}
+			return writeBackupsCreate(opts, data, stdout, stderr)
+		}
+	}
+
+	kind := archive.KindStateAuto
+	if createOpts.manual {
+		kind = archive.KindStateManual
+	}
+	result, createErr := createStateBackupLocked(stateBackupOptions{
+		root:   opts.root,
+		kind:   kind,
+		now:    time.Now().UTC(),
+		dryRun: opts.dryRun,
+	})
+	if createErr != nil {
+		return writeError(stdout, stderr, opts.json, createErr)
+	}
+
+	size := result.size
+	sha := result.sha256
+	data := backupsCreateData{
+		Archive:  result.archive,
+		Size:     &size,
+		SHA256:   &sha,
+		Skipped:  false,
+		Pruned:   result.pruned,
+		Warnings: result.warnings,
+	}
+	return writeBackupsCreate(opts, data, stdout, stderr)
+}
+
+func parseBackupsCreateArgs(args []string) (backupsCreateOptions, *ops.Error) {
+	fs := flag.NewFlagSet("backups create", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {}
+
+	typ := fs.String("type", "", "")
+	manual := fs.Bool("manual", false, "")
+	ifRunning := fs.Bool("if-running", false, "")
+
+	if err := fs.Parse(args); err != nil {
+		return backupsCreateOptions{}, ops.NewError(ops.ExitInvalidArgument,
+			fmt.Sprintf("backups create: %v", err))
+	}
+	if fs.NArg() != 0 {
+		return backupsCreateOptions{}, ops.NewError(ops.ExitInvalidArgument,
+			fmt.Sprintf("backups create: unexpected argument %q", fs.Arg(0)))
+	}
+	switch *typ {
+	case backupTypeState:
+	case "":
+		return backupsCreateOptions{}, ops.NewError(ops.ExitInvalidArgument,
+			"backups create: --type is required (state)")
+	default:
+		return backupsCreateOptions{}, ops.NewError(ops.ExitInvalidArgument,
+			fmt.Sprintf("backups create: unsupported type %q; want state", *typ))
+	}
+
+	return backupsCreateOptions{
+		typ:       *typ,
+		manual:    *manual,
+		ifRunning: *ifRunning,
+	}, nil
+}
+
+func acquireBackupsLock(root string, mode lock.Mode, timeout time.Duration,
+	readOnly bool,
+) (*lock.Lock, *ops.Error) {
+	info, err := os.Stat(root)
+	switch {
+	case err != nil:
+		return nil, ops.NewError(ops.ExitInternal,
+			fmt.Sprintf("backups create: root %s: %v", root, err))
+	case !info.IsDir():
+		return nil, ops.NewError(ops.ExitInternal,
+			fmt.Sprintf("backups create: root %s is not a directory", root))
+	}
+
+	dir := filepath.Join(root, ".locks")
+	path := filepath.Join(dir, "ops.lock")
+	if readOnly {
+		lockInfo, statErr := os.Lstat(path)
+		switch {
+		case errors.Is(statErr, fs.ErrNotExist):
+			// A dry run must not create the lock file. Without it no writer can
+			// hold the advisory lock yet, so there is nothing to wait for.
+			return nil, nil
+		case statErr != nil:
+			return nil, ops.NewError(ops.ExitInternal,
+				fmt.Sprintf("backups create: stat %s: %v", path, statErr))
+		case lockInfo.Mode()&os.ModeSymlink != 0 || !lockInfo.Mode().IsRegular():
+			return nil, ops.NewError(ops.ExitInternal,
+				fmt.Sprintf("backups create: %s is not a regular file", path))
+		}
+	} else {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, ops.NewError(ops.ExitInternal,
+				fmt.Sprintf("backups create: create %s: %v", dir, err))
+		}
+		if lockInfo, statErr := os.Lstat(path); statErr == nil &&
+			(lockInfo.Mode()&os.ModeSymlink != 0 || !lockInfo.Mode().IsRegular()) {
+			return nil, ops.NewError(ops.ExitInternal,
+				fmt.Sprintf("backups create: %s is not a regular file", path))
+		} else if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
+			return nil, ops.NewError(ops.ExitInternal,
+				fmt.Sprintf("backups create: stat %s: %v", path, statErr))
+		}
+	}
+
+	held, err := lock.Acquire(path, mode, timeout)
+	if err != nil {
+		if errors.Is(err, lock.ErrLocked) {
+			return nil, ops.NewError(ops.ExitLocked,
+				fmt.Sprintf("backups create: %v", err))
+		}
+		return nil, ops.NewError(ops.ExitInternal,
+			fmt.Sprintf("backups create: acquire lock: %v", err))
+	}
+	return held, nil
+}
+
+func validateStateBackupSource(src archive.StateSource, modsDir string) error {
+	if _, err := os.Lstat(src.RequiredDataFiles); err != nil {
+		return fmt.Errorf("%w: requiredDataFiles.json: %v", archive.ErrInvalid, err)
+	}
+	current, err := archive.ReadCurrentFile(src.CurrentFile)
+	if err != nil {
+		return fmt.Errorf("%w: %v", archive.ErrInvalid, err)
+	}
+
+	target := filepath.Join(modsDir, current.Name)
+	info, err := os.Lstat(target)
+	if err != nil {
+		return fmt.Errorf("%w: current.txt references %s: %v",
+			archive.ErrInvalid, current.Name, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return fmt.Errorf("%w: current.txt references %s: not a regular file",
+			archive.ErrInvalid, current.Name)
+	}
+	return nil
+}
+
+func backupCreateError(operation string, err error) *ops.Error {
+	exit := ops.ExitInternal
+	switch {
+	case errors.Is(err, syscall.ENOSPC):
+		exit = ops.ExitNoSpace
+	case errors.Is(err, archive.ErrInvalid):
+		exit = ops.ExitArchiveInvalid
+	case errors.Is(err, pathguard.ErrUnsafePath):
+		exit = ops.ExitUnsafePath
+	}
+	return ops.NewError(exit, fmt.Sprintf("backups create: %s: %v", operation, err))
+}
+
+func checkBackupSpace(stateDir string) ([]string, *ops.Error) {
+	free, err := backupDiskFree(stateDir)
+	if err != nil {
+		return nil, ops.NewError(ops.ExitInternal,
+			fmt.Sprintf("backups create: free space: %v", err))
+	}
+	switch {
+	case free < retention.DefaultMinFree:
+		return nil, ops.NewError(ops.ExitNoSpace,
+			fmt.Sprintf("backups create: free space %d is below %d bytes",
+				free, retention.DefaultMinFree))
+	case free < backupWarnFree:
+		return []string{fmt.Sprintf(
+			"free space %d is below %d bytes", free, backupWarnFree)}, nil
+	default:
+		return nil, nil
+	}
+}
+
+// backupDiskFreeFunc is replaced in unit tests to exercise the disk-reserve
+// failure modes without a small filesystem.
+var backupDiskFreeFunc = retention.DiskFree
+
+func backupDiskFree(path string) (int64, error) {
+	for _, candidate := range []string{path, filepath.Dir(path)} {
+		if _, err := os.Stat(candidate); err == nil {
+			return backupDiskFreeFunc(candidate)
+		}
+	}
+	return 0, fmt.Errorf("no existing directory for %s", path)
+}
+
+type countingWriter struct {
+	n int64
+}
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	w.n += int64(len(p))
+	return len(p), nil
+}
+
+func writeBackupsCreate(opts options, data backupsCreateData,
+	stdout, stderr io.Writer,
+) int {
+	if opts.json {
+		return writeJSONSuccess(stdout, stderr, data)
+	}
+	if err := writeBackupsCreateHuman(stdout, data); err != nil {
+		return writeOutputFailure(stderr, err)
+	}
+	return int(ops.ExitOK)
+}
+
+func writeBackupsCreateHuman(w io.Writer, data backupsCreateData) error {
+	pruned := "-"
+	if len(data.Pruned) > 0 {
+		pruned = strings.Join(data.Pruned, ", ")
+	}
+	warnings := "-"
+	if len(data.Warnings) > 0 {
+		warnings = strings.Join(data.Warnings, "; ")
+	}
+
+	var out strings.Builder
+	if data.Skipped {
+		fmt.Fprintf(&out, "skipped: true\nreason: %s\n", data.Reason)
+	} else {
+		size := int64(0)
+		if data.Size != nil {
+			size = *data.Size
+		}
+		sha := ""
+		if data.SHA256 != nil {
+			sha = *data.SHA256
+		}
+		fmt.Fprintf(&out, "archive: %s\nsize: %d\nsha256: %s\n",
+			data.Archive, size, sha)
+	}
+	fmt.Fprintf(&out, "pruned: %s\nwarnings: %s\n", pruned, warnings)
+	_, err := io.WriteString(w, out.String())
+	return err
+}
+
+func createStateBackupLocked(opts stateBackupOptions) (stateBackupResult, *ops.Error) {
+	if opts.root == "" {
+		return stateBackupResult{}, ops.NewError(ops.ExitInternal,
+			"backups create: root is empty")
+	}
+	if !opts.kind.IsState() {
+		return stateBackupResult{}, ops.NewError(ops.ExitInternal,
+			fmt.Sprintf("backups create: %s is not a state archive kind", opts.kind))
+	}
+	now := opts.now.UTC()
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+
+	stateDir := filepath.Join(opts.root, "backups", "state")
+	modsDir := filepath.Join(opts.root, "backups", "mods")
+	if !opts.dryRun {
+		if err := os.MkdirAll(stateDir, 0o750); err != nil {
+			return stateBackupResult{}, backupCreateError(
+				fmt.Sprintf("create %s", stateDir), err)
+		}
+	}
+
+	warnings, spaceErr := checkBackupSpace(stateDir)
+	if spaceErr != nil {
+		return stateBackupResult{}, spaceErr
+	}
+
+	name, err := archive.NextArchiveNameInDir(stateDir, opts.kind, now)
+	if err != nil {
+		return stateBackupResult{}, backupCreateError("choose archive name", err)
+	}
+	source := archive.StateSource{
+		PlayersDir: filepath.Join(opts.root, "players"),
+		WorldDir:   filepath.Join(opts.root, "world"),
+		RequiredDataFiles: filepath.Join(opts.root, "mods", "plugins",
+			"requiredDataFiles.json"),
+		CurrentFile: filepath.Join(modsDir, backupsCurrentFile),
+	}
+	if err := validateStateBackupSource(source, modsDir); err != nil {
+		return stateBackupResult{}, backupCreateError("validate state source", err)
+	}
+
+	digest := sha256.New()
+	counter := &countingWriter{}
+	if opts.dryRun {
+		if _, err := archive.WriteState(io.MultiWriter(digest, counter), source); err != nil {
+			return stateBackupResult{}, backupCreateError("write state archive", err)
+		}
+	} else {
+		target := filepath.Join(stateDir, name)
+		writer, err := atomicfile.New(target, 0o640)
+		if err != nil {
+			return stateBackupResult{}, backupCreateError(
+				fmt.Sprintf("open %s", target), err)
+		}
+		if _, err := archive.WriteState(
+			io.MultiWriter(writer, digest, counter), source); err != nil {
+			return stateBackupResult{}, backupCreateError("write state archive",
+				errors.Join(err, writer.Abort()))
+		}
+		if counter.n > archive.MaxCompressedSize {
+			return stateBackupResult{}, backupCreateError("write state archive",
+				errors.Join(fmt.Errorf("%w: compressed state exceeds %d bytes",
+					archive.ErrLimit, archive.MaxCompressedSize), writer.Abort()))
+		}
+		if err := writer.Commit(); err != nil {
+			return stateBackupResult{}, backupCreateError(
+				fmt.Sprintf("commit %s", target), err)
+		}
+	}
+
+	result := stateBackupResult{
+		archive:  name,
+		size:     counter.n,
+		sha256:   hex.EncodeToString(digest.Sum(nil)),
+		pruned:   []string{},
+		warnings: append([]string{}, warnings...),
+	}
+
+	cfg := retention.Config{
+		StateDir: stateDir,
+		ModsDir:  modsDir,
+		Now:      now,
+	}
+	if opts.dryRun {
+		plan, err := retention.Build(cfg)
+		if err != nil {
+			result.warnings = append(result.warnings,
+				fmt.Sprintf("retention: %v", err))
+			return result, nil
+		}
+		for _, file := range plan.Prune {
+			result.pruned = append(result.pruned, file.Name)
+		}
+		result.warnings = append(result.warnings, plan.Warnings...)
+		return result, nil
+	}
+
+	retained, err := retention.Apply(cfg)
+	if err != nil {
+		result.warnings = append(result.warnings,
+			fmt.Sprintf("retention: %v", err))
+		return result, nil
+	}
+	result.pruned = append(result.pruned, retained.Pruned...)
+	result.warnings = append(result.warnings, retained.Warnings...)
+	return result, nil
 }
 
 func runBackupsList(opts options, args []string, stdout, stderr io.Writer) int {

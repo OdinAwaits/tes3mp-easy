@@ -77,7 +77,11 @@ JSON-схемы, коды ошибок, форматы архивов и HTTP AP
 - W01 закрыт: добавлены `internal/lock` (exclusive/shared `flock` с timeout и
   `ErrLocked`) и `internal/atomicfile` (`.part`, `fsync`, `rename`, `fsync`
   каталога, `Abort`); `pathguard` переиспользован без изменений.
-- Следующая задача — W02 (`backups create` + retention).
+- W02 закрыт: `backups create` пишет state-архив потоково через `atomicfile`,
+  берёт exclusive lock (shared для `--dry-run`), проверяет диск и
+  `--if-running`, применяет retention и возвращает `pruned`/`warnings`.
+  `--lock-timeout=0` принимается, `ErrLocked` маппится в exit 4.
+- Следующая задача — W03 (`mods import`).
 
 Схема веток на момент старта:
 
@@ -574,7 +578,7 @@ lock `lock_linux_test.go`; для не-Linux платформ тест lock пр
 | ID | Статус | Задача | Результат |
 |---|---|---|---|
 | W01 | done | Lock, atomicfile, pathguard | общие примитивы записи |
-| W02 | planned | `backups create` + retention | автобэкап и `--if-running` |
+| W02 | done | `backups create` + retention | автобэкап и `--if-running` |
 | W03 | planned | `mods import` | проверка и импорт архива |
 | W04 | planned | `mods deploy` | predeploy, остановка, restart |
 | W05 | planned | `state deploy` | staging, проверка, rollback |
@@ -607,6 +611,38 @@ timeout возвращает `ErrLocked`, а нулевой timeout означа
 0/50ms, повторный `Close`, права и тип lock-файла, ошибки валидации;
 атомарная замена, видимость старого файла до `rename`, `Abort`, ошибки
 `fsync`/`rename`/directory sync и default mode.
+
+### W02 — `backups create` + retention (done)
+
+Сделано: `internal/archive.WriteState` потоково пишет state tar.gz из живых
+`players/` и `world/`: фиксированные пять `world/*/`, сортировка файлов,
+uid/gid 0, mtime из файлов и метаданные `requiredDataFiles.json` +
+канонический `current.txt` в конце. Symlink, вложенные каталоги и лишние
+`world/*/` отклоняются; лимиты 50 000 записей и 1 GiB распакованного
+проверяются по ходу записи.
+
+CLI `backups create --type state [--manual] [--if-running]` парсит аргументы до
+lock, берёт exclusive `flock` (shared для `--dry-run`), проверяет свободное
+место (<512 MiB — exit 5, <1 GiB — warning), имя с collision-суффиксом и
+`current.txt` с существующим mods-архивом. Архив пишется в
+`backups/state/<name>.tar.gz.part` через `atomicfile` (fsync → rename → fsync
+каталога), sha256 считается по потоку. После успеха вызывается retention;
+ошибки удаления/бюджетов остаются в `warnings`, созданный архив не
+откатывается. `state-predeploy` использует ту же внутреннюю функцию
+`createStateBackupLocked`, чтобы не брать lock повторно.
+
+`--if-running` вызывает `systemctl is-active tes3mp.service`: остановленный
+сервер даёт `skipped=true`, `reason=not_running`, недоступный systemd — exit 6.
+`--dry-run` не пишет ни байта (включая `ops.lock`, если его ещё нет),
+показывает имя, размер, sha256 и планируемый `pruned`. `--lock-timeout=0`
+теперь принимается парсером и означает одну неблокирующую попытку; `ErrLocked`
+маппится в exit 4 `locked`.
+
+Тесты: архивный layout/порядок/uid-gid/детерминизм/пустые каталоги/symlink;
+CLI unit-тесты успеха, `--manual`, retention 5 ручных, `--if-running` active/
+stopped/unavailable, lock/timeout 0, dry-run без изменений, no_space,
+`current.txt`/mods-архив; contract-тесты реального бинарника на точные ключи,
+archive/sha256, lock, skipped, exit 6/7/4/2 и неизменность root.
 
 ## 8. M4 — панель MVP
 

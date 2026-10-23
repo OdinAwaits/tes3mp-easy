@@ -145,8 +145,7 @@ func TestParseGlobalErrors(t *testing.T) {
 	}{
 		{name: "empty root", args: []string{"--root=", "status"}, want: "--root"},
 		{name: "missing root", args: []string{"--root"}, want: "root"},
-		{name: "zero lock", args: []string{"--lock-timeout=0s", "status"}, want: "positive"},
-		{name: "negative lock", args: []string{"--lock-timeout=-1s", "status"}, want: "positive"},
+		{name: "negative lock", args: []string{"--lock-timeout=-1s", "status"}, want: "negative"},
 		{name: "bad lock", args: []string{"--lock-timeout=bad", "status"}, want: "invalid value"},
 		{name: "zero command", args: []string{"--command-timeout=0s", "status"}, want: "positive"},
 	}
@@ -165,6 +164,28 @@ func TestParseGlobalErrors(t *testing.T) {
 			}
 			if !strings.Contains(err.Message, tt.want) {
 				t.Fatalf("message = %q, want substring %q", err.Message, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseGlobalZeroLockTimeout(t *testing.T) {
+	for _, value := range []string{"0", "0s"} {
+		t.Run(value, func(t *testing.T) {
+			opts, rest, help, err := parseGlobal([]string{
+				"--lock-timeout=" + value, "status",
+			})
+			if err != nil {
+				t.Fatalf("parseGlobal error: %v", err)
+			}
+			if help {
+				t.Fatal("help = true, want false")
+			}
+			if opts.lockTimeout != 0 {
+				t.Fatalf("lockTimeout = %v, want 0", opts.lockTimeout)
+			}
+			if !reflect.DeepEqual(rest, []string{"status"}) {
+				t.Fatalf("rest = %#v, want [status]", rest)
 			}
 		})
 	}
