@@ -52,6 +52,7 @@ type Config struct {
 	WorkDir       string   `json:"work_dir,omitempty"`
 	ProtonPath    string   `json:"proton_path,omitempty"`
 	Localization  bool     `json:"localization,omitempty"`
+	SkipFonts     bool     `json:"skip_fonts,omitempty"`
 	SetupComplete bool     `json:"setup_complete,omitempty"`
 	ActiveServer  string   `json:"active_server,omitempty"`
 	Servers       []Server `json:"servers"`

@@ -49,6 +49,7 @@ type Settings struct {
 	WorkDir       string
 	ProtonPath    string
 	Localization  bool
+	SkipFonts     bool
 }
 
 // Service owns the configuration store used by the UI.

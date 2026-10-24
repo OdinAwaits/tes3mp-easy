@@ -143,6 +143,72 @@ func TestLaunchReportsFontFailureAsWarning(t *testing.T) {
 	}
 }
 
+func TestLaunchSkipsFontsWhenDisabled(t *testing.T) {
+	service, workDir, id := installedService(t)
+	installFakeMods(t, workDir, id)
+	if err := service.UpdateSettings(Settings{
+		MorrowindPath: service.Config().MorrowindPath,
+		WorkDir:       workDir,
+		SkipFonts:     true,
+	}); err != nil {
+		t.Fatalf("UpdateSettings: %v", err)
+	}
+	fontsCalled := false
+	service.installFonts = func(_ context.Context, _ fonts.Options) (fonts.Result, error) {
+		fontsCalled = true
+		return fonts.Result{State: fonts.State{Installed: true}}, nil
+	}
+	captured := launcher.LaunchOptions{}
+	service.launchClient = func(_ context.Context, options launcher.LaunchOptions,
+	) (launcher.Result, error) {
+		captured = options
+		return launcher.Result{}, nil
+	}
+	if _, err := service.Launch(context.Background(), id); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if fontsCalled {
+		t.Fatal("InstallFonts was called while fonts are disabled")
+	}
+	if captured.Fonts {
+		t.Fatalf("launch options = %+v", captured)
+	}
+}
+
+func TestLaunchLocalizationForcesFonts(t *testing.T) {
+	service, workDir, id := installedService(t)
+	installFakeMods(t, workDir, id)
+	writeLocaleLayer(t, workDir, id)
+	if _, err := locale.Apply(workDir, id); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if err := service.UpdateSettings(Settings{
+		MorrowindPath: service.Config().MorrowindPath,
+		WorkDir:       workDir,
+		SkipFonts:     true,
+		Localization:  true,
+	}); err != nil {
+		t.Fatalf("UpdateSettings: %v", err)
+	}
+	fontsCalled := false
+	service.installFonts = func(_ context.Context, _ fonts.Options) (fonts.Result, error) {
+		fontsCalled = true
+		return fonts.Result{State: fonts.State{Installed: true}}, nil
+	}
+	captured := launcher.LaunchOptions{}
+	service.launchClient = func(_ context.Context, options launcher.LaunchOptions,
+	) (launcher.Result, error) {
+		captured = options
+		return launcher.Result{}, nil
+	}
+	if _, err := service.Launch(context.Background(), id); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if !fontsCalled || !captured.Fonts {
+		t.Fatalf("fonts were not forced for localization: %+v", captured)
+	}
+}
+
 func TestLaunchRequiresInstalledMods(t *testing.T) {
 	service, _, id := installedService(t)
 	if _, err := service.Launch(context.Background(), id); err == nil ||

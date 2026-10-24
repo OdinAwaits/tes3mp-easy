@@ -114,6 +114,7 @@ func (s *Service) UpdateSettings(settings Settings) error {
 		cfg.WorkDir = strings.TrimSpace(settings.WorkDir)
 		cfg.ProtonPath = strings.TrimSpace(settings.ProtonPath)
 		cfg.Localization = settings.Localization
+		cfg.SkipFonts = settings.SkipFonts
 		return nil
 	})
 }

@@ -137,6 +137,8 @@ func (s *shell) showSettings() {
 	localization.SetChecked(cfg.Localization)
 	voiceover := widget.NewCheck(tr.T(i18n.KeySettingsVoiceover), nil)
 	voiceover.SetChecked(localizationState.Voiceover)
+	fonts := widget.NewCheck(tr.T(i18n.KeySettingsFonts), nil)
+	fonts.SetChecked(!cfg.SkipFonts)
 	localizationStatus := widget.NewLabel("")
 	localizationStatus.Wrapping = fyne.TextWrapWord
 	if !hasProfile {
@@ -149,6 +151,7 @@ func (s *shell) showSettings() {
 	syncLocalization := func(enabled bool) {
 		if enabled && hasProfile {
 			voiceover.Enable()
+			fonts.SetChecked(true)
 			return
 		}
 		voiceover.Disable()
@@ -174,6 +177,7 @@ func (s *shell) showSettings() {
 		widget.NewFormItem(tr.T(i18n.KeySettingsLocalization), localization),
 		widget.NewFormItem(tr.T(i18n.KeySettingsVoiceover), voiceover),
 		widget.NewFormItem("", localizationStatus),
+		widget.NewFormItem(tr.T(i18n.KeySettingsFonts), fonts),
 		widget.NewFormItem("", fontsHint),
 		widget.NewFormItem(tr.T(i18n.KeySettingsOpenLog), openLog),
 		widget.NewFormItem("", logHint),
@@ -196,6 +200,10 @@ func (s *shell) showSettings() {
 			settings.MorrowindPath = morrowind.Text
 			settings.WorkDir = workDir.Text
 			settings.ProtonPath = protonPath
+			settings.SkipFonts = !fonts.Checked
+			if localization.Checked {
+				settings.SkipFonts = false
+			}
 			if err := s.service.UpdateSettings(settings); err != nil {
 				s.showError(err)
 				return

@@ -231,6 +231,7 @@ func (s *shell) settings() app.Settings {
 		WorkDir:       cfg.WorkDir,
 		ProtonPath:    cfg.ProtonPath,
 		Localization:  cfg.Localization,
+		SkipFonts:     cfg.SkipFonts,
 	}
 }
 

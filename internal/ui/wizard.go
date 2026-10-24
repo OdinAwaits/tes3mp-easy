@@ -55,6 +55,7 @@ type setupWizard struct {
 	tes3mpReady    bool
 
 	fontsStatus    *widget.Label
+	fontsEnabled   *widget.Check
 	fontsAttempted bool
 	fontsReady     bool
 }
@@ -241,13 +242,39 @@ func (w *setupWizard) tes3mpObjects(tr *i18n.Translator) []fyne.CanvasObject {
 }
 
 func (w *setupWizard) fontsObjects(tr *i18n.Translator) []fyne.CanvasObject {
+	cfg := w.shell.service.Config()
+	w.fontsEnabled = widget.NewCheck(tr.T(i18n.KeySettingsFonts), nil)
+	w.fontsEnabled.SetChecked(!cfg.SkipFonts || cfg.Localization)
 	w.fontsStatus = widget.NewLabel(tr.T(i18n.KeyWizardFontsChecking))
 	w.fontsStatus.Wrapping = fyne.TextWrapWord
-	if w.fontsReady {
+	if !w.fontsEnabled.Checked {
+		w.fontsReady = true
+		w.fontsAttempted = true
+		w.fontsStatus.SetText(tr.T(i18n.KeyWizardFontsSkipped))
+	} else if w.fontsReady {
 		w.fontsStatus.SetText(tr.T(i18n.KeyWizardFontsReady))
+	}
+	w.fontsEnabled.OnChanged = func(enabled bool) {
+		if w.busy {
+			return
+		}
+		if enabled {
+			w.fontsReady = false
+			w.fontsAttempted = false
+			w.clearProblem()
+			w.fontsStatus.SetText(tr.T(i18n.KeyWizardFontsChecking))
+			w.installFonts()
+			return
+		}
+		w.fontsReady = true
+		w.fontsAttempted = true
+		w.clearProblem()
+		w.fontsStatus.SetText(tr.T(i18n.KeyWizardFontsSkipped))
+		w.updateButtons()
 	}
 	return []fyne.CanvasObject{
 		wizardHint(tr, i18n.KeyWizardFontsHint),
+		w.fontsEnabled,
 		w.fontsStatus,
 	}
 }
@@ -298,7 +325,7 @@ func (w *setupWizard) canAdvance() bool {
 	case wizardTES3MP:
 		return w.tes3mpReady
 	case wizardFonts:
-		return w.fontsReady
+		return w.fontsReady || (w.fontsEnabled != nil && !w.fontsEnabled.Checked)
 	default:
 		return true
 	}
@@ -358,6 +385,17 @@ func (w *setupWizard) gotoStep(step wizardStep) {
 }
 
 func (w *setupWizard) finishWizard() {
+	if w.fontsEnabled != nil {
+		settings := w.shell.settings()
+		settings.SkipFonts = !w.fontsEnabled.Checked
+		if w.shell.service.Config().Localization {
+			settings.SkipFonts = false
+		}
+		if err := w.shell.service.UpdateSettings(settings); err != nil {
+			w.setProblem(err, w.finishWizard)
+			return
+		}
+	}
 	if err := w.shell.service.CompleteSetup(); err != nil {
 		w.setProblem(err, w.finishWizard)
 		return
@@ -432,6 +470,10 @@ func (w *setupWizard) enterStep() {
 	case wizardFonts:
 		if !w.fontsAttempted {
 			w.fontsAttempted = true
+			if w.fontsEnabled != nil && !w.fontsEnabled.Checked {
+				w.fontsReady = true
+				return
+			}
 			w.installFonts()
 		}
 	}

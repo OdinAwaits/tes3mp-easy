@@ -62,6 +62,7 @@ const (
 	KeySettingsProton           = "settings.proton"
 	KeySettingsHint             = "settings.hint"
 	KeySettingsFontsHint        = "settings.fonts_hint"
+	KeySettingsFonts            = "settings.fonts"
 	KeySettingsLocalization     = "settings.localization"
 	KeySettingsVoiceover        = "settings.voiceover"
 	KeySettingsNoServer         = "settings.no_server"
@@ -158,6 +159,7 @@ const (
 	KeyWizardFontsChecking      = "wizard.fonts.checking"
 	KeyWizardFontsReady         = "wizard.fonts.ready"
 	KeyWizardFontsWarning       = "wizard.fonts.warning"
+	KeyWizardFontsSkipped       = "wizard.fonts.skipped"
 	KeyWizardLocaleInstall      = "wizard.locale.install"
 	KeyWizardLocaleInstalled    = "wizard.locale.installed"
 	KeyWizardLocaleSkipped      = "wizard.locale.skipped"
@@ -255,7 +257,8 @@ var catalogs = map[Language]map[string]string{
 		KeySettingsWorkDir:          "Work folder",
 		KeySettingsProton:           "Proton (Linux)",
 		KeySettingsHint:             "Leave a path empty to use the default.",
-		KeySettingsFontsHint:        "Cyrillic fonts are installed automatically before every launch.",
+		KeySettingsFontsHint:        "Cyrillic fonts are installed before launch. Russian localization always enables them.",
+		KeySettingsFonts:            "Cyrillic fonts",
 		KeySettingsLocalization:     "Russian localization",
 		KeySettingsVoiceover:        "Russian voiceover (large download)",
 		KeySettingsNoServer:         "Add a server profile to install the localization.",
@@ -352,6 +355,7 @@ var catalogs = map[Language]map[string]string{
 		KeyWizardFontsChecking:      "Installing Cyrillic fonts...",
 		KeyWizardFontsReady:         "Cyrillic fonts are ready.",
 		KeyWizardFontsWarning:       "Fonts could not be installed: %s. The game will use the default font.",
+		KeyWizardFontsSkipped:       "Cyrillic fonts are disabled. You can enable them in Settings.",
 		KeyWizardLocaleInstall:      "Install Russian localization",
 		KeyWizardLocaleInstalled:    "Russian localization is installed.",
 		KeyWizardLocaleSkipped:      "Russian localization is not installed.",
@@ -447,7 +451,8 @@ var catalogs = map[Language]map[string]string{
 		KeySettingsWorkDir:          "Рабочая папка",
 		KeySettingsProton:           "Proton (Linux)",
 		KeySettingsHint:             "Пустое поле означает путь по умолчанию.",
-		KeySettingsFontsHint:        "Кириллические шрифты ставятся автоматически перед каждым запуском.",
+		KeySettingsFontsHint:        "Кириллические шрифты ставятся перед запуском. Русская локализация всегда включает их.",
+		KeySettingsFonts:            "Кириллические шрифты",
 		KeySettingsLocalization:     "Русская локализация",
 		KeySettingsVoiceover:        "Русская озвучка (большая загрузка)",
 		KeySettingsNoServer:         "Добавьте сервер, чтобы установить локализацию.",
@@ -544,6 +549,7 @@ var catalogs = map[Language]map[string]string{
 		KeyWizardFontsChecking:      "Установка кириллических шрифтов...",
 		KeyWizardFontsReady:         "Кириллические шрифты готовы.",
 		KeyWizardFontsWarning:       "Не удалось установить шрифты: %s. Игра будет использовать стандартный шрифт.",
+		KeyWizardFontsSkipped:       "Кириллические шрифты отключены. Их можно включить в Настройках.",
 		KeyWizardLocaleInstall:      "Установить русскую локализацию",
 		KeyWizardLocaleInstalled:    "Русская локализация установлена.",
 		KeyWizardLocaleSkipped:      "Русская локализация не установлена.",
