@@ -17,7 +17,8 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 	if s == nil {
 		return launcher.Result{}, errors.New("app service is nil")
 	}
-	if _, err := s.serverProfile(serverID); err != nil {
+	profile, err := s.serverProfile(serverID)
+	if err != nil {
 		return launcher.Result{}, err
 	}
 	workDir, err := s.absoluteWorkDir()
@@ -67,9 +68,12 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 			ProtonPath:    cfg.ProtonPath,
 			HomeDir:       s.homeDir,
 		},
-		ProfilePath:  modsState.Profile,
-		Localization: cfg.Localization,
-		Fonts:        fontResult.State.Installed,
+		ProfilePath:    modsState.Profile,
+		ServerAddress:  profile.Address,
+		ServerPort:     profile.Port,
+		ServerPassword: profile.Password,
+		Localization:   cfg.Localization,
+		Fonts:          fontResult.State.Installed,
 	}
 	var result launcher.Result
 	if s.launchClient != nil {

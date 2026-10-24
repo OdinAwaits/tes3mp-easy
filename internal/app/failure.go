@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"net/url"
 	"os"
 
+	"github.com/Saagilat/tes3mp-easy/internal/launcher"
 	"github.com/Saagilat/tes3mp-easy/internal/morrowind"
 	"github.com/Saagilat/tes3mp-easy/internal/serverapi"
 )
@@ -20,6 +22,7 @@ var (
 	ErrModsNotInstalled         = errors.New("server mods are not installed")
 	ErrLocalizationNotInstalled = errors.New("Russian localization is enabled but not installed")
 	ErrWorkDir                  = errors.New("client work directory is invalid")
+	ErrGameExited               = errors.New("TES3MP exited unexpectedly")
 )
 
 // FailureKind is a stable reason code used to choose a localized explanation.
@@ -31,6 +34,7 @@ const (
 	FailureMorrowindIncomplete    FailureKind = "morrowind_incomplete"
 	FailureMorrowindNotConfigured FailureKind = "morrowind_not_configured"
 	FailureNetwork                FailureKind = "network"
+	FailureTimeout                FailureKind = "timeout"
 	FailureCertificate            FailureKind = "certificate"
 	FailureNoMods                 FailureKind = "no_mods"
 	FailureServerAPI              FailureKind = "server_api"
@@ -38,12 +42,45 @@ const (
 	FailureWorkDir                FailureKind = "work_dir"
 	FailureModsNotInstalled       FailureKind = "mods_not_installed"
 	FailureLocalization           FailureKind = "localization_not_installed"
+	FailureGameMissing            FailureKind = "game_missing"
+	FailureGameProton             FailureKind = "game_proton"
+	FailureGameConfig             FailureKind = "game_config"
+	FailureGameStart              FailureKind = "game_start"
+	FailureGameExited             FailureKind = "game_exited"
 )
 
-// Failure contains a stable reason and the original technical detail. Detail
-// never contains a server password because app errors do not include profiles.
+// FailureCode is the stable, untranslated identifier shown in dialogs and logs.
+// It never changes when UI copy or classification internals are refactored.
+type FailureCode string
+
+const (
+	CodeUnknown             FailureCode = "T3E-APP-99"
+	CodeMorrowindNotFound   FailureCode = "T3E-ENV-01"
+	CodeMorrowindIncomplete FailureCode = "T3E-ENV-02"
+	CodeMorrowindNotSet     FailureCode = "T3E-ENV-03"
+	CodeWorkDir             FailureCode = "T3E-ENV-04"
+	CodeFileSystem          FailureCode = "T3E-ENV-05"
+	CodeNetwork             FailureCode = "T3E-NET-01"
+	CodeTimeout             FailureCode = "T3E-NET-02"
+	CodeCertificate         FailureCode = "T3E-NET-03"
+	CodeServerAPI           FailureCode = "T3E-API-01"
+	CodeInvalidResponse     FailureCode = "T3E-API-02"
+	CodeNoMods              FailureCode = "T3E-API-03"
+	CodeModsNotInstalled    FailureCode = "T3E-MOD-01"
+	CodeLocalization        FailureCode = "T3E-LOC-01"
+	CodeGameMissing         FailureCode = "T3E-GAME-01"
+	CodeGameProton          FailureCode = "T3E-GAME-02"
+	CodeGameConfig          FailureCode = "T3E-GAME-03"
+	CodeGameStart           FailureCode = "T3E-GAME-04"
+	CodeGameExited          FailureCode = "T3E-GAME-05"
+)
+
+// Failure contains a stable reason, a support code and the original technical
+// detail. Detail never contains a server password because app errors do not
+// include profiles.
 type Failure struct {
 	Kind   FailureKind
+	Code   FailureCode
 	Detail string
 }
 
@@ -53,32 +90,50 @@ func Explain(err error) Failure {
 	if err == nil {
 		return Failure{}
 	}
-	failure := Failure{Kind: FailureUnknown, Detail: err.Error()}
+	failure := Failure{
+		Kind:   FailureUnknown,
+		Code:   CodeUnknown,
+		Detail: err.Error(),
+	}
 	switch {
+	case errors.Is(err, ErrGameExited):
+		failure.Kind, failure.Code = FailureGameExited, CodeGameExited
+	case errors.Is(err, launcher.ErrTES3MPMissing):
+		failure.Kind, failure.Code = FailureGameMissing, CodeGameMissing
+	case errors.Is(err, launcher.ErrProton):
+		failure.Kind, failure.Code = FailureGameProton, CodeGameProton
+	case errors.Is(err, launcher.ErrConfig):
+		failure.Kind, failure.Code = FailureGameConfig, CodeGameConfig
+	case errors.Is(err, launcher.ErrStart):
+		failure.Kind, failure.Code = FailureGameStart, CodeGameStart
+	case errors.Is(err, serverapi.ErrInvalidResponse):
+		failure.Kind, failure.Code = FailureServerAPI, CodeInvalidResponse
 	case errors.Is(err, ErrMorrowindNotConfigured):
-		failure.Kind = FailureMorrowindNotConfigured
+		failure.Kind, failure.Code = FailureMorrowindNotConfigured, CodeMorrowindNotSet
 	case errors.Is(err, morrowind.ErrNotFound):
-		failure.Kind = FailureMorrowindNotFound
+		failure.Kind, failure.Code = FailureMorrowindNotFound, CodeMorrowindNotFound
 	case errors.Is(err, morrowind.ErrIncomplete):
-		failure.Kind = FailureMorrowindIncomplete
+		failure.Kind, failure.Code = FailureMorrowindIncomplete, CodeMorrowindIncomplete
 	case errors.Is(err, serverapi.ErrNoMods):
-		failure.Kind = FailureNoMods
+		failure.Kind, failure.Code = FailureNoMods, CodeNoMods
 	case errors.Is(err, ErrModsNotInstalled):
-		failure.Kind = FailureModsNotInstalled
+		failure.Kind, failure.Code = FailureModsNotInstalled, CodeModsNotInstalled
 	case errors.Is(err, ErrLocalizationNotInstalled):
-		failure.Kind = FailureLocalization
+		failure.Kind, failure.Code = FailureLocalization, CodeLocalization
 	case errors.Is(err, ErrWorkDir):
-		failure.Kind = FailureWorkDir
+		failure.Kind, failure.Code = FailureWorkDir, CodeWorkDir
 	case isCertificateError(err):
-		failure.Kind = FailureCertificate
-	case isNetworkError(err):
-		failure.Kind = FailureNetwork
+		failure.Kind, failure.Code = FailureCertificate, CodeCertificate
+	case errors.Is(err, context.DeadlineExceeded):
+		failure.Kind, failure.Code = FailureTimeout, CodeTimeout
 	case isFilesystemError(err):
-		failure.Kind = FailureFileSystem
+		failure.Kind, failure.Code = FailureFileSystem, CodeFileSystem
+	case isNetworkError(err):
+		failure.Kind, failure.Code = FailureNetwork, CodeNetwork
 	default:
 		var apiError *serverapi.APIError
 		if errors.As(err, &apiError) {
-			failure.Kind = FailureServerAPI
+			failure.Kind, failure.Code = FailureServerAPI, CodeServerAPI
 		}
 	}
 	return failure
@@ -102,15 +157,23 @@ func isCertificateError(err error) bool {
 }
 
 func isNetworkError(err error) bool {
-	if errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, net.ErrClosed) {
 		return true
 	}
-	var networkError net.Error
-	if errors.As(err, &networkError) {
+	var opError *net.OpError
+	if errors.As(err, &opError) {
 		return true
 	}
 	var dnsError *net.DNSError
-	return errors.As(err, &dnsError)
+	if errors.As(err, &dnsError) {
+		return true
+	}
+	var addrError *net.AddrError
+	if errors.As(err, &addrError) {
+		return true
+	}
+	var urlError *url.Error
+	return errors.As(err, &urlError)
 }
 
 func isFilesystemError(err error) bool {

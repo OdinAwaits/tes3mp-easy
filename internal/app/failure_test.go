@@ -10,14 +10,47 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/Saagilat/tes3mp-easy/internal/launcher"
 	"github.com/Saagilat/tes3mp-easy/internal/morrowind"
 	"github.com/Saagilat/tes3mp-easy/internal/serverapi"
 )
 
+func TestExplainGameFailures(t *testing.T) {
+	tests := []struct {
+		err  error
+		kind FailureKind
+		code FailureCode
+	}{
+		{err: launcher.ErrTES3MPMissing, kind: FailureGameMissing, code: CodeGameMissing},
+		{err: launcher.ErrProton, kind: FailureGameProton, code: CodeGameProton},
+		{err: launcher.ErrConfig, kind: FailureGameConfig, code: CodeGameConfig},
+		{err: launcher.ErrStart, kind: FailureGameStart, code: CodeGameStart},
+		{err: ErrGameExited, kind: FailureGameExited, code: CodeGameExited},
+	}
+	for _, test := range tests {
+		failure := Explain(test.err)
+		if failure.Kind != test.kind || failure.Code != test.code {
+			t.Errorf("Explain(%v) = %q/%q, want %q/%q", test.err,
+				failure.Kind, failure.Code, test.kind, test.code)
+		}
+	}
+}
+
 func TestExplainClassifiesErrors(t *testing.T) {
+	missingFile := filepath.Join(t.TempDir(), "missing")
+	_, missingErr := os.Stat(missingFile)
+	if missingErr == nil {
+		t.Fatal("os.Stat unexpectedly succeeded")
+	}
+	_, missingMorrowind := morrowind.Inspect(filepath.Join(t.TempDir(), "Morrowind"))
+	if missingMorrowind == nil {
+		t.Fatal("morrowind.Inspect unexpectedly succeeded")
+	}
+
 	tests := []struct {
 		name string
 		err  error
@@ -45,7 +78,7 @@ func TestExplainClassifiesErrors(t *testing.T) {
 			want: FailureNetwork},
 		{name: "timeout",
 			err:  fmt.Errorf("request: %w", context.DeadlineExceeded),
-			want: FailureNetwork},
+			want: FailureTimeout},
 		{name: "certificate",
 			err: &url.Error{Op: "Get", URL: "https://example.test",
 				Err: &tls.CertificateVerificationError{
@@ -56,6 +89,15 @@ func TestExplainClassifiesErrors(t *testing.T) {
 			err: &os.PathError{Op: "open", Path: "/locked/file",
 				Err: fs.ErrPermission},
 			want: FailureFileSystem},
+		{name: "missing path is not a network error",
+			err:  missingErr,
+			want: FailureFileSystem},
+		{name: "missing configured Morrowind folder",
+			err:  missingMorrowind,
+			want: FailureMorrowindNotFound},
+		{name: "invalid panel response",
+			err:  fmt.Errorf("panel API: %w: empty name", serverapi.ErrInvalidResponse),
+			want: FailureServerAPI},
 		{name: "work dir",
 			err:  WrapWorkDir(errors.New("client work directory is empty")),
 			want: FailureWorkDir},

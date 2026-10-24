@@ -110,11 +110,15 @@ func (s *Service) UpdateSettings(settings Settings) error {
 	}
 	return s.store.Update(func(cfg *config.Config) error {
 		cfg.Language = strings.TrimSpace(settings.Language)
+		if value := strings.TrimSpace(settings.Theme); value != "" {
+			cfg.Theme = value
+		}
 		cfg.MorrowindPath = strings.TrimSpace(settings.MorrowindPath)
 		cfg.WorkDir = strings.TrimSpace(settings.WorkDir)
 		cfg.ProtonPath = strings.TrimSpace(settings.ProtonPath)
 		cfg.Localization = settings.Localization
 		cfg.SkipFonts = settings.SkipFonts
+
 		return nil
 	})
 }

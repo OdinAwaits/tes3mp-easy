@@ -34,7 +34,16 @@ const (
 var (
 	// ErrNoMods reports the documented 404 no_mods response.
 	ErrNoMods = errors.New("current mods archive is unavailable")
+	// ErrInvalidResponse reports a 200 response that is not the documented JSON.
+	ErrInvalidResponse = errors.New("panel returned an invalid response")
 )
+
+// invalidResponse wraps ErrInvalidResponse while keeping the validation detail
+// available in the log and diagnostic report. Callers use errors.Is instead of
+// matching message text.
+func invalidResponse(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ErrInvalidResponse, fmt.Sprintf(format, args...))
+}
 
 // Server is the public GET /api/v1/server response.
 type Server struct {
@@ -166,23 +175,23 @@ func (c *Client) Server(ctx context.Context) (Server, error) {
 		return Server{}, err
 	}
 	if strings.TrimSpace(response.Name) == "" {
-		return Server{}, errors.New("panel API: server response has an empty name")
+		return Server{}, invalidResponse("server response has an empty name")
 	}
 	if strings.TrimSpace(response.Address) == "" {
-		return Server{}, errors.New("panel API: server response has an empty address")
+		return Server{}, invalidResponse("server response has an empty address")
 	}
 	if response.Port < 1 || response.Port > 65535 {
-		return Server{}, fmt.Errorf(
-			"panel API: server response has invalid port %d", response.Port)
+		return Server{}, invalidResponse(
+			"server response has invalid port %d", response.Port)
 	}
 	if strings.TrimSpace(response.Status) == "" {
-		return Server{}, errors.New("panel API: server response has an empty status")
+		return Server{}, invalidResponse("server response has an empty status")
 	}
 	if response.ModsSHA256 != nil {
 		sha := strings.ToLower(strings.TrimSpace(*response.ModsSHA256))
 		if !validSHA256(sha) {
-			return Server{}, errors.New(
-				"panel API: server response has an invalid mods_sha256")
+			return Server{}, invalidResponse(
+				"server response has an invalid mods_sha256")
 		}
 		response.ModsSHA256 = &sha
 	}
@@ -201,16 +210,15 @@ func (c *Client) Mods(ctx context.Context) (Mods, error) {
 	}
 	response.Name = strings.TrimSpace(response.Name)
 	if err := archive.ValidateModsArchiveName(response.Name); err != nil {
-		return Mods{}, fmt.Errorf("panel API: invalid mods name: %w", err)
+		return Mods{}, invalidResponse("invalid mods name: %v", err)
 	}
 	response.SHA256 = strings.ToLower(strings.TrimSpace(response.SHA256))
 	if !validSHA256(response.SHA256) {
-		return Mods{}, errors.New("panel API: invalid mods sha256")
+		return Mods{}, invalidResponse("invalid mods sha256")
 	}
 	if response.Size < 1 || response.Size > archive.MaxCompressedSize {
-		return Mods{}, fmt.Errorf(
-			"panel API: mods size %d is outside 1..%d",
-			response.Size, archive.MaxCompressedSize)
+		return Mods{}, invalidResponse(
+			"mods size %d is outside 1..%d", response.Size, archive.MaxCompressedSize)
 	}
 	if _, err := c.ArchiveURL(response); err != nil {
 		return Mods{}, err
@@ -227,29 +235,29 @@ func (c *Client) ArchiveURL(mods Mods) (*url.URL, error) {
 	}
 	raw := strings.TrimSpace(mods.URL)
 	if raw == "" {
-		return nil, errors.New("panel API: mods archive URL is empty")
+		return nil, invalidResponse("mods archive URL is empty")
 	}
 	reference, err := url.Parse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("panel API: invalid mods archive URL: %w", err)
+		return nil, invalidResponse("invalid mods archive URL: %v", err)
 	}
 	if reference.User != nil || reference.Fragment != "" ||
 		reference.RawQuery != "" {
-		return nil, errors.New(
-			"panel API: mods archive URL must not contain credentials, query or fragment")
+		return nil, invalidResponse(
+			"mods archive URL must not contain credentials, query or fragment")
 	}
 	resolved := c.base.ResolveReference(reference)
 	if err := validateRequestURL(resolved); err != nil {
-		return nil, err
+		return nil, invalidResponse("%v", err)
 	}
 	if !strings.EqualFold(resolved.Scheme, c.base.Scheme) ||
 		!strings.EqualFold(resolved.Host, c.base.Host) {
-		return nil, errors.New(
-			"panel API: mods archive URL must stay on the panel host")
+		return nil, invalidResponse(
+			"mods archive URL must stay on the panel host")
 	}
 	if resolved.EscapedPath() != ModsArchivePath {
-		return nil, fmt.Errorf(
-			"panel API: mods archive URL must be %s", ModsArchivePath)
+		return nil, invalidResponse(
+			"mods archive URL must be %s", ModsArchivePath)
 	}
 	return resolved, nil
 }
@@ -305,7 +313,7 @@ func (c *Client) getJSONOnce(ctx context.Context, requestURL *url.URL,
 		return fmt.Errorf("panel API: read response: %w", err)
 	}
 	if int64(len(body)) > maxResponseSize {
-		return errors.New("panel API: response is too large")
+		return invalidResponse("response is too large")
 	}
 	if response.StatusCode != http.StatusOK {
 		return parseAPIError(response.StatusCode, body)
@@ -313,11 +321,11 @@ func (c *Client) getJSONOnce(ctx context.Context, requestURL *url.URL,
 
 	decoder := json.NewDecoder(strings.NewReader(string(body)))
 	if err := decoder.Decode(target); err != nil {
-		return fmt.Errorf("panel API: invalid JSON: %w", err)
+		return fmt.Errorf("%w: invalid JSON: %v", ErrInvalidResponse, err)
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return errors.New("panel API: trailing data after JSON")
+		return fmt.Errorf("%w: trailing data after JSON", ErrInvalidResponse)
 	}
 	return nil
 }

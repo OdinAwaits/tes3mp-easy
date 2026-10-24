@@ -137,7 +137,7 @@ func Resolve(options Options) (Environment, error) {
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Environment{}, fmt.Errorf(
-				"TES3MP is not installed: %s is missing", executable)
+				"%w: %s is missing", ErrTES3MPMissing, executable)
 		}
 		return Environment{}, fmt.Errorf("inspect TES3MP: %w", err)
 	}

@@ -2,77 +2,91 @@ package ui
 
 import (
 	"fmt"
+	"net"
 	"runtime"
 	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 	"github.com/Saagilat/tes3mp-easy/internal/locale"
+	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
 )
 
 type serverForm struct {
-	name     *widget.Entry
-	address  *widget.Entry
-	port     *widget.Entry
+	endpoint *widget.Entry
 	password *widget.Entry
+	name     *widget.Entry
 	panelURL *widget.Entry
 }
 
 func newServerForm(profile config.Server) *serverForm {
+	endpoint := widget.NewEntry()
+	endpoint.SetText(endpointText(profile))
+	endpoint.SetPlaceHolder("play.example.com or play.example.com:25565")
+
+	password := widget.NewPasswordEntry()
+	password.SetText(profile.Password)
+	password.SetPlaceHolder("Optional server password")
+
 	name := widget.NewEntry()
 	name.SetText(profile.Name)
 	name.SetPlaceHolder("Morrowind with friends")
 
-	address := widget.NewEntry()
-	address.SetText(profile.Address)
-	address.SetPlaceHolder("203.0.113.10")
-
-	port := widget.NewEntry()
-	port.SetText(portText(profile.Port))
-	port.SetPlaceHolder("25565")
-
-	password := widget.NewPasswordEntry()
-	password.SetText(profile.Password)
-
 	panelURL := widget.NewEntry()
 	panelURL.SetText(profile.PanelURL)
-	panelURL.SetPlaceHolder("https://203.0.113.10")
+	panelURL.SetPlaceHolder("https://panel.example.com")
 
 	return &serverForm{
-		name:     name,
-		address:  address,
-		port:     port,
+		endpoint: endpoint,
 		password: password,
+		name:     name,
 		panelURL: panelURL,
 	}
 }
 
-func (f *serverForm) items(tr *i18n.Translator) []*widget.FormItem {
-	return []*widget.FormItem{
-		widget.NewFormItem(tr.T(i18n.KeyServerFieldName), f.name),
-		widget.NewFormItem(tr.T(i18n.KeyServerFieldAddr), f.address),
-		widget.NewFormItem(tr.T(i18n.KeyServerFieldPort), f.port),
-		widget.NewFormItem(tr.T(i18n.KeyServerFieldPass), f.password),
-		widget.NewFormItem(tr.T(i18n.KeyServerFieldPanel), f.panelURL),
+func endpointText(profile config.Server) string {
+	if strings.TrimSpace(profile.Address) == "" {
+		return ""
 	}
+	if profile.Port <= 0 || profile.Port == config.DefaultServerPort {
+		return config.NormalizeAddress(profile.Address)
+	}
+	return net.JoinHostPort(config.NormalizeAddress(profile.Address),
+		strconv.Itoa(profile.Port))
 }
 
 func (f *serverForm) profile() (config.Server, error) {
-	port, err := strconv.Atoi(strings.TrimSpace(f.port.Text))
+	endpoint, err := config.ParseServerEndpoint(f.endpoint.Text)
 	if err != nil {
-		return config.Server{}, fmt.Errorf("port must be a number")
+		return config.Server{}, err
+	}
+	name := strings.TrimSpace(f.name.Text)
+	if name == "" {
+		name = endpoint.Address
+		if endpoint.Port != config.DefaultServerPort {
+			name = net.JoinHostPort(endpoint.Address, strconv.Itoa(endpoint.Port))
+		}
+	}
+	panelURL := endpoint.PanelURL
+	if raw := strings.TrimSpace(f.panelURL.Text); raw != "" {
+		normalized, err := config.NormalizePanelURL(raw)
+		if err != nil {
+			return config.Server{}, fmt.Errorf("panel URL: %w", err)
+		}
+		panelURL = normalized
 	}
 	return config.Server{
-		Name:     f.name.Text,
-		Address:  f.address.Text,
-		Port:     port,
+		Name:     name,
+		Address:  endpoint.Address,
+		Port:     endpoint.Port,
 		Password: f.password.Text,
-		PanelURL: f.panelURL.Text,
+		PanelURL: panelURL,
 	}, nil
 }
 
@@ -83,29 +97,60 @@ func (s *shell) showServerDialog(originalID string, profile config.Server) {
 	if originalID != "" {
 		title = tr.T(i18n.KeyServerEditTitle)
 	}
-	formDialog := dialog.NewForm(
-		title,
-		tr.T(i18n.KeyCommonSave),
-		tr.T(i18n.KeyCommonCancel),
-		form.items(tr),
-		func(ok bool) {
-			if !ok {
-				return
-			}
-			value, err := form.profile()
-			if err != nil {
-				s.showError(err)
-				return
-			}
-			if _, err := s.service.SaveServer(originalID, value); err != nil {
-				s.showError(err)
-				return
-			}
-			s.render()
-		},
-		s.window,
+
+	problem := widget.NewLabel("")
+	problem.Wrapping = fyne.TextWrapWord
+	problem.Importance = widget.DangerImportance
+	problem.Hide()
+
+	advanced := container.NewVBox(
+		widget.NewLabel(tr.T(i18n.KeyServerFieldName)),
+		form.name,
+		widget.NewLabel(tr.T(i18n.KeyServerFieldPanel)),
+		form.panelURL,
+		widget.NewLabel(tr.T(i18n.KeyServerPanelHint)),
 	)
-	formDialog.Show()
+	advanced.Hide()
+	toggle := widget.NewButton(tr.T(i18n.KeyServerAdvancedOptions), func() {
+		if advanced.Visible() {
+			advanced.Hide()
+		} else {
+			advanced.Show()
+		}
+	})
+
+	content := container.NewVBox(
+		widget.NewLabel(tr.T(i18n.KeyServerFieldAddr)),
+		form.endpoint,
+		style.MutedLabel(tr.T(i18n.KeyServerEndpointHint)),
+		widget.NewLabel(tr.T(i18n.KeyServerFieldPass)),
+		form.password,
+		toggle,
+		advanced,
+		problem,
+	)
+
+	popup := dialog.NewCustomWithoutButtons(title, content, s.window)
+	cancel := widget.NewButton(tr.T(i18n.KeyCommonCancel), popup.Hide)
+	save := widget.NewButton(tr.T(i18n.KeyCommonSave), func() {
+		value, err := form.profile()
+		if err != nil {
+			problem.SetText(s.failureBody(err))
+			problem.Show()
+			return
+		}
+		if _, err := s.service.SaveServer(originalID, value); err != nil {
+			problem.SetText(s.failureBody(err))
+			problem.Show()
+			return
+		}
+		popup.Hide()
+		s.render()
+	})
+	save.Importance = widget.HighImportance
+	popup.SetButtons([]fyne.CanvasObject{cancel, save})
+	popup.Resize(fyne.NewSize(560, 430))
+	popup.Show()
 }
 
 func (s *shell) showSettings() {
@@ -124,6 +169,10 @@ func (s *shell) showSettings() {
 	proton := widget.NewEntry()
 	proton.SetText(cfg.ProtonPath)
 	proton.SetPlaceHolder(".../Proton")
+
+	theme := widget.NewRadioGroup(themeLabels(tr), nil)
+	theme.Horizontal = true
+	theme.SetSelected(themeLabel(tr, cfg.Theme))
 
 	profile, hasProfile := activeProfile(cfg)
 	localizationState := locale.State{}
@@ -167,6 +216,7 @@ func (s *shell) showSettings() {
 	hint := widget.NewLabel(tr.T(i18n.KeySettingsHint))
 	hint.Wrapping = fyne.TextWrapWord
 	items := []*widget.FormItem{
+		widget.NewFormItem(tr.T(i18n.KeySettingsTheme), theme),
 		widget.NewFormItem(tr.T(i18n.KeySettingsMorrowind), morrowind),
 		widget.NewFormItem(tr.T(i18n.KeySettingsWorkDir), workDir),
 	}
@@ -197,6 +247,7 @@ func (s *shell) showSettings() {
 				protonPath = proton.Text
 			}
 			settings := s.settings()
+			settings.Theme = themeMode(tr, theme.Selected)
 			settings.MorrowindPath = morrowind.Text
 			settings.WorkDir = workDir.Text
 			settings.ProtonPath = protonPath
@@ -236,4 +287,34 @@ func activeProfile(cfg config.Config) (config.Server, bool) {
 		return config.Server{}, false
 	}
 	return cfg.Servers[0], true
+}
+
+func themeLabels(tr *i18n.Translator) []string {
+	return []string{
+		tr.T(i18n.KeyThemeSystem),
+		tr.T(i18n.KeyThemeDark),
+		tr.T(i18n.KeyThemeLight),
+	}
+}
+
+func themeLabel(tr *i18n.Translator, mode string) string {
+	switch style.ParseMode(mode) {
+	case style.ModeDark:
+		return tr.T(i18n.KeyThemeDark)
+	case style.ModeLight:
+		return tr.T(i18n.KeyThemeLight)
+	default:
+		return tr.T(i18n.KeyThemeSystem)
+	}
+}
+
+func themeMode(tr *i18n.Translator, label string) string {
+	labels := themeLabels(tr)
+	modes := []string{config.ThemeSystem, config.ThemeDark, config.ThemeLight}
+	for index, candidate := range labels {
+		if candidate == label {
+			return modes[index]
+		}
+	}
+	return config.ThemeSystem
 }

@@ -89,6 +89,13 @@ func TestInspectReportsMissingFiles(t *testing.T) {
 	}
 }
 
+func TestInspectMissingRootReportsNotFound(t *testing.T) {
+	_, err := Inspect(filepath.Join(t.TempDir(), "Morrowind"))
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Inspect = %v, want %v", err, ErrNotFound)
+	}
+}
+
 func TestInspectRejectsMissingDataFilesAndFile(t *testing.T) {
 	tests := []struct {
 		name string

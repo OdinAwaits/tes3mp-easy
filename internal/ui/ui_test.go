@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 	"github.com/Saagilat/tes3mp-easy/internal/locale"
 	"github.com/Saagilat/tes3mp-easy/internal/mods"
@@ -15,15 +16,79 @@ func TestRunRejectsNilService(t *testing.T) {
 	}
 }
 
-func TestPortText(t *testing.T) {
-	if got := portText(0); got != "" {
-		t.Fatalf("portText(0) = %q", got)
+func TestEndpointText(t *testing.T) {
+	tests := []struct {
+		profile config.Server
+		want    string
+	}{
+		{profile: config.Server{}, want: ""},
+		{profile: config.Server{Address: "example.com", Port: 25565},
+			want: "example.com"},
+		{profile: config.Server{Address: "example.com", Port: 25570},
+			want: "example.com:25570"},
+		{profile: config.Server{Address: "2001:db8::1", Port: 25570},
+			want: "[2001:db8::1]:25570"},
+		{profile: config.Server{Address: "[2001:db8::1]", Port: 25565},
+			want: "2001:db8::1"},
 	}
-	if got := portText(-1); got != "" {
-		t.Fatalf("portText(-1) = %q", got)
+	for _, test := range tests {
+		if got := endpointText(test.profile); got != test.want {
+			t.Errorf("endpointText(%+v) = %q, want %q",
+				test.profile, got, test.want)
+		}
 	}
-	if got := portText(25565); got != "25565" {
-		t.Fatalf("portText(25565) = %q", got)
+}
+
+func TestServerEndpoint(t *testing.T) {
+	tests := []struct {
+		profile config.Server
+		want    string
+	}{
+		{profile: config.Server{}, want: ""},
+		{profile: config.Server{Address: "example.com", Port: 25565},
+			want: "example.com:25565"},
+		{profile: config.Server{Address: "2001:db8::1", Port: 25567},
+			want: "[2001:db8::1]:25567"},
+		{profile: config.Server{Address: "[2001:db8::1]", Port: 25567},
+			want: "[2001:db8::1]:25567"},
+		{profile: config.Server{Address: "example.com"}, want: "example.com"},
+	}
+	for _, test := range tests {
+		if got := serverEndpoint(test.profile); got != test.want {
+			t.Errorf("serverEndpoint(%+v) = %q, want %q",
+				test.profile, got, test.want)
+		}
+	}
+}
+
+func TestPlayButtonLabel(t *testing.T) {
+	translator := i18n.New(i18n.English)
+	tests := []struct {
+		installed   bool
+		needsUpdate bool
+		want        string
+	}{
+		{installed: false, want: "Download mods and play"},
+		{installed: true, needsUpdate: true, want: "Update and play"},
+		{installed: true, want: "Play"},
+	}
+	for _, test := range tests {
+		if got := playButtonLabel(translator, test.installed, test.needsUpdate); got != test.want {
+			t.Errorf("playButtonLabel(%t, %t) = %q, want %q",
+				test.installed, test.needsUpdate, got, test.want)
+		}
+	}
+}
+
+func TestThemeMode(t *testing.T) {
+	translator := i18n.New(i18n.English)
+	for _, mode := range []string{config.ThemeSystem, config.ThemeDark, config.ThemeLight} {
+		if got := themeMode(translator, themeLabel(translator, mode)); got != mode {
+			t.Errorf("themeMode(%q) = %q", mode, got)
+		}
+	}
+	if got := themeMode(translator, "unknown"); got != config.ThemeSystem {
+		t.Errorf("themeMode(unknown) = %q", got)
 	}
 }
 

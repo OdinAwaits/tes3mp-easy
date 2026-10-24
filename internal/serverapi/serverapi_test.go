@@ -149,6 +149,8 @@ func TestModsRejectsInvalidMetadata(t *testing.T) {
 		server.Close()
 		if err == nil {
 			t.Errorf("Mods accepted %s", body)
+		} else if !errors.Is(err, ErrInvalidResponse) {
+			t.Errorf("Mods(%s) error = %v, want ErrInvalidResponse", body, err)
 		}
 	}
 }
@@ -170,6 +172,9 @@ func TestServerRejectsMalformedAndRetries(t *testing.T) {
 	_, err := client.Server(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "empty name") {
 		t.Fatalf("Server error = %v", err)
+	}
+	if !errors.Is(err, ErrInvalidResponse) {
+		t.Fatalf("Server error = %v, want ErrInvalidResponse", err)
 	}
 	if attempts != 2 {
 		t.Fatalf("attempts = %d, want 2", attempts)
@@ -218,8 +223,13 @@ func TestArchiveURLRejectsArbitraryTargets(t *testing.T) {
 		"/api/v1/server",
 	}
 	for _, raw := range bad {
-		if _, err := client.ArchiveURL(Mods{URL: raw}); err == nil {
+		_, err := client.ArchiveURL(Mods{URL: raw})
+		if err == nil {
 			t.Errorf("ArchiveURL(%q) accepted", raw)
+			continue
+		}
+		if !errors.Is(err, ErrInvalidResponse) {
+			t.Errorf("ArchiveURL(%q) error = %v, want ErrInvalidResponse", raw, err)
 		}
 	}
 }

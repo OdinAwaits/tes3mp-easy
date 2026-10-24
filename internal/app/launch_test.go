@@ -105,6 +105,11 @@ func TestLaunchWiring(t *testing.T) {
 		!captured.Fonts || captured.WorkDir != workDir {
 		t.Fatalf("launch options = %+v", captured)
 	}
+	if captured.ServerAddress != testServer().Address ||
+		captured.ServerPort != testServer().Port ||
+		captured.ServerPassword != testServer().Password {
+		t.Fatalf("launch endpoint = %+v", captured)
+	}
 	if captured.MorrowindRoot == "" || captured.GOOS == "" {
 		t.Fatalf("launch options = %+v", captured)
 	}

@@ -7,7 +7,10 @@ package ui
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"strconv"
+	"sync"
 
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
@@ -20,6 +23,7 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/app"
 	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
+	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
 )
 
 const appID = "io.github.saagilat.tes3mp-easy"
@@ -30,9 +34,15 @@ func Run(service *app.Service) error {
 		return fmt.Errorf("ui: app service is nil")
 	}
 	fyneApp := fyneapp.NewWithID(appID)
+	fyneApp.Settings().SetTheme(style.ThemeFor(service.Config().Theme))
 	window := fyneApp.NewWindow(service.Translator().T(i18n.KeyAppTitle))
-	window.Resize(fyne.NewSize(920, 620))
-	shell := &shell{service: service, window: window}
+	window.Resize(fyne.NewSize(1000, 700))
+	shell := &shell{
+		service:  service,
+		window:   window,
+		statuses: make(map[string]serverStatus),
+		checking: make(map[string]bool),
+	}
 	shell.render()
 	window.CenterOnScreen()
 	window.Show()
@@ -46,12 +56,17 @@ func Run(service *app.Service) error {
 type shell struct {
 	service *app.Service
 	window  fyne.Window
+
+	statusMu sync.Mutex
+	statuses map[string]serverStatus
+	checking map[string]bool
 }
 
 func (s *shell) render() {
 	tr := s.service.Translator()
 	cfg := s.service.Config()
 	s.window.SetTitle(tr.T(i18n.KeyAppTitle))
+	s.applyTheme(cfg.Theme)
 
 	header := container.NewBorder(nil, nil, s.brand(tr), s.headerActions(tr), nil)
 	body := s.serverList(tr, cfg)
@@ -60,6 +75,7 @@ func (s *shell) render() {
 		fyne.TextAlignLeading,
 		fyne.TextStyle{Monospace: true},
 	)
+	footer.Importance = widget.LowImportance
 	content := container.NewBorder(
 		container.NewPadded(header),
 		container.NewPadded(footer),
@@ -70,125 +86,168 @@ func (s *shell) render() {
 	s.window.SetContent(content)
 }
 
+func (s *shell) applyTheme(mode string) {
+	if fyne.CurrentApp() == nil {
+		return
+	}
+	fyne.CurrentApp().Settings().SetTheme(style.ThemeFor(mode))
+}
+
 func (s *shell) brand(tr *i18n.Translator) fyne.CanvasObject {
-	title := widget.NewLabelWithStyle(
-		tr.T(i18n.KeyAppTitle),
-		fyne.TextAlignLeading,
-		fyne.TextStyle{Bold: true},
-	)
-	tagline := widget.NewLabel(tr.T(i18n.KeyAppTagline))
+	title := style.Heading(tr.T(i18n.KeyAppTitle))
+	tagline := style.MutedLabel(tr.T(i18n.KeyAppTagline))
 	return container.NewVBox(title, tagline)
 }
 
 func (s *shell) headerActions(tr *i18n.Translator) fyne.CanvasObject {
 	add := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonAdd), theme.ContentAddIcon(), func() {
-		s.showServerDialog("", config.Server{Port: 25565})
+		s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
 	})
-	language := s.languageSelect(tr)
-	logs := widget.NewButton(tr.T(i18n.KeyLogsTitle), s.showLogs)
-	setup := widget.NewButton(tr.T(i18n.KeyCommonSetup), s.showSetup)
+	add.Importance = widget.HighImportance
+	logs := widget.NewButtonWithIcon(tr.T(i18n.KeyLogsTitle), theme.ListIcon(), s.showLogs)
 	settings := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonSettings), theme.SettingsIcon(), s.showSettings)
-	about := widget.NewButton(tr.T(i18n.KeyCommonAbout), s.showAbout)
-	return container.NewHBox(add, language, logs, setup, settings, about)
-}
-
-func (s *shell) languageSelect(tr *i18n.Translator) *widget.Select {
-	languages := i18n.Supported()
-	names := make([]string, len(languages))
-	for index, language := range languages {
-		names[index] = i18n.DisplayName(language)
-	}
-	selectWidget := widget.NewSelect(names, func(selected string) {
-		for index, name := range names {
-			if name != selected {
-				continue
-			}
-			language := languages[index]
-			if language == s.service.Language() {
-				return
-			}
-			settings := s.settings()
-			settings.Language = string(language)
-			if err := s.service.UpdateSettings(settings); err != nil {
-				s.showError(err)
-				return
-			}
-			s.render()
-			return
-		}
-	})
-	selectWidget.SetSelected(i18n.DisplayName(s.service.Language()))
-	return selectWidget
+	about := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonAbout), theme.HelpIcon(), s.showAbout)
+	return container.NewHBox(add, logs, settings, about)
 }
 
 func (s *shell) serverList(tr *i18n.Translator, cfg config.Config) fyne.CanvasObject {
 	if len(cfg.Servers) == 0 {
-		title := widget.NewLabelWithStyle(
-			tr.T(i18n.KeyServerEmptyTitle),
-			fyne.TextAlignCenter,
-			fyne.TextStyle{Bold: true},
-		)
-		hint := widget.NewLabelWithStyle(
-			tr.T(i18n.KeyServerEmptyHint),
-			fyne.TextAlignCenter,
-			fyne.TextStyle{},
-		)
+		title := style.Heading(tr.T(i18n.KeyServerEmptyTitle))
+		hint := style.MutedLabel(tr.T(i18n.KeyServerEmptyHint))
 		add := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonAdd), theme.ContentAddIcon(), func() {
-			s.showServerDialog("", config.Server{Port: 25565})
+			s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
 		})
-		return container.NewCenter(container.NewVBox(title, hint, add))
+		add.Importance = widget.HighImportance
+		content := container.NewVBox(
+			container.NewCenter(title),
+			container.NewCenter(hint),
+			container.NewCenter(add),
+		)
+		return container.NewCenter(style.Card(content, true))
 	}
 
-	rows := make([]fyne.CanvasObject, 0, len(cfg.Servers))
-	for _, profile := range cfg.Servers {
-		rows = append(rows, s.serverCard(tr, cfg.ActiveServer, profile))
+	rows := make([]fyne.CanvasObject, 0, len(cfg.Servers)+1)
+	activeID := cfg.ActiveServer
+	if activeID == "" && len(cfg.Servers) == 1 {
+		activeID = cfg.Servers[0].ID
 	}
+	for _, profile := range cfg.Servers {
+		rows = append(rows, s.serverCard(tr, activeID, profile))
+	}
+	rows = append(rows, container.NewCenter(widget.NewButtonWithIcon(
+		tr.T(i18n.KeyCommonAdd), theme.ContentAddIcon(), func() {
+			s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
+		})))
 	return container.NewVBox(rows...)
 }
 
 func (s *shell) serverCard(tr *i18n.Translator, activeID string,
 	profile config.Server,
 ) fyne.CanvasObject {
-	subtitle := fmt.Sprintf("%s:%d", profile.Address, profile.Port)
-	if profile.ID == activeID {
-		subtitle += " - " + tr.T(i18n.KeyServerActive)
+	active := profile.ID == activeID
+	titleText := profile.Name
+	if active {
+		titleText += "  ·  " + tr.T(i18n.KeyServerActive)
 	}
-	panelLabel := widget.NewLabel(tr.T(i18n.KeyServerPanel) + ": " + profile.PanelURL)
-	panelLabel.Wrapping = fyne.TextWrapWord
-
-	play := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonPlay), theme.MediaPlayIcon(), func() {
-		s.showLaunch(profile)
-	})
-	check := widget.NewButton(tr.T(i18n.KeyServerCheck), func() {
-		s.showCheckServer(profile)
-	})
-	updateMods := widget.NewButton(tr.T(i18n.KeyServerUpdateMods), func() {
-		s.showModsUpdate(profile)
-	})
-	advanced := widget.NewButton(tr.T(i18n.KeyCommonAdvanced), func() {
-		s.showAdvanced(profile)
-	})
-	edit := widget.NewButton(tr.T(i18n.KeyCommonEdit), func() {
-		s.showServerDialog(profile.ID, profile)
-	})
-	remove := widget.NewButton(tr.T(i18n.KeyCommonDelete), func() {
-		s.confirmDelete(tr, profile)
-	})
-	actions := container.NewHBox(play, check, updateMods, advanced, edit, remove)
-	if profile.ID != activeID {
-		actions.Add(widget.NewButton(tr.T(i18n.KeyServerMakeActive), func() {
-			if err := s.service.SetActiveServer(profile.ID); err != nil {
-				s.showError(err)
-				return
-			}
-			s.render()
-		}))
-	}
-	return widget.NewCard(
-		profile.Name,
-		subtitle,
-		container.NewVBox(panelLabel, container.NewHBox(layout.NewSpacer(), actions)),
+	title := style.Heading(titleText)
+	address := widget.NewLabelWithStyle(
+		serverEndpoint(profile),
+		fyne.TextAlignLeading,
+		fyne.TextStyle{Monospace: true},
 	)
+	address.Importance = widget.LowImportance
+
+	statusLabel := widget.NewLabel(s.statusText(profile.ID))
+	statusLabel.Wrapping = fyne.TextWrapWord
+	statusLabel.Importance = s.statusImportance(profile.ID)
+
+	modsInstalled := false
+	if state, err := s.service.ModsState(profile.ID); err == nil {
+		modsInstalled = state.Installed
+	}
+	play := widget.NewButtonWithIcon(
+		playButtonLabel(tr, modsInstalled, s.statusFor(profile.ID).NeedsUpdate),
+		theme.MediaPlayIcon(),
+		func() { s.playServer(profile) },
+	)
+	play.Importance = widget.HighImportance
+	more := widget.NewButton(tr.T(i18n.KeyServerMore), func() {
+		s.showServerActions(profile)
+	})
+
+	var panel fyne.CanvasObject = layout.NewSpacer()
+	if effective := profile.EffectivePanelURL(); effective != "" {
+		if parsed, err := url.Parse(effective); err == nil {
+			link := widget.NewHyperlink(tr.T(i18n.KeyServerPanel)+" · "+parsed.Host, parsed)
+			panel = link
+		}
+	}
+
+	details := container.NewBorder(nil, nil, nil, container.NewHBox(panel, play, more),
+		container.NewVBox(address, statusLabel))
+	content := container.NewVBox(title, details)
+	s.checkServer(profile, statusLabel, play, modsInstalled)
+	return style.Card(content, active)
+}
+
+func playButtonLabel(tr *i18n.Translator, modsInstalled, needsUpdate bool) string {
+	switch {
+	case !modsInstalled:
+		return tr.T(i18n.KeyServerPlayDownload)
+	case needsUpdate:
+		return tr.T(i18n.KeyServerPlayUpdate)
+	default:
+		return tr.T(i18n.KeyCommonPlay)
+	}
+}
+
+func serverEndpoint(profile config.Server) string {
+	address := config.NormalizeAddress(profile.Address)
+	if address == "" || profile.Port <= 0 {
+		return address
+	}
+	return net.JoinHostPort(address, strconv.Itoa(profile.Port))
+}
+
+func (s *shell) showServerActions(profile config.Server) {
+	tr := s.service.Translator()
+	content := container.NewVBox(
+		style.Subheading(profile.Name),
+		style.MutedLabel(serverEndpoint(profile)),
+		widget.NewButton(tr.T(i18n.KeyServerOpenPanel), func() {
+			s.openPanel(profile)
+		}),
+		widget.NewButton(tr.T(i18n.KeyServerUpdateMods), func() {
+			s.showModsUpdate(profile)
+		}),
+		widget.NewButton(tr.T(i18n.KeyCommonAdvanced), func() {
+			s.showAdvanced(profile)
+		}),
+		widget.NewButton(tr.T(i18n.KeyCommonEdit), func() {
+			s.showServerDialog(profile.ID, profile)
+		}),
+		widget.NewButton(tr.T(i18n.KeyCommonDelete), func() {
+			s.confirmDelete(tr, profile)
+		}),
+	)
+	popup := dialog.NewCustom(tr.T(i18n.KeyServerActionsTitle),
+		tr.T(i18n.KeyCommonClose), content, s.window)
+	popup.Resize(fyne.NewSize(460, 360))
+	popup.Show()
+}
+
+func (s *shell) openPanel(profile config.Server) {
+	parsed, err := url.Parse(profile.EffectivePanelURL())
+	if err != nil {
+		s.showError(err)
+		return
+	}
+	if fyne.CurrentApp() == nil {
+		return
+	}
+	if err := fyne.CurrentApp().OpenURL(parsed); err != nil {
+		s.showError(err)
+	}
 }
 
 func (s *shell) confirmDelete(tr *i18n.Translator, profile config.Server) {
@@ -207,6 +266,10 @@ func (s *shell) confirmDelete(tr *i18n.Translator, profile config.Server) {
 				s.showError(err)
 				return
 			}
+			s.statusMu.Lock()
+			delete(s.statuses, profile.ID)
+			delete(s.checking, profile.ID)
+			s.statusMu.Unlock()
 			s.render()
 		},
 		s.window,
@@ -227,17 +290,11 @@ func (s *shell) settings() app.Settings {
 	cfg := s.service.Config()
 	return app.Settings{
 		Language:      cfg.Language,
+		Theme:         cfg.Theme,
 		MorrowindPath: cfg.MorrowindPath,
 		WorkDir:       cfg.WorkDir,
 		ProtonPath:    cfg.ProtonPath,
 		Localization:  cfg.Localization,
 		SkipFonts:     cfg.SkipFonts,
 	}
-}
-
-func portText(port int) string {
-	if port <= 0 {
-		return ""
-	}
-	return strconv.Itoa(port)
 }

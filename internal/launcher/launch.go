@@ -13,33 +13,54 @@ import (
 // OpenMWCSURL is shown when the editor is not bundled with TES3MP.
 const OpenMWCSURL = "https://openmw.org/downloads/"
 
-// LaunchOptions adds the profile and font/localization choices to the paths.
+// Sentinel launch failures are classified into stable T3E codes by internal/app.
+var (
+	ErrTES3MPMissing = errors.New("TES3MP is not installed")
+	ErrProton        = errors.New("Proton runtime is not usable")
+	ErrConfig        = errors.New("game configuration is invalid")
+	ErrStart         = errors.New("TES3MP could not be started")
+)
+
+// LaunchOptions adds the profile, endpoint and font/localization choices to the
+// paths. ServerPassword is written only to tes3mp-client-default.cfg and must
+// never be logged.
 type LaunchOptions struct {
 	Options
-	ProfilePath  string
-	Localization bool
-	Fonts        bool
-	Now          func() time.Time
-	Executor     Executor
+	ProfilePath    string
+	ServerAddress  string
+	ServerPort     int
+	ServerPassword string
+	Localization   bool
+	Fonts          bool
+	Now            func() time.Time
+	Executor       Executor
 }
 
 // Result describes a prepared and started process.
 type Result struct {
-	Environment Environment
-	Config      ConfigResult
-	Spec        Spec
-	Process     Process
-	Warnings    []string
+	Environment  Environment
+	Config       ConfigResult
+	ClientConfig ClientConfigResult
+	Spec         Spec
+	Process      Process
+	Warnings     []string
 }
 
 // Launch resolves the platform paths, prepares prefix/config and starts TES3MP
 // without waiting for it to exit.
 func Launch(ctx context.Context, options LaunchOptions) (Result, error) {
+	if strings.TrimSpace(options.ServerAddress) == "" {
+		return Result{}, errors.New("server address is empty")
+	}
+	if options.ServerPort < 1 || options.ServerPort > 65535 {
+		return Result{}, fmt.Errorf("server port %d is outside 1..65535",
+			options.ServerPort)
+	}
 	env, err := Resolve(options.Options)
 	if err != nil {
 		return Result{}, err
 	}
-	return launchExecutable(ctx, options, env, env.Executable)
+	return launchExecutable(ctx, options, env, env.Executable, true)
 }
 
 // OpenMWCS starts openmw-cs.exe from the TES3MP installation.
@@ -61,11 +82,11 @@ func OpenMWCS(ctx context.Context, options LaunchOptions) (Result, error) {
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return Result{}, fmt.Errorf("%s is not a regular file", executable)
 	}
-	return launchExecutable(ctx, options, env, executable)
+	return launchExecutable(ctx, options, env, executable, false)
 }
 
 func launchExecutable(ctx context.Context, options LaunchOptions,
-	env Environment, executable string,
+	env Environment, executable string, writeClientConfig bool,
 ) (Result, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -73,32 +94,45 @@ func launchExecutable(ctx context.Context, options LaunchOptions,
 	if env.ProtonExe != "" {
 		info, err := os.Lstat(env.ProtonExe)
 		if err != nil {
-			return Result{}, fmt.Errorf("Proton executable: %w", err)
+			return Result{}, fmt.Errorf("%w: %v", ErrProton, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() ||
 			info.Mode()&0o111 == 0 {
 			return Result{}, fmt.Errorf(
-				"Proton executable %s is not executable", env.ProtonExe)
+				"%w: %s is not executable", ErrProton, env.ProtonExe)
 		}
 	}
 	warnings, err := preparePrefix(env)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fmt.Errorf("%w: %v", ErrConfig, err)
 	}
 	config, err := PrepareConfig(ConfigOptions{
 		ConfigDir:         env.ConfigDir,
 		ProfilePath:       options.ProfilePath,
 		Localization:      options.Localization,
-		MorrowindEncoding: env.Morrowind.Encoding,
 		Fonts:             options.Fonts,
+		MorrowindEncoding: env.Morrowind.Encoding,
 		Now:               options.Now,
 	})
 	if err != nil {
-		return Result{}, err
+		return Result{}, fmt.Errorf("%w: %v", ErrConfig, err)
+	}
+	var clientConfig ClientConfigResult
+	if writeClientConfig {
+		clientConfig, err = PrepareClientConfig(ClientConfigOptions{
+			TES3MPDir: env.TES3MPDir,
+			Address:   options.ServerAddress,
+			Port:      options.ServerPort,
+			Password:  options.ServerPassword,
+			Now:       options.Now,
+		})
+		if err != nil {
+			return Result{}, fmt.Errorf("%w: %v", ErrConfig, err)
+		}
 	}
 	spec, err := buildSpec(env, executable)
 	if err != nil {
-		return Result{}, err
+		return Result{}, fmt.Errorf("%w: %v", ErrStart, err)
 	}
 	executor := options.Executor
 	if executor == nil {
@@ -106,14 +140,15 @@ func launchExecutable(ctx context.Context, options LaunchOptions,
 	}
 	process, err := executor(ctx, spec)
 	if err != nil {
-		return Result{}, fmt.Errorf("start TES3MP: %w", err)
+		return Result{}, fmt.Errorf("%w: %v", ErrStart, err)
 	}
 	return Result{
-		Environment: env,
-		Config:      config,
-		Spec:        spec,
-		Process:     process,
-		Warnings:    warnings,
+		Environment:  env,
+		Config:       config,
+		ClientConfig: clientConfig,
+		Spec:         spec,
+		Process:      process,
+		Warnings:     warnings,
 	}, nil
 }
 

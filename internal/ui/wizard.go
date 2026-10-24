@@ -16,8 +16,7 @@ import (
 type wizardStep int
 
 const (
-	wizardLanguage wizardStep = iota
-	wizardMorrowind
+	wizardMorrowind wizardStep = iota
 	wizardWorkDir
 	wizardTES3MP
 	wizardFonts
@@ -41,7 +40,6 @@ type setupWizard struct {
 	locked      bool
 	retryAction func()
 
-	language           *widget.Select
 	morrowind          *widget.Entry
 	morrowindStatus    *widget.Label
 	morrowindReady     bool
@@ -60,29 +58,17 @@ type setupWizard struct {
 	fontsReady     bool
 }
 
-// showSetup opens the wizard. A fresh configuration starts with the language
-// choice; an existing installation starts at the folder that most often needs
-// attention.
+// showSetup opens the wizard at the folder that most often needs attention.
+// The launcher UI is English by default, so a fresh install does not ask for a
+// language first.
 func (s *shell) showSetup() {
-	step := wizardMorrowind
-	if s.service.NeedsSetup() {
-		step = wizardLanguage
-	}
-	s.openWizard(step)
+	s.openWizard(wizardMorrowind)
 }
 
 func (s *shell) openWizard(step wizardStep) {
 	tr := s.service.Translator()
 	cfg := s.service.Config()
 	w := &setupWizard{shell: s, step: step}
-
-	languages := i18n.Supported()
-	names := make([]string, len(languages))
-	for index, language := range languages {
-		names[index] = i18n.DisplayName(language)
-	}
-	w.language = widget.NewSelect(names, nil)
-	w.language.SetSelected(i18n.DisplayName(s.service.Language()))
 
 	w.morrowind = widget.NewEntry()
 	w.morrowind.SetText(cfg.MorrowindPath)
@@ -132,8 +118,6 @@ func (s *shell) openWizard(step wizardStep) {
 
 func wizardTitleKey(step wizardStep) string {
 	switch step {
-	case wizardLanguage:
-		return i18n.KeyWizardLanguageTitle
 	case wizardMorrowind:
 		return i18n.KeyWizardMorrowindTitle
 	case wizardWorkDir:
@@ -164,8 +148,6 @@ func (w *setupWizard) renderStep() {
 
 func (w *setupWizard) stepObjects(tr *i18n.Translator) []fyne.CanvasObject {
 	switch w.step {
-	case wizardLanguage:
-		return w.languageObjects(tr)
 	case wizardMorrowind:
 		return w.morrowindObjects(tr)
 	case wizardWorkDir:
@@ -183,13 +165,6 @@ func wizardHint(tr *i18n.Translator, key string) *widget.Label {
 	label := widget.NewLabel(tr.T(key))
 	label.Wrapping = fyne.TextWrapWord
 	return label
-}
-
-func (w *setupWizard) languageObjects(tr *i18n.Translator) []fyne.CanvasObject {
-	return []fyne.CanvasObject{
-		wizardHint(tr, i18n.KeyWizardLanguageHint),
-		w.language,
-	}
 }
 
 func (w *setupWizard) morrowindObjects(tr *i18n.Translator) []fyne.CanvasObject {
@@ -332,7 +307,7 @@ func (w *setupWizard) canAdvance() bool {
 }
 
 func (w *setupWizard) canGoBack() bool {
-	return !w.locked && w.step > wizardLanguage && w.step < wizardFonts
+	return !w.locked && w.step > wizardMorrowind && w.step < wizardFonts
 }
 
 func (w *setupWizard) advance() {
@@ -340,16 +315,6 @@ func (w *setupWizard) advance() {
 		return
 	}
 	switch w.step {
-	case wizardLanguage:
-		settings := w.shell.settings()
-		settings.Language = string(w.selectedLanguage())
-		if err := w.shell.service.UpdateSettings(settings); err != nil {
-			w.setProblem(err, w.advance)
-			return
-		}
-		w.popup.Hide()
-		w.shell.render()
-		w.shell.openWizard(wizardMorrowind)
 	case wizardMorrowind:
 		w.gotoStep(wizardWorkDir)
 	case wizardWorkDir:
@@ -368,8 +333,6 @@ func (w *setupWizard) previous() {
 		return
 	}
 	switch w.step {
-	case wizardMorrowind:
-		w.gotoStep(wizardLanguage)
 	case wizardWorkDir:
 		w.gotoStep(wizardMorrowind)
 	case wizardTES3MP:
@@ -403,15 +366,6 @@ func (w *setupWizard) finishWizard() {
 	w.shell.service.LogInfof("first-run setup completed")
 	w.popup.Hide()
 	w.shell.render()
-}
-
-func (w *setupWizard) selectedLanguage() i18n.Language {
-	for _, language := range i18n.Supported() {
-		if i18n.DisplayName(language) == w.language.Selected {
-			return language
-		}
-	}
-	return i18n.English
 }
 
 func (w *setupWizard) beginBusy() bool {

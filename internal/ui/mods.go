@@ -14,29 +14,6 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/mods"
 )
 
-func (s *shell) showCheckServer(profile config.Server) {
-	tr := s.service.Translator()
-	go func() {
-		info, err := s.service.CheckServer(context.Background(), profile.ID)
-		fyne.Do(func() {
-			if err != nil {
-				s.showError(err)
-				return
-			}
-			modsSHA := "-"
-			if info.ModsSHA256 != nil {
-				modsSHA = shortSHA(*info.ModsSHA256)
-			}
-			dialog.ShowInformation(
-				tr.T(i18n.KeyServerCheckTitle),
-				tr.Tf(i18n.KeyServerCheckBody, info.Name, info.Address,
-					info.Port, info.Status, modsSHA),
-				s.window,
-			)
-		})
-	}()
-}
-
 func (s *shell) showModsUpdate(profile config.Server) {
 	tr := s.service.Translator()
 	progress := widget.NewProgressBar()
@@ -63,11 +40,18 @@ func (s *shell) showModsUpdate(profile config.Server) {
 				return
 			}
 			progress.SetValue(1)
+			s.statusMu.Lock()
+			current := s.statuses[profile.ID]
+			current.NeedsUpdate = false
+			s.statuses[profile.ID] = current
+			s.statusMu.Unlock()
 			if result.Skipped {
 				status.SetText(tr.T(i18n.KeyModsUpToDate))
+				s.render()
 				return
 			}
 			status.SetText(tr.T(i18n.KeyModsDone))
+			s.render()
 		})
 	}()
 }

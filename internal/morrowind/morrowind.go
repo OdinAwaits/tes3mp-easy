@@ -119,11 +119,15 @@ func Inspect(root string) (Installation, error) {
 	}
 	info, err := os.Stat(absolute)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return Installation{}, fmt.Errorf("%w: Morrowind folder %q: %v",
+				ErrNotFound, root, err)
+		}
 		return Installation{}, fmt.Errorf("Morrowind folder %q: %w", root, err)
 	}
 	if !info.IsDir() {
-		return Installation{}, fmt.Errorf("Morrowind folder %q is not a directory",
-			root)
+		return Installation{}, fmt.Errorf("Morrowind folder %q is not a directory: %w",
+			root, ErrIncomplete)
 	}
 
 	dataFiles, err := childDir(absolute, "Data Files")

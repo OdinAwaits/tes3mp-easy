@@ -60,10 +60,10 @@ func TestOpenDefaultsAndLanguage(t *testing.T) {
 		clientlog.FileName); got != want {
 		t.Fatalf("LogPath = %q, want %q", got, want)
 	}
-	if got := service.Language(); got != i18n.Russian {
+	if got := service.Language(); got != i18n.English {
 		t.Fatalf("Language = %q", got)
 	}
-	if got := service.Translator().T(i18n.KeyCommonPlay); got != "Играть" {
+	if got := service.Translator().T(i18n.KeyCommonPlay); got != "Play" {
 		t.Fatalf("translation = %q", got)
 	}
 	if service.ConfigPath() != paths.ConfigFile {
@@ -167,7 +167,7 @@ func TestClientLogRecordsErrorsAndTail(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	for _, want := range []string{
 		"client started", "setup step 1", "optional voice archive skipped",
-		"ERROR", "check server: connection refused",
+		"ERROR", "check server: connection refused", "code=T3E-APP-99",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("log does not contain %q:\n%s", want, joined)

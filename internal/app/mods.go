@@ -131,7 +131,7 @@ func (s *Service) serverProfile(id string) (config.Server, error) {
 
 func (s *Service) serverAPIClient(profile config.Server) (*serverapi.Client, error) {
 	options := serverapi.Options{
-		BaseURL:    profile.PanelURL,
+		BaseURL:    profile.EffectivePanelURL(),
 		HTTPClient: s.httpClient,
 	}
 	if s.newServerAPI != nil {

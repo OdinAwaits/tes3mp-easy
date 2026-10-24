@@ -41,6 +41,7 @@ func TestValidateAddress(t *testing.T) {
 	valid := []string{
 		"203.0.113.10",
 		"2001:db8::1",
+		"[2001:db8::1]",
 		"example.com",
 		"localhost",
 		"my-server.example",
@@ -56,7 +57,6 @@ func TestValidateAddress(t *testing.T) {
 		"example.com:25565":      "port",
 		"https://example.com":    "scheme",
 		"example.com/path":       "path",
-		"[::1]":                  "brackets",
 		"bad host":               "whitespace",
 		"example..com":           "empty DNS label",
 		"-example.com":           "starting or ending",
@@ -154,6 +154,106 @@ func TestServerNormalizeAndValidate(t *testing.T) {
 	badPanel.PanelURL = "http://example.com"
 	if err := badPanel.Validate(); err == nil || !strings.Contains(err.Error(), "panel URL") {
 		t.Fatalf("bad panel error = %v", err)
+	}
+}
+
+func TestEffectivePanelURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		server Server
+		want   string
+	}{
+		{name: "explicit", server: Server{Address: "203.0.113.10",
+			PanelURL: "https://panel.example.com"}, want: "https://panel.example.com"},
+		{name: "remote fallback", server: Server{Address: "Example.COM"},
+			want: "https://Example.COM"},
+		{name: "loopback fallback", server: Server{Address: "localhost"},
+			want: "http://localhost"},
+		{name: "ipv6 fallback", server: Server{Address: "2001:db8::1"},
+			want: "https://[2001:db8::1]"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.server.EffectivePanelURL(); got != test.want {
+				t.Fatalf("EffectivePanelURL() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestParseServerEndpoint(t *testing.T) {
+	tests := []struct {
+		raw      string
+		address  string
+		port     int
+		panelURL string
+	}{
+		{raw: "play.example.com", address: "play.example.com", port: 25565,
+			panelURL: "https://play.example.com"},
+		{raw: "play.example.com:25570", address: "play.example.com", port: 25570,
+			panelURL: "https://play.example.com"},
+		{raw: "tes3mp://play.example.com:25570", address: "play.example.com",
+			port: 25570, panelURL: "https://play.example.com"},
+		{raw: "https://panel.example.com:8443", address: "panel.example.com",
+			port: 25565, panelURL: "https://panel.example.com:8443"},
+		{raw: "http://localhost:8080", address: "localhost", port: 25565,
+			panelURL: "http://localhost:8080"},
+		{raw: "[2001:db8::1]:25570", address: "2001:db8::1", port: 25570,
+			panelURL: "https://[2001:db8::1]"},
+		{raw: "2001:db8::1", address: "2001:db8::1", port: 25565,
+			panelURL: "https://[2001:db8::1]"},
+	}
+	for _, test := range tests {
+		t.Run(test.raw, func(t *testing.T) {
+			got, err := ParseServerEndpoint(test.raw)
+			if err != nil {
+				t.Fatalf("ParseServerEndpoint(%q): %v", test.raw, err)
+			}
+			if got.Address != test.address || got.Port != test.port ||
+				got.PanelURL != test.panelURL {
+				t.Fatalf("ParseServerEndpoint(%q) = %+v", test.raw, got)
+			}
+		})
+	}
+	invalid := []string{
+		"", "play.example.com:", "play.example.com:0",
+		"play.example.com:70000", "https://example.com/path",
+		"ftp://example.com", "[2001:db8::1", "user@example.com",
+	}
+	for _, raw := range invalid {
+		if _, err := ParseServerEndpoint(raw); err == nil {
+			t.Errorf("ParseServerEndpoint(%q) accepted invalid input", raw)
+		}
+	}
+}
+
+func TestServerPanelURLIsOptional(t *testing.T) {
+	server := validServer()
+	server.PanelURL = ""
+	server.Normalize()
+	if err := server.Validate(); err != nil {
+		t.Fatalf("Validate without panel URL: %v", err)
+	}
+	if got := server.EffectivePanelURL(); got != "https://203.0.113.10" {
+		t.Fatalf("EffectivePanelURL() = %q", got)
+	}
+}
+
+func TestDefaultLanguageAndTheme(t *testing.T) {
+	cfg := Default()
+	if cfg.Language != "en" {
+		t.Fatalf("default language = %q", cfg.Language)
+	}
+	if cfg.Theme != ThemeDark {
+		t.Fatalf("default theme = %q", cfg.Theme)
+	}
+	cfg.Theme = "weird"
+	cfg.Normalize()
+	if cfg.Theme != "weird" {
+		t.Fatalf("Normalize changed invalid theme to %q", cfg.Theme)
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("Validate accepted an invalid theme")
 	}
 }
 

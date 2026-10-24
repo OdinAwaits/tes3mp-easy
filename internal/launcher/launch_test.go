@@ -55,9 +55,12 @@ func TestLaunchWindowsStartsTES3MPDirectly(t *testing.T) {
 			ConfigDir:     configDir,
 			HomeDir:       t.TempDir(),
 		},
-		ProfilePath:  profile,
-		Localization: true,
-		Fonts:        true,
+		ProfilePath:    profile,
+		ServerAddress:  "203.0.113.10",
+		ServerPort:     25565,
+		ServerPassword: "hunter2",
+		Localization:   true,
+		Fonts:          true,
 		Executor: func(_ context.Context, spec Spec) (Process, error) {
 			calls++
 			captured = spec
@@ -87,6 +90,27 @@ func TestLaunchWindowsStartsTES3MPDirectly(t *testing.T) {
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %v", result.Warnings)
 	}
+	clientData, err := os.ReadFile(filepath.Join(workDir, "tes3mp",
+		ClientConfigName))
+	if err != nil {
+		t.Fatalf("client config: %v", err)
+	}
+	for _, want := range []string{
+		"destinationAddress = 203.0.113.10",
+		"port = 25565",
+		"password = hunter2",
+	} {
+		if !strings.Contains(string(clientData), want) {
+			t.Fatalf("client config does not contain %q:\n%s", want, clientData)
+		}
+	}
+	if result.ClientConfig.Path == "" {
+		t.Fatal("result.ClientConfig.Path is empty")
+	}
+	if info, err := os.Stat(result.ClientConfig.Path); err != nil ||
+		info.Mode().Perm() != 0o600 {
+		t.Fatalf("client config mode = %v, %v", info, err)
+	}
 }
 
 func TestLaunchUsesEncodingFromMorrowindData(t *testing.T) {
@@ -106,7 +130,9 @@ func TestLaunchUsesEncodingFromMorrowindData(t *testing.T) {
 			ConfigDir:     configDir,
 			HomeDir:       t.TempDir(),
 		},
-		ProfilePath: profile,
+		ProfilePath:   profile,
+		ServerAddress: "203.0.113.10",
+		ServerPort:    25565,
 		Executor: func(_ context.Context, _ Spec) (Process, error) {
 			return fakeProcess{}, nil
 		},
@@ -146,7 +172,10 @@ func TestLaunchLinuxUsesProton(t *testing.T) {
 			PrefixDir:     prefixDir,
 			HomeDir:       t.TempDir(),
 		},
-		ProfilePath: profile,
+		ProfilePath:    profile,
+		ServerAddress:  "203.0.113.10",
+		ServerPort:     25565,
+		ServerPassword: "hunter2",
 		Executor: func(_ context.Context, spec Spec) (Process, error) {
 			captured = spec
 			return fakeProcess{}, nil
@@ -223,7 +252,10 @@ func TestLaunchRejectsMissingMorrowind(t *testing.T) {
 			WorkDir: workDir,
 			HomeDir: t.TempDir(),
 		},
-		ProfilePath: profile,
+		ProfilePath:    profile,
+		ServerAddress:  "203.0.113.10",
+		ServerPort:     25565,
+		ServerPassword: "hunter2",
 		Executor: func(_ context.Context, spec Spec) (Process, error) {
 			return fakeProcess{}, nil
 		},

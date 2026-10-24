@@ -45,6 +45,7 @@ const (
 // Settings are the subset of configuration edited from the Settings dialog.
 type Settings struct {
 	Language      string
+	Theme         string
 	MorrowindPath string
 	WorkDir       string
 	ProtonPath    string
@@ -166,11 +167,14 @@ func (s *Service) LogWarnf(format string, args ...any) {
 }
 
 // LogError records a failed operation without changing the returned error.
+// The stable failure code makes the log searchable without matching UI copy.
 func (s *Service) LogError(scope string, err error) {
 	if s == nil || s.logFile == nil || err == nil {
 		return
 	}
-	s.logFile.Errorf("%s: %v", strings.TrimSpace(scope), err)
+	failure := Explain(err)
+	s.logFile.Errorf("%s: %v (code=%s kind=%s)", strings.TrimSpace(scope),
+		err, failure.Code, failure.Kind)
 }
 
 // ReadLogTail returns the last lines of the client log for the Logs dialog.

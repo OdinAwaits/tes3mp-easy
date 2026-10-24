@@ -32,6 +32,16 @@ const (
 
 	// DirMode is used for client-owned directories.
 	DirMode os.FileMode = 0o700
+
+	// DefaultServerPort is the TES3MP port when an address omits one.
+	DefaultServerPort = 25565
+)
+
+// Theme values persisted in Config.Theme.
+const (
+	ThemeSystem = "system"
+	ThemeDark   = "dark"
+	ThemeLight  = "light"
 )
 
 // Server is one playable server profile.
@@ -46,21 +56,29 @@ type Server struct {
 
 // Config is the complete client configuration.
 type Config struct {
-	Version       int      `json:"version"`
-	Language      string   `json:"language,omitempty"`
-	MorrowindPath string   `json:"morrowind_path,omitempty"`
-	WorkDir       string   `json:"work_dir,omitempty"`
-	ProtonPath    string   `json:"proton_path,omitempty"`
-	Localization  bool     `json:"localization,omitempty"`
-	SkipFonts     bool     `json:"skip_fonts,omitempty"`
+	Version       int    `json:"version"`
+	Language      string `json:"language,omitempty"`
+	Theme         string `json:"theme,omitempty"`
+	MorrowindPath string `json:"morrowind_path,omitempty"`
+	WorkDir       string `json:"work_dir,omitempty"`
+	ProtonPath    string `json:"proton_path,omitempty"`
+	Localization  bool   `json:"localization,omitempty"`
+	SkipFonts     bool   `json:"skip_fonts,omitempty"`
+
 	SetupComplete bool     `json:"setup_complete,omitempty"`
 	ActiveServer  string   `json:"active_server,omitempty"`
 	Servers       []Server `json:"servers"`
 }
 
-// Default returns an empty configuration for a first launch.
+// Default returns an empty configuration for a first launch. The launcher UI
+// ships in English; a user can still keep an explicit Russian setting.
 func Default() Config {
-	return Config{Version: CurrentVersion, Servers: []Server{}}
+	return Config{
+		Version:  CurrentVersion,
+		Language: string(i18n.English),
+		Theme:    ThemeDark,
+		Servers:  []Server{},
+	}
 }
 
 // Normalize trims user input, canonicalizes derived fields and fills defaults.
@@ -73,10 +91,15 @@ func (c *Config) Normalize() {
 		c.Servers = []Server{}
 	}
 	c.Language = strings.TrimSpace(c.Language)
-	if c.Language != "" {
-		if language, ok := i18n.Parse(c.Language); ok {
-			c.Language = string(language)
-		}
+	if c.Language == "" {
+		c.Language = string(i18n.English)
+	}
+	if language, ok := i18n.Parse(c.Language); ok {
+		c.Language = string(language)
+	}
+	c.Theme = strings.ToLower(strings.TrimSpace(c.Theme))
+	if c.Theme == "" {
+		c.Theme = ThemeDark
 	}
 	c.MorrowindPath = strings.TrimSpace(c.MorrowindPath)
 	c.WorkDir = strings.TrimSpace(c.WorkDir)
@@ -100,6 +123,11 @@ func (c Config) Validate() error {
 		if _, ok := i18n.Parse(c.Language); !ok {
 			return fmt.Errorf("unsupported language %q", c.Language)
 		}
+	}
+	switch c.Theme {
+	case ThemeSystem, ThemeDark, ThemeLight:
+	default:
+		return fmt.Errorf("unsupported theme %q", c.Theme)
 	}
 
 	seen := make(map[string]struct{}, len(c.Servers))
@@ -137,19 +165,40 @@ func (c Config) hasServer(id string) bool {
 }
 
 // Normalize trims user input and rebuilds the identity derived from address and
-// port. The ID is not user-editable.
+// port. The ID is not user-editable. PanelURL is optional; when absent the
+// public panel is assumed to live on the game host.
 func (s *Server) Normalize() {
 	s.Name = strings.TrimSpace(s.Name)
-	s.Address = strings.TrimSpace(s.Address)
+	s.Address = NormalizeAddress(s.Address)
 	s.PanelURL = strings.TrimSpace(s.PanelURL)
 	if s.Address != "" && s.Port != 0 {
 		s.ID = ServerID(s.Address, s.Port)
 	} else {
 		s.ID = ""
 	}
-	if normalized, err := NormalizePanelURL(s.PanelURL); err == nil {
-		s.PanelURL = normalized
+	if s.PanelURL != "" {
+		if normalized, err := NormalizePanelURL(s.PanelURL); err == nil {
+			s.PanelURL = normalized
+		}
 	}
+}
+
+// EffectivePanelURL returns the explicit panel URL or derives one from the game
+// address. Loopback panels use HTTP because local development panels normally
+// do not have a certificate.
+func (s Server) EffectivePanelURL() string {
+	if value := strings.TrimSpace(s.PanelURL); value != "" {
+		return value
+	}
+	host := NormalizeAddress(s.Address)
+	if host == "" {
+		return ""
+	}
+	scheme := "https"
+	if isLoopbackHost(host) {
+		scheme = "http"
+	}
+	return scheme + "://" + panelHost(host)
 }
 
 // Validate checks one profile. It intentionally reports field names, not
@@ -171,11 +220,10 @@ func (s Server) Validate() error {
 	if s.ID == "" || s.ID != wantID {
 		return errors.New("id does not match address and port")
 	}
-	if s.PanelURL == "" {
-		return errors.New("panel URL is empty")
-	}
-	if _, err := NormalizePanelURL(s.PanelURL); err != nil {
-		return fmt.Errorf("panel URL: %w", err)
+	if s.PanelURL != "" {
+		if _, err := NormalizePanelURL(s.PanelURL); err != nil {
+			return fmt.Errorf("panel URL: %w", err)
+		}
 	}
 	return nil
 }
@@ -209,9 +257,154 @@ func ServerID(address string, port int) string {
 	return base + "_" + strconv.Itoa(port)
 }
 
+// NormalizeAddress trims a host and removes one pair of IPv6 brackets. The
+// persisted address is always the bare host; brackets are re-added where a URL
+// needs them.
+func NormalizeAddress(address string) string {
+	address = strings.TrimSpace(address)
+	if strings.HasPrefix(address, "[") && strings.HasSuffix(address, "]") {
+		inner := address[1 : len(address)-1]
+		if net.ParseIP(inner) != nil {
+			return inner
+		}
+	}
+	return address
+}
+
+// panelHost brackets IPv6 literals for use in a URL authority.
+func panelHost(host string) string {
+	if net.ParseIP(host) != nil && strings.Contains(host, ":") {
+		return "[" + host + "]"
+	}
+	return host
+}
+
+// ServerEndpoint is the result of parsing the single add-server field.
+type ServerEndpoint struct {
+	Address  string
+	Port     int
+	PanelURL string
+}
+
+// ParseServerEndpoint accepts the forms users paste from chat or a browser:
+// host, host:port, [IPv6]:port, tes3mp://host:port and https://host[:port].
+// A web URL is treated as the panel endpoint and keeps the default game port.
+func ParseServerEndpoint(raw string) (ServerEndpoint, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ServerEndpoint{}, errors.New("server address is empty")
+	}
+	if strings.ContainsAny(raw, "\r\n\x00") {
+		return ServerEndpoint{}, errors.New("server address contains a line break or NUL")
+	}
+	endpoint := ServerEndpoint{Port: DefaultServerPort}
+	body := raw
+
+	if index := strings.Index(raw, "://"); index >= 0 {
+		scheme := strings.ToLower(strings.TrimSpace(raw[:index]))
+		body = raw[index+3:]
+		switch scheme {
+		case "tes3mp":
+			// Game endpoint with an explicit protocol prefix.
+		case "http", "https":
+			parsed, err := url.Parse(raw)
+			if err != nil {
+				return ServerEndpoint{}, fmt.Errorf("server address: %w", err)
+			}
+			if parsed.User != nil {
+				return ServerEndpoint{}, errors.New("server address must not contain credentials")
+			}
+			if parsed.RawQuery != "" || parsed.Fragment != "" {
+				return ServerEndpoint{}, errors.New("server address must not contain a query or fragment")
+			}
+			if parsed.Path != "" && parsed.Path != "/" {
+				return ServerEndpoint{}, errors.New("server address must not contain a path")
+			}
+			if parsed.Hostname() == "" {
+				return ServerEndpoint{}, errors.New("server address has no host")
+			}
+			panel, err := NormalizePanelURL(scheme + "://" + parsed.Host)
+			if err != nil {
+				return ServerEndpoint{}, fmt.Errorf("server address: %w", err)
+			}
+			endpoint.Address = NormalizeAddress(parsed.Hostname())
+			endpoint.PanelURL = panel
+			if err := ValidateAddress(endpoint.Address); err != nil {
+				return ServerEndpoint{}, fmt.Errorf("server address: %w", err)
+			}
+			return endpoint, nil
+		default:
+			return ServerEndpoint{}, fmt.Errorf("unsupported server address scheme %q", scheme)
+		}
+	}
+
+	host, port, err := splitEndpoint(body)
+	if err != nil {
+		return ServerEndpoint{}, err
+	}
+	endpoint.Address = NormalizeAddress(host)
+	endpoint.Port = port
+	if err := ValidateAddress(endpoint.Address); err != nil {
+		return ServerEndpoint{}, fmt.Errorf("server address: %w", err)
+	}
+	server := Server{Address: endpoint.Address, Port: endpoint.Port}
+	endpoint.PanelURL = server.EffectivePanelURL()
+	return endpoint, nil
+}
+
+func splitEndpoint(body string) (string, int, error) {
+	if body == "" {
+		return "", 0, errors.New("server address has no host")
+	}
+	if strings.HasPrefix(body, "[") {
+		end := strings.IndexByte(body, ']')
+		if end < 0 {
+			return "", 0, errors.New("IPv6 address is missing its closing bracket")
+		}
+		host := body[1:end]
+		if net.ParseIP(host) == nil || !strings.Contains(host, ":") {
+			return "", 0, errors.New("brackets must contain an IPv6 address")
+		}
+		rest := body[end+1:]
+		switch {
+		case rest == "":
+			return host, DefaultServerPort, nil
+		case strings.HasPrefix(rest, ":"):
+			port, err := parseEndpointPort(rest[1:])
+			return host, port, err
+		default:
+			return "", 0, errors.New("unexpected text after the IPv6 address")
+		}
+	}
+	if strings.Count(body, ":") > 1 {
+		if net.ParseIP(body) == nil {
+			return "", 0, errors.New("invalid IPv6 address")
+		}
+		return body, DefaultServerPort, nil
+	}
+	if index := strings.LastIndexByte(body, ':'); index >= 0 {
+		host := body[:index]
+		if host == "" {
+			return "", 0, errors.New("server address has no host")
+		}
+		port, err := parseEndpointPort(body[index+1:])
+		return host, port, err
+	}
+	return body, DefaultServerPort, nil
+}
+
+func parseEndpointPort(raw string) (int, error) {
+	port, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || port < 1 || port > 65535 {
+		return 0, errors.New("server port must be a number between 1 and 65535")
+	}
+	return port, nil
+}
+
 // ValidateAddress accepts an IP address or a DNS host name. The port is a
 // separate field, so "host:port" is rejected instead of silently parsed.
 func ValidateAddress(address string) error {
+	address = NormalizeAddress(address)
 	if address == "" {
 		return errors.New("is empty")
 	}
