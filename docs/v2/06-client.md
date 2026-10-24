@@ -348,8 +348,8 @@ content=<mod.esp>   # порядок из requiredDataFiles.json
 - Файлы кладутся в `Fonts/` конфигурационного каталога OpenMW
   (`.../My Games/OpenMW/Fonts`), а не в Morrowind и не в
   `servers/<id>/data/`.
-- `openmw_font.xml` генерируется туда же, в конфигурационный каталог OpenMW,
-  с диапазонами Latin + Cyrillic.
+- `Fonts/openmw_font.xml` генерируется рядом с TTF в `Fonts/`, а не в корне
+  конфигурационного каталога OpenMW, с диапазонами Latin + Cyrillic.
 - В `openmw.cfg` добавляются/обновляются `fallback=Fonts_Font_0,...`,
   `Fonts_Font_1,...`, `Fonts_Font_2,...`.
 - Если скачать не удалось, клиент всё равно запускает игру со стандартным
@@ -359,7 +359,7 @@ content=<mod.esp>   # порядок из requiredDataFiles.json
 Реализация `internal/fonts` использует `NotoSans.ttf`, `NotoSerif.ttf` и
 `RobotoMono.ttf` из `google/fonts`; URL и SHA256 зашиты в
 `internal/fonts/fonts.go`. Скачивание идёт через общий `internal/download` в
-`cache/fonts/`, файлы устанавливаются атомарно, а `openmw_font.xml` и
+`cache/fonts/`, файлы устанавливаются атомарно, а `Fonts/openmw_font.xml` и
 `fallback=Fonts_Font_0..2` обновляются идемпотентно. Неудачный файл попадает в
 предупреждения, остальные шрифты и запуск продолжают работать.
 
@@ -471,7 +471,7 @@ internal/morrowind/      # поиск и проверка
 internal/tes3mp/         # установка, версия, пути
 internal/serverapi/      # HTTP-клиент панели
 internal/mods/           # скачивание, проверка, установка
-internal/fonts/          # шрифты и openmw_font.xml
+internal/fonts/          # шрифты и Fonts/openmw_font.xml
 internal/locale/         # локализация
 internal/launcher/       # Windows/Linux запуск, Proton
 internal/download/       # потоковое скачивание

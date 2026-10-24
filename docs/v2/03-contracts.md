@@ -664,7 +664,7 @@ readiness.
   завершающий LF; совпадение с API позволяет пропустить скачивание.
 - Набор шрифтов фиксирован в сборке: три TTF-файла с зашитыми HTTPS URL и
   SHA256. Клиент кладёт их в `Fonts/` каталога конфигурации OpenMW, генерирует
-  `openmw_font.xml` с Latin + Cyrillic и заменяет только строки
+  `Fonts/openmw_font.xml` с Latin + Cyrillic и заменяет только строки
   `fallback=Fonts_Font_0..2`; остальные строки `openmw.cfg` сохраняются.
   Ошибка загрузки шрифта — предупреждение, запуск не блокируется.
 - Локализация — overlay в `servers/<id>/localization`, не в Morrowind. Основной

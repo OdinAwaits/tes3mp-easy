@@ -172,7 +172,7 @@ func Install(ctx context.Context, options Options) (Result, error) {
 	}
 	if state.Installed {
 		options.report(Progress{Stage: StageVerifying})
-		xmlPath := filepath.Join(options.ConfigDir, XMLName)
+		xmlPath := filepath.Join(fontsDir, XMLName)
 		if err := atomicfile.WriteFile(xmlPath, fontXML(options.Assets), 0o600); err != nil {
 			return Result{}, fmt.Errorf("write %s: %w", XMLName, err)
 		}

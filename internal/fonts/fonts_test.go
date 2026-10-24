@@ -121,11 +121,18 @@ func TestInstallWritesFontsAndXML(t *testing.T) {
 			t.Fatalf("font %s = %q, %v", name, installed, err)
 		}
 	}
-	xmlPath := filepath.Join(configDir, XMLName)
+	xmlPath := filepath.Join(configDir, "Fonts", XMLName)
 	xml, err := os.ReadFile(xmlPath)
 	if err != nil {
 		t.Fatalf("read %s: %v", xmlPath, err)
 	}
+	if result.State.XMLPath != xmlPath {
+		t.Fatalf("XMLPath = %q, want %q", result.State.XMLPath, xmlPath)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, XMLName)); !os.IsNotExist(err) {
+		t.Fatalf("%s must not be written to the OpenMW config root", XMLName)
+	}
+
 	if !strings.Contains(string(xml), `value="Serif.ttf"`) {
 		t.Fatalf("generated XML does not mention custom assets:\n%s", xml)
 	}
@@ -176,7 +183,7 @@ func TestInstallWarnsWhenAFontFails(t *testing.T) {
 		!strings.Contains(result.Warnings[1], "Console.ttf is not installed") {
 		t.Fatalf("warnings = %q", result.Warnings)
 	}
-	if _, err := os.Stat(filepath.Join(configDir, XMLName)); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(configDir, "Fonts", XMLName)); !os.IsNotExist(err) {
 		t.Fatalf("%s was written for an incomplete font set", XMLName)
 	}
 }
