@@ -1,71 +1,100 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+{{template "head"}}
   <title>Моды — tes3mp-easy</title>
 </head>
 <body>
-  <main>
-    <h1>Моды</h1>
-    {{template "adminNav" .}}
+  {{template "adminNav" .}}
+
+  <main class="page">
+    <div class="page-head">
+      <p class="eyebrow">Контент</p>
+      <h1>Моды</h1>
+      <p class="lead">Загрузите архив модов, проверьте его и задеплойте на сервер.</p>
+    </div>
+
     {{if .Notice}}<p role="status">{{.Notice}}</p>{{end}}
     {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
 
-    <p>Текущий архив: {{if .Current}}<code>{{.Current}}</code>{{else}}нет{{end}}</p>
-    {{if .SHA256}}<p>sha256: <code>{{.SHA256}}</code></p>{{end}}
+    <div class="grid">
+      <section class="card">
+        <h2>Текущий архив</h2>
+        {{if .Current}}
+          <dl class="meta-list">
+            <dt>Архив</dt>
+            <dd><code>{{.Current}}</code></dd>
+            {{if .SHA256}}
+              <dt>sha256</dt>
+              <dd><code>{{.SHA256}}</code></dd>
+            {{end}}
+          </dl>
+        {{else}}
+          <p class="muted">Моды ещё не задеплоены.</p>
+        {{end}}
+      </section>
 
-    <section>
-      <h2>Загрузить архив</h2>
-      <p>Архив до 512 MiB. После импорта его нужно задеплоить отдельно.</p>
-      <form method="post" action="/admin/mods/upload" enctype="multipart/form-data">
-        <input type="hidden" name="_csrf" value="{{.CSRF}}">
-        <label for="mods-file">Архив .tar.gz</label>
-        <input id="mods-file" type="file" name="file" accept=".tar.gz,application/gzip" required>
-        <button type="submit">Загрузить</button>
-      </form>
+      <section class="card">
+        <h2>Загрузить архив</h2>
+        <p class="muted">Архив до 512 MiB. После импорта его нужно задеплоить отдельно.</p>
+        <form method="post" action="/admin/mods/upload" enctype="multipart/form-data">
+          <input type="hidden" name="_csrf" value="{{.CSRF}}">
+          <div class="field">
+            <label for="mods-file">Архив .tar.gz</label>
+            <input id="mods-file" type="file" name="file" accept=".tar.gz,application/gzip" required>
+          </div>
+          <button type="submit">Загрузить</button>
+        </form>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Архивы модов</h2>
+      {{if .Empty}}<p class="empty-state">Архивов модов пока нет.</p>{{end}}
+      {{if .Items}}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Архив</th>
+                <th>Размер</th>
+                <th>Дата (UTC)</th>
+                <th>Действие</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range .Items}}
+                <tr>
+                  <td>
+                    <code>{{.Name}}</code>
+                    {{if .Current}}<span class="tag">(текущий)</span>{{end}}
+                  </td>
+                  <td>{{.SizeLabel}}</td>
+                  <td><time datetime="{{.Mtime}}">{{.MtimeLabel}}</time></td>
+                  <td>
+                    <form method="post" action="/admin/mods/deploy">
+                      <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+                      <input type="hidden" name="archive" value="{{.Name}}">
+                      <button class="button button--small" type="submit">Deploy</button>
+                    </form>
+                  </td>
+                </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      {{end}}
     </section>
 
-    {{if .Empty}}<p>Архивов модов пока нет.</p>{{end}}
-    {{if .Items}}
-      <table>
-        <thead>
-          <tr>
-            <th>Архив</th>
-            <th>Размер</th>
-            <th>Дата (UTC)</th>
-            <th>Действие</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{range .Items}}
-            <tr>
-              <td>
-                <code>{{.Name}}</code>
-                {{if .Current}}<strong>(текущий)</strong>{{end}}
-              </td>
-              <td>{{.SizeLabel}}</td>
-              <td><time datetime="{{.Mtime}}">{{.MtimeLabel}}</time></td>
-              <td>
-                <form method="post" action="/admin/mods/deploy">
-                  <input type="hidden" name="_csrf" value="{{$.CSRF}}">
-                  <input type="hidden" name="archive" value="{{.Name}}">
-                  <button type="submit">Deploy</button>
-                </form>
-              </td>
-            </tr>
-          {{end}}
-        </tbody>
-      </table>
-    {{end}}
-
     {{if .Previous}}
-      <form method="post" action="/admin/mods/rollback">
-        <input type="hidden" name="_csrf" value="{{.CSRF}}">
+      <section class="card card--warning">
+        <h2>Откат</h2>
         <p>Откат задеплоит предыдущий архив <code>{{.Previous}}</code>. Если сервер запущен, он будет перезапущен.</p>
-        <button type="submit">Rollback</button>
-      </form>
+        <form method="post" action="/admin/mods/rollback">
+          <input type="hidden" name="_csrf" value="{{.CSRF}}">
+          <button class="button button--danger" type="submit">Rollback</button>
+        </form>
+      </section>
     {{end}}
   </main>
 </body>

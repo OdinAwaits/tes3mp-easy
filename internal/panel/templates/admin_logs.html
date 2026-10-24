@@ -1,26 +1,33 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+{{template "head"}}
   <title>Логи — tes3mp-easy</title>
   <script defer src="/static/admin.js"></script>
 </head>
 <body>
-  <main>
-    <h1>Логи</h1>
-    {{template "adminNav" .}}
+  {{template "adminNav" .}}
+
+  <main class="page">
+    <div class="page-head">
+      <p class="eyebrow">Диагностика</p>
+      <h1>Логи</h1>
+      <p class="lead">Последние строки журнала panel и игрового сервера обновляются автоматически.</p>
+    </div>
+
     {{if .Notice}}<p role="status">{{.Notice}}</p>{{end}}
     {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
 
-    <form method="get" action="/admin/logs">
-      <label for="tail">Последних строк</label>
-      <input id="tail" type="number" name="tail" min="1" max="2000" value="{{.Tail}}">
+    <form class="toolbar" method="get" action="/admin/logs">
+      <div class="field">
+        <label for="tail">Последних строк</label>
+        <input id="tail" type="number" name="tail" min="1" max="2000" value="{{.Tail}}">
+      </div>
       <button type="submit">Показать</button>
+      <button class="button button--ghost" type="button" id="log-toggle">Пауза</button>
     </form>
-    <button type="button" id="log-toggle">Пауза</button>
-    <pre id="admin-logs" data-tail="{{.Tail}}">{{range .Lines}}{{.}}
+
+    <pre class="log-panel" id="admin-logs" data-tail="{{.Tail}}">{{range .Lines}}{{.}}
 {{end}}</pre>
   </main>
 </body>

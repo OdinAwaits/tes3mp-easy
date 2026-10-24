@@ -91,6 +91,7 @@ func (h *panelHandler) doctorMutationError(ctx context.Context) (bool, string) {
 
 type adminPage struct {
 	CSRF            string
+	ActiveNav       string
 	Notice          string
 	Error           string
 	ErrorField      string
@@ -200,7 +201,7 @@ type adminStaffPlayer struct {
 }
 
 func adminPageFor(r *http.Request, session sessionState) adminPage {
-	page := adminPage{CSRF: session.CSRF}
+	page := adminPage{CSRF: session.CSRF, ActiveNav: adminActiveNav(r.URL.Path)}
 	switch r.URL.Query().Get("ok") {
 	case "server_started":
 		page.Notice = "Сервер запускается."
@@ -227,6 +228,27 @@ func adminPageFor(r *http.Request, session sessionState) adminPage {
 		r.URL.Query().Get("ok") == "staff_saved" ||
 		r.URL.Query().Get("ok") == "config_saved"
 	return page
+}
+
+func adminActiveNav(path string) string {
+	switch {
+	case path == "/admin" || path == "/admin/" || strings.HasPrefix(path, "/admin/server/"):
+		return "dashboard"
+	case path == "/admin/logs":
+		return "logs"
+	case path == "/admin/mods" || strings.HasPrefix(path, "/admin/mods/"):
+		return "mods"
+	case path == "/admin/state" || strings.HasPrefix(path, "/admin/state/"):
+		return "state"
+	case path == "/admin/config" || strings.HasPrefix(path, "/admin/config/"):
+		return "config"
+	case path == "/admin/staff" || strings.HasPrefix(path, "/admin/staff/"):
+		return "staff"
+	case path == "/admin/password":
+		return "password"
+	default:
+		return ""
+	}
 }
 
 // adminFailure returns an HTTP status and an operator-facing message. Ops

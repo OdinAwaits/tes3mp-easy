@@ -1,48 +1,57 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+{{template "head"}}
   <title>Staff — tes3mp-easy</title>
 </head>
 <body>
-  <main>
-    <h1>Staff</h1>
-    {{template "adminNav" .}}
+  {{template "adminNav" .}}
+
+  <main class="page">
+    <div class="page-head">
+      <p class="eyebrow">Игроки</p>
+      <h1>Staff</h1>
+      <p class="lead">Назначайте ранги игрокам. Изменение применится после перезапуска сервера.</p>
+    </div>
+
     {{if .Notice}}<p role="status">{{.Notice}}</p>{{end}}
     {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
-    {{if .RestartRequired}}<p role="status">Нужен перезапуск сервера, чтобы применить ранг.</p>{{end}}
+    {{if .RestartRequired}}<p class="notice">Нужен перезапуск сервера, чтобы применить ранг.</p>{{end}}
 
-    {{if .Empty}}<p>Игроков пока нет.</p>{{end}}
-    {{if .Players}}
-      <table>
-        <thead>
-          <tr>
-            <th>Игрок</th>
-            <th>Ранг</th>
-            <th>Изменить</th>
-          </tr>
-        </thead>
-        <tbody>
-          {{range .Players}}
-            <tr>
-              <td>{{.Name}}{{if .Error}} <strong>({{.Error}})</strong>{{end}}</td>
-              <td>{{.RankText}}</td>
-              <td>
-                <form method="post" action="{{.SetURL}}">
-                  <input type="hidden" name="_csrf" value="{{$.CSRF}}">
-                  <button type="submit" name="rank" value="0"{{if eq .Rank 0}} disabled{{end}}>0</button>
-                  <button type="submit" name="rank" value="1"{{if eq .Rank 1}} disabled{{end}}>1</button>
-                  <button type="submit" name="rank" value="2"{{if eq .Rank 2}} disabled{{end}}>2</button>
-                  <button type="submit" name="rank" value="3"{{if eq .Rank 3}} disabled{{end}}>3</button>
-                </form>
-              </td>
-            </tr>
-          {{end}}
-        </tbody>
-      </table>
-    {{end}}
+    <section class="card">
+      <h2>Игроки</h2>
+      {{if .Empty}}<p class="empty-state">Игроков пока нет.</p>{{end}}
+      {{if .Players}}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Игрок</th>
+                <th>Ранг</th>
+                <th>Изменить</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range .Players}}
+                <tr>
+                  <td>{{.Name}}{{if .Error}} <span class="tag tag--danger">{{.Error}}</span>{{end}}</td>
+                  <td>{{.RankText}}</td>
+                  <td>
+                    <form class="rank-actions" method="post" action="{{.SetURL}}">
+                      <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+                      <button type="submit" name="rank" value="0"{{if eq .Rank 0}} disabled{{end}}>0</button>
+                      <button type="submit" name="rank" value="1"{{if eq .Rank 1}} disabled{{end}}>1</button>
+                      <button type="submit" name="rank" value="2"{{if eq .Rank 2}} disabled{{end}}>2</button>
+                      <button type="submit" name="rank" value="3"{{if eq .Rank 3}} disabled{{end}}>3</button>
+                    </form>
+                  </td>
+                </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      {{end}}
+    </section>
   </main>
 </body>
 </html>

@@ -31,6 +31,27 @@ HTTP-контракты — в `03-contracts.md`; при расхождении 
 Почему так: панель — это несколько форм и таблиц. SPA и Node.js добавили бы
 сборку, зависимости и ещё один слой отладки без пользы для одного админа.
 
+### Интерфейс и тема
+
+Визуальный слой — один встроенный `internal/panel/static/panel.css`, который
+отдаётся same-origin по `/static/panel.css`. Ни CDN, ни Node.js, ни внешних
+шрифтов нет: системный sans-serif для текста, serif для заголовков, моноширинный
+для кода и логов.
+
+- Тёмная тема TES3MP с янтарным акцентом включена по умолчанию.
+- Светлая «пергаментная» тема включается через `prefers-color-scheme: light`;
+  отдельной JS-кнопки переключения нет.
+- Общий `<head>` вынесен в `templates/head.html`, навигация — в
+  `templates/admin_nav.html` и `templates/public_nav.html`.
+- Активный раздел админки подсвечивается через `aria-current="page"`;
+  значение вычисляется сервером по `r.URL.Path`, включая POST-маршруты.
+- Все стили — во внешнем CSS. Inline `style=` запрещён действующим CSP
+  (`default-src 'self'`), поэтому шаблоны не содержат inline-стилей.
+- Таблицы обёрнуты в `.table-wrap` и прокручиваются по горизонтали; при
+  ширине до `720px` карточки, формы и навигация перестраиваются в одну колонку.
+- Учитываются `:focus-visible` и `prefers-reduced-motion`; контраст текста
+  рассчитан на WCAG AA.
+
 ## 3. Процесс
 
 ```text
@@ -114,6 +135,9 @@ TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10
 Точные схемы `/api/v1/server`, `/api/v1/mods/current` и
 `/api/v1/mods/current/archive` — в `03-contracts.md` §7. Пароль сервера в
 публичном API отсутствует; клиент спрашивает его у игрока.
+
+Статические файлы `panel.css` и `admin.js` встроены через `embed` и отдаются
+по `/static/`; отдельных маршрутов и внешних CDN для них нет.
 
 Маршруты реализованы в `internal/panel`: `/healthz` и TLS-listener; auth
 (`/admin/login`, `/admin/logout`, `/admin/password`); публичные страницы и API
@@ -548,6 +572,7 @@ panel-data/
 | Что | Как |
 |---|---|
 | Роутинг и шаблоны | `httptest`, проверка статусов и ключевых элементов HTML |
+| CSS и тема | `/static/panel.css` отдаётся как `text/css`; полные шаблоны подключают общий `head`; нет `style=`; активный раздел помечен `aria-current` |
 | Логин | верный/неверный пароль, rate limit, cookie-флаги, CSRF |
 | Argon2id | memory 32768, threads 1, time 3, verify |
 | Публичные скачивания | path traversal, не-`.tar.gz`, отсутствующий файл, `Content-Disposition` |

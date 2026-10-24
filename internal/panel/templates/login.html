@@ -1,24 +1,31 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+{{template "head"}}
   <title>Вход — tes3mp-easy</title>
 </head>
-<body>
-  <main>
-    <h1>Вход в панель</h1>
-    {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
-    <form method="post" action="/admin/login">
-      <input type="hidden" name="_csrf" value="{{.CSRF}}">
-      <p>
-        <label for="password">Пароль</label><br>
-        <input id="password" type="password" name="password"
-               autocomplete="current-password" required autofocus>
-      </p>
-      <button type="submit">Войти</button>
-    </form>
+<body class="auth">
+  <main class="auth-shell">
+    <section class="card auth-card">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">◆</span>
+        <span>TES3MP <strong>Easy</strong></span>
+      </a>
+      <p class="eyebrow">Администрирование</p>
+      <h1>Вход в панель</h1>
+      <p class="muted">Введите пароль администратора сервера.</p>
+      {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
+      <form method="post" action="/admin/login">
+        <input type="hidden" name="_csrf" value="{{.CSRF}}">
+        <div class="field">
+          <label for="password">Пароль</label>
+          <input id="password" type="password" name="password"
+                 autocomplete="current-password" required autofocus>
+        </div>
+        <button type="submit">Войти</button>
+      </form>
+    </section>
+    <p class="auth-footer"><a href="/">← На главную</a></p>
   </main>
 </body>
 </html>

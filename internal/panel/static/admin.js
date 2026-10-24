@@ -21,6 +21,7 @@
         status.setAttribute("data-status", data.status || "unknown");
         if (health) {
           health.textContent = data.health || "unknown";
+          health.setAttribute("data-status", data.health || "unknown");
         }
         if (timer) {
           timer.textContent = data.backup_timer || "unknown";

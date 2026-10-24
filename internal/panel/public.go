@@ -67,6 +67,7 @@ type currentMods struct {
 
 type homePageData struct {
 	Name        string
+	ActiveNav   string
 	Address     string
 	Port        int
 	Status      string
@@ -101,6 +102,7 @@ type backupGroup struct {
 
 type backupsPageData struct {
 	Type      string
+	ActiveNav string
 	TypeLabel string
 	Current   string
 	Groups    []backupGroup
@@ -210,6 +212,7 @@ func (h *panelHandler) handleHome(w http.ResponseWriter, r *http.Request) {
 	name, port := h.serverNamePort()
 	data := homePageData{
 		Name:        "TES3MP",
+		ActiveNav:   "home",
 		Address:     publicAddress(h.cfg, r),
 		Port:        port,
 		Status:      "unknown",
@@ -361,6 +364,9 @@ func (h *panelHandler) handleBackups(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *panelHandler) renderBackups(w http.ResponseWriter, status int, data backupsPageData) {
+	if data.ActiveNav == "" {
+		data.ActiveNav = "backups"
+	}
 	if data.ModsURL == "" {
 		data.ModsURL = "/backups?type=mods"
 	}

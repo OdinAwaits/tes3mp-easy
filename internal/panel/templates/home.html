@@ -1,41 +1,57 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+{{template "head"}}
   <title>{{.Name}} — tes3mp-easy</title>
 </head>
 <body>
-  <main>
-    <h1>{{.Name}}</h1>
-    <p>
-      Адрес: <code>{{.Address}}</code>, порт: <code>{{.Port}}</code>.
-    </p>
-    <p>
-      Статус сервера: <code>{{.Status}}</code> — {{.StatusLabel}}.
-    </p>
-    {{if .StatusError}}<p role="alert">{{.StatusError}}</p>{{end}}
+  {{template "publicNav" .}}
 
-    <h2>Текущие моды</h2>
-    {{if .Mods}}
-      <dl>
-        <dt>Архив</dt>
-        <dd><code>{{.Mods.Name}}</code></dd>
-        <dt>Размер</dt>
-        <dd>{{.Mods.SizeLabel}} ({{.Mods.Size}} байт)</dd>
-        <dt>sha256</dt>
-        <dd><code>{{.Mods.SHA256}}</code></dd>
-      </dl>
-      <p><a href="{{.Mods.DownloadURL}}">Скачать текущий архив модов</a></p>
-    {{else}}
-      <p role="alert">{{.ModsError}}</p>
-    {{end}}
+  <main class="page">
+    <section class="hero">
+      <p class="eyebrow">Сервер Morrowind</p>
+      <h1>{{.Name}}</h1>
+      <p class="lead hero-meta">
+        <span>Подключение: <code>{{.Address}}</code></span>
+        <span>порт <code>{{.Port}}</code></span>
+      </p>
+      <p class="status-line">
+        <span class="badge" data-status="{{.Status}}">{{.StatusLabel}}</span>
+        <span class="muted">Статус сервера</span>
+      </p>
+      {{if .StatusError}}<p role="alert">{{.StatusError}}</p>{{end}}
+    </section>
 
-    <nav>
-      <a href="/backups">Бэкапы</a>
-      <a href="/admin/login">Вход в панель</a>
-    </nav>
+    <div class="grid">
+      <section class="card">
+        <h2>Подключение</h2>
+        <dl class="meta-list">
+          <dt>Адрес</dt>
+          <dd><code>{{.Address}}</code></dd>
+          <dt>Порт</dt>
+          <dd><code>{{.Port}}</code></dd>
+          <dt>Статус</dt>
+          <dd><span class="badge" data-status="{{.Status}}">{{.StatusLabel}}</span></dd>
+        </dl>
+      </section>
+
+      <section class="card">
+        <h2>Текущие моды</h2>
+        {{if .Mods}}
+          <dl class="meta-list">
+            <dt>Архив</dt>
+            <dd><code>{{.Mods.Name}}</code></dd>
+            <dt>Размер</dt>
+            <dd>{{.Mods.SizeLabel}} ({{.Mods.Size}} байт)</dd>
+            <dt>sha256</dt>
+            <dd><code>{{.Mods.SHA256}}</code></dd>
+          </dl>
+          <p><a class="button button--secondary" href="{{.Mods.DownloadURL}}">Скачать текущий архив модов</a></p>
+        {{else}}
+          <p role="alert">{{.ModsError}}</p>
+        {{end}}
+      </section>
+    </div>
   </main>
 </body>
 </html>

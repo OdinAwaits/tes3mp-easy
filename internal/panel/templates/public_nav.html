@@ -1,0 +1,12 @@
+{{define "publicNav"}}
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-mark" aria-hidden="true">◆</span>
+    <span>TES3MP <strong>Easy</strong></span>
+  </a>
+  <nav class="nav" aria-label="Публичные страницы">
+    <a href="/backups"{{if eq .ActiveNav "backups"}} aria-current="page"{{end}}>Бэкапы</a>
+    <a class="nav-cta" href="/admin/login"{{if eq .ActiveNav "login"}} aria-current="page"{{end}}>Вход в панель</a>
+  </nav>
+</header>
+{{end}}

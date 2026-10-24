@@ -164,6 +164,9 @@ HTTPS-порту с fixture-парой в режиме `files`. Проверяю
   path traversal, не-`.tar.gz`, отсутствующий файл, `Content-Disposition`;
 - админские маршруты: дашборд, статус, логи, таймер, `doctor`, моды, state,
   конфиги, staff, upload;
+- встроенный UI: `/static/panel.css` отдаётся с `text/css`, все полные шаблоны
+  подключают общий `head`, в шаблонах нет inline `style=`, активный раздел
+  админки помечен `aria-current="page"` (включая POST-пути);
 - ops-клиент: фиксированный argv через sudo, разбор ровно одного
   JSON-объекта, `OpsError`, маппинг exit code → HTTP, таймауты, лимиты
   stdout/stderr.

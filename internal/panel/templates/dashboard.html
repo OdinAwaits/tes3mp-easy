@@ -1,78 +1,88 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+{{template "head"}}
   <title>Панель — tes3mp-easy</title>
   <script defer src="/static/admin.js"></script>
 </head>
 <body>
-  <main>
-    <h1>{{.ServerName}}</h1>
-    <p>Панель запущена. Управление сервером доступно ниже.</p>
-    {{template "adminNav" .}}
+  {{template "adminNav" .}}
+
+  <main class="page">
+    <div class="page-head">
+      <p class="eyebrow">Панель управления</p>
+      <h1>{{.ServerName}}</h1>
+      <p class="lead">Панель запущена. Управление сервером доступно ниже.</p>
+    </div>
 
     {{if .Notice}}<p role="status">{{.Notice}}</p>{{end}}
     {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
-    {{if .RestartRequired}}<p role="status">Нужен перезапуск сервера, чтобы применить изменения.</p>{{end}}
+    {{if .RestartRequired}}<p class="notice">Нужен перезапуск сервера, чтобы применить изменения.</p>{{end}}
 
-    <section>
-      <h2>Сервер</h2>
-      {{if .StatusError}}<p role="alert">{{.StatusError}}</p>{{end}}
-      <p>Статус: <strong id="server-status" data-status="{{.Status}}">{{.StatusLabel}}</strong></p>
-      <p>Health: <span id="server-health">{{.Health}}</span></p>
-      {{if .StartedAt}}<p>Запущен: <time datetime="{{.StartedAt}}">{{.StartedAt}}</time></p>{{end}}
-      <div>
-        <form method="post" action="/admin/server/start">
+    <div class="grid">
+      <section class="card">
+        <h2>Сервер</h2>
+        {{if .StatusError}}<p role="alert">{{.StatusError}}</p>{{end}}
+        <p class="status-line">
+          Статус:
+          <span class="badge" id="server-status" data-status="{{.Status}}">{{.StatusLabel}}</span>
+        </p>
+        <p>Health: <span class="badge" id="server-health" data-status="{{.Health}}">{{.Health}}</span></p>
+        {{if .StartedAt}}<p class="muted">Запущен: <time datetime="{{.StartedAt}}">{{.StartedAt}}</time></p>{{end}}
+        <div class="actions">
+          <form method="post" action="/admin/server/start">
+            <input type="hidden" name="_csrf" value="{{.CSRF}}">
+            <button type="submit">Запустить</button>
+          </form>
+          <form method="post" action="/admin/server/stop">
+            <input type="hidden" name="_csrf" value="{{.CSRF}}">
+            <button class="button button--danger" type="submit">Остановить</button>
+          </form>
+          <form method="post" action="/admin/server/restart">
+            <input type="hidden" name="_csrf" value="{{.CSRF}}">
+            <button class="button button--ghost" type="submit">Перезапустить</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Автобэкапы</h2>
+        <p>Таймер: <strong id="backup-timer">{{.Timer}}</strong></p>
+        {{if .TimerError}}<p role="alert">{{.TimerError}}</p>{{end}}
+        <form method="post" action="/admin/state/create">
           <input type="hidden" name="_csrf" value="{{.CSRF}}">
-          <button type="submit">Запустить</button>
+          <button type="submit">Создать бэкап сейчас</button>
         </form>
-        <form method="post" action="/admin/server/stop">
-          <input type="hidden" name="_csrf" value="{{.CSRF}}">
-          <button type="submit">Остановить</button>
-        </form>
-        <form method="post" action="/admin/server/restart">
-          <input type="hidden" name="_csrf" value="{{.CSRF}}">
-          <button type="submit">Перезапустить</button>
-        </form>
-      </div>
-    </section>
+      </section>
 
-    <section>
-      <h2>Автобэкапы</h2>
-      <p>Таймер: <strong id="backup-timer">{{.Timer}}</strong></p>
-      {{if .TimerError}}<p role="alert">{{.TimerError}}</p>{{end}}
-      <form method="post" action="/admin/state/create">
-        <input type="hidden" name="_csrf" value="{{.CSRF}}">
-        <button type="submit">Создать бэкап сейчас</button>
-      </form>
-    </section>
+      <section class="card">
+        <h2>Диагностика</h2>
+        {{if .DoctorError}}<p role="alert">{{.DoctorError}}</p>{{end}}
+        {{if .Doctor}}
+          <p>Итог: <span class="badge" data-status="{{.Doctor.Status}}">{{.Doctor.Status}}</span></p>
+          <ul class="check-list">
+            {{range .Doctor.Checks}}
+              <li>
+                <span class="badge" data-status="{{.Status}}">{{.Status}}</span>
+                <strong>{{.Name}}</strong>{{if .Message}} <span class="muted">— {{.Message}}</span>{{end}}
+              </li>
+            {{end}}
+          </ul>
+        {{else if not .DoctorError}}
+          <p class="muted">Диагностика недоступна.</p>
+        {{end}}
+      </section>
 
-    <section>
-      <h2>Диагностика</h2>
-      {{if .DoctorError}}<p role="alert">{{.DoctorError}}</p>{{end}}
-      {{if .Doctor}}
-        <p>Итог: <strong>{{.Doctor.Status}}</strong></p>
-        <ul>
-          {{range .Doctor.Checks}}
-            <li>{{.Name}}: <strong>{{.Status}}</strong>{{if .Message}} — {{.Message}}{{end}}</li>
-          {{end}}
-        </ul>
-      {{else if not .DoctorError}}
-        <p>Диагностика недоступна.</p>
-      {{end}}
-    </section>
-
-    <section>
-      <h2>Текущие моды</h2>
-      {{if .Mods}}
-        <p><code>{{.Mods.Name}}</code> ({{.Mods.SizeLabel}})</p>
-        <p>sha256: <code>{{.Mods.SHA256}}</code></p>
-      {{else}}
-        <p>{{.ModsError}}</p>
-      {{end}}
-    </section>
+      <section class="card">
+        <h2>Текущие моды</h2>
+        {{if .Mods}}
+          <p><code>{{.Mods.Name}}</code> ({{.Mods.SizeLabel}})</p>
+          <p class="muted">sha256: <code>{{.Mods.SHA256}}</code></p>
+        {{else}}
+          <p role="alert">{{.ModsError}}</p>
+        {{end}}
+      </section>
+    </div>
   </main>
 </body>
 </html>

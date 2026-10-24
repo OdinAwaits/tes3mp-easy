@@ -1,66 +1,79 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+{{template "head"}}
   <title>Бэкапы — tes3mp-easy</title>
 </head>
 <body>
-  <main>
-    <h1>Публичные бэкапы</h1>
-    <nav>
-      <a href="{{.StateURL}}">Состояние</a>
-      <a href="{{.ModsURL}}">Моды</a>
+  {{template "publicNav" .}}
+
+  <main class="page">
+    <div class="page-head">
+      <p class="eyebrow">Публичный архив</p>
+      <h1>Публичные бэкапы</h1>
+      <p class="lead">Скачайте резервные копии состояния мира и архив модов.</p>
+    </div>
+
+    <nav class="tabs" aria-label="Тип бэкапа">
+      <a href="{{.StateURL}}"{{if eq .Type "state"}} aria-current="page"{{end}}>Состояние</a>
+      <a href="{{.ModsURL}}"{{if eq .Type "mods"}} aria-current="page"{{end}}>Моды</a>
       <a href="/">Главная</a>
     </nav>
 
-    <h2>{{.TypeLabel}}</h2>
     {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
-    {{if .Current}}<p>Текущий архив: <code>{{.Current}}</code></p>{{end}}
+    <div class="page-subhead">
+      <h2>{{.TypeLabel}}</h2>
+      {{if .Current}}<p class="muted">Текущий архив: <code>{{.Current}}</code></p>{{end}}
+    </div>
 
     {{if .Empty}}
-      <p>Архивов пока нет.</p>
+      <p class="empty-state">Архивов пока нет.</p>
     {{end}}
 
-    {{range .Groups}}
-      <section>
-        <h3>{{.Label}}</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Архив</th>
-              <th>Размер</th>
-              <th>Дата (UTC)</th>
-              <th>Скачать</th>
-            </tr>
-          </thead>
-          <tbody>
-            {{range .Items}}
-              <tr>
-                <td>
-                  <code>{{.Name}}</code>
-                  {{if .Current}}<strong>(текущий)</strong>{{end}}
-                </td>
-                <td>{{.SizeLabel}}</td>
-                <td><time datetime="{{.Mtime}}">{{.MtimeLabel}}</time></td>
-                <td><a href="{{.DownloadURL}}">Скачать</a></td>
-              </tr>
-            {{end}}
-          </tbody>
-        </table>
-      </section>
-    {{end}}
+    <div class="stack">
+      {{range .Groups}}
+        <section class="card">
+          <h3>{{.Label}}</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Архив</th>
+                  <th>Размер</th>
+                  <th>Дата (UTC)</th>
+                  <th>Скачать</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Items}}
+                  <tr>
+                    <td>
+                      <code>{{.Name}}</code>
+                      {{if .Current}}<span class="tag">(текущий)</span>{{end}}
+                    </td>
+                    <td>{{.SizeLabel}}</td>
+                    <td><time datetime="{{.Mtime}}">{{.MtimeLabel}}</time></td>
+                    <td><a class="button button--secondary button--small" href="{{.DownloadURL}}">Скачать</a></td>
+                  </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {{end}}
+    </div>
 
-    <form method="get" action="/backups">
+    <form class="toolbar" method="get" action="/backups">
       <input type="hidden" name="type" value="{{.Type}}">
-      <label for="limit">Записей на страницу</label>
-      <input id="limit" type="number" name="limit" min="1" max="500"
-             value="{{.Limit}}">
+      <div class="field">
+        <label for="limit">Записей на страницу</label>
+        <input id="limit" type="number" name="limit" min="1" max="500"
+               value="{{.Limit}}">
+      </div>
       <button type="submit">Показать</button>
     </form>
 
-    {{if .NextURL}}<p><a href="{{.NextURL}}">Показать более старые</a></p>{{end}}
+    {{if .NextURL}}<p class="pagination"><a class="button button--secondary" href="{{.NextURL}}">Показать более старые</a></p>{{end}}
   </main>
 </body>
 </html>

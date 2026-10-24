@@ -1,15 +1,21 @@
 {{define "adminNav"}}
-<nav>
-  <a href="/admin">Обзор</a>
-  <a href="/admin/logs">Логи</a>
-  <a href="/admin/mods">Моды</a>
-  <a href="/admin/state">Состояние</a>
-  <a href="/admin/config">Настройки</a>
-  <a href="/admin/staff">Staff</a>
-  <a href="/admin/password">Пароль</a>
-</nav>
-<form method="post" action="/admin/logout">
-  <input type="hidden" name="_csrf" value="{{.CSRF}}">
-  <button type="submit">Выйти</button>
-</form>
+<header class="topbar">
+  <a class="brand" href="/admin">
+    <span class="brand-mark" aria-hidden="true">◆</span>
+    <span>TES3MP <strong>Easy</strong></span>
+  </a>
+  <nav class="nav" aria-label="Разделы панели">
+    <a href="/admin"{{if eq .ActiveNav "dashboard"}} aria-current="page"{{end}}>Обзор</a>
+    <a href="/admin/logs"{{if eq .ActiveNav "logs"}} aria-current="page"{{end}}>Логи</a>
+    <a href="/admin/mods"{{if eq .ActiveNav "mods"}} aria-current="page"{{end}}>Моды</a>
+    <a href="/admin/state"{{if eq .ActiveNav "state"}} aria-current="page"{{end}}>Состояние</a>
+    <a href="/admin/config"{{if eq .ActiveNav "config"}} aria-current="page"{{end}}>Настройки</a>
+    <a href="/admin/staff"{{if eq .ActiveNav "staff"}} aria-current="page"{{end}}>Staff</a>
+    <a href="/admin/password"{{if eq .ActiveNav "password"}} aria-current="page"{{end}}>Пароль</a>
+  </nav>
+  <form class="logout" method="post" action="/admin/logout">
+    <input type="hidden" name="_csrf" value="{{.CSRF}}">
+    <button class="button button--ghost button--small" type="submit">Выйти</button>
+  </form>
+</header>
 {{end}}
