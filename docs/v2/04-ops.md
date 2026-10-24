@@ -1,12 +1,8 @@
 # 04 — Серверный операционный слой (ops)
 
-**Статус:** draft.
-
-**Обновлено:** 2026-10-23.
-
 Документ описывает команды и алгоритмы ops. Нормативные JSON-формы, коды
 выхода, форматы архивов и retention — в `03-contracts.md`; при расхождении
-прав 03. Ops заменяет ad-hoc bash-скрипты.
+прав 03. Ops — единственный административный писатель.
 
 ## 1. Зачем отдельный CLI
 
@@ -150,7 +146,7 @@ internal/
 Результат — список проверок в форме `doctor` из `03-contracts.md` §4; схема
 здесь не дублируется.
 
-Порядок в `data.checks` стабилен; O04 дополняет O03 в конец списка:
+Порядок в `data.checks` стабилен. Проверки:
 
 - `root` — `--root` существует, является каталогом и читается; есть
   `configs/`, `players/`, `world/`, `mods/`, `backups/`, `panel-data/`;
@@ -202,8 +198,8 @@ internal/
 - `journald-config` — drop-in содержит `SystemMaxUse=100M` и
   `RuntimeMaxUse=32M`.
 
-Новые проверки, кроме `budgets` и пустого `archives`, при нарушении дают
-`error`; `warn` не меняет код выхода. `doctor` не берёт lock и не изменяет
+Проверки `budgets` и пустого `archives` при нарушении дают `warn`; остальные —
+`error`. `warn` не меняет код выхода. `doctor` не берёт lock и не изменяет
 data root.
 
 `doctor` возвращает 0, если нет `error` (предупреждения допустимы), и 10
@@ -437,7 +433,7 @@ Ops не доверяет ни имени, ни содержимому.
 - если `current.txt` указывает на другой архив, чем текущий
   `backups/mods/current.txt`, — `archive_invalid` и подмены нет;
 - если `current.txt` отсутствует или в старом формате — `archive_invalid`;
-- `--force` в MVP нет: лучше остановиться, чем смешать файлы с разными CRC.
+- `--force` нет: лучше остановиться, чем смешать файлы с разными CRC.
 
 ### `staff set`
 
@@ -469,7 +465,7 @@ tes3mp-easy-ops staff set --player "John Doe" --rank 2
 
 `config get` отдаёт структурированный объект известных ключей, а не сырой
 текст. Для `config` поддерживаются простые значения: string, number, boolean.
-Таблицы и списки в MVP read-only.
+Таблицы и списки read-only.
 
 `config set`:
 
@@ -522,7 +518,8 @@ tes3mp-easy-ops staff set --player "John Doe" --rank 2
 
 ### Baseline от bootstrap
 
-I04 ставит проверенный TES3MP 0.8.1 в `/opt/tes3mp-easy/tes3mp` под `root:root`.
+Bootstrap ставит проверенный TES3MP 0.8.1 в `/opt/tes3mp-easy/tes3mp` под
+`root:root`.
 Версия, URL и sha256 фиксированы в `server/tes3mp-version.txt`; bootstrap
 скачивает архив, сверяет sha256 до распаковки и атомарно переименовывает staging
 в runtime-каталог. Маркер `.tes3mp-install-info` пишется внутри staging до rename
@@ -537,10 +534,10 @@ I04 ставит проверенный TES3MP 0.8.1 в `/opt/tes3mp-easy/tes3mp
 bootstrap создаёт `mods-init-*`, пишет канонический `current.txt` и при повторном
 запуске принимает только канонический `current.txt` с существующим архивом и
 совпадающим sha256. Поэтому ops всегда стартует с валидным текущим mod-паком,
-даже до первого пользовательского импорта. I05 затем включает и запускает
-`tes3mp.service` и `tes3mp-easy-backup.timer`; до появления ops в M2 тики
-таймера пропускаются по `ConditionPathExists`, а панель остаётся неактивной до
-M4.
+даже до первого пользовательского импорта. Затем bootstrap включает и запускает
+`tes3mp.service` и `tes3mp-easy-backup.timer`. Пока бинарник ops не установлен,
+тики таймера пропускаются по `ConditionPathExists`; панель включается отдельно
+после установки её бинарника.
 
 ### Потоковая обработка
 

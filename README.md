@@ -3,71 +3,78 @@
 Инструменты для развёртывания **TES3MP**-сервера на маленьком VPS и
 подключения к нему игроков без ручной возни с SSH и bash-меню.
 
-## Статус
+## Что в проекте
 
-В `master` — прежняя реализация. В ветке `v2` проектируется нативная версия:
+- `tes3mp-easy-ops` — CLI для всех административных операций: статус, логи,
+  запуск/остановка, бэкапы, моды, state, конфиги, staff.
+- `tes3mp-easy-panel` — HTTPS-панель с публичными бэкапами, текущим архивом
+  модов и админскими формами. Панель вызывает только `ops`.
+- `tes3mp-easy-client` — кроссплатформенный клиент на Go + Fyne для Windows
+  10/11 и Linux/Proton.
+- `bootstrap.sh` — подготовка Debian/Ubuntu: пользователи, каталоги, sudoers,
+  rootctl, systemd-юниты, journald, sysctl, runtime TES3MP 0.8.1, базовые
+  конфиги и `mods-init-*`.
+- systemd-юниты для игры, панели и бэкапа каждые 5 минут.
 
-- ops-CLI и панель на Go, TES3MP runtime — готовый бинарник, запуск через
-  systemd;
-- HTTPS-панель с публичными бэкапами и текущим архивом модов;
-- ops-CLI как единственный административный писатель;
-- автобэкапы каждые 5 минут, месячная история навсегда;
-- кроссплатформенный клиент на Go + Fyne для Windows 10/11 и Linux/Proton;
-- без внешнего прокси, отдельного ACME-клиента и лишних слоёв;
-- бюджет: 1 vCPU, 512–640 MiB RAM, 7 GiB NVMe.
+Сервер работает нативно на systemd, без контейнерного рантайма и внешнего
+прокси. Административные изменения в данных вносит только `ops`.
 
 ## Документация
 
-Актуальная целевая документация — [`docs/v2/README.md`](docs/v2/README.md).
+Актуальная архитектурная документация — [`docs/v2/README.md`](docs/v2/README.md).
 Начинать чтение нужно с него, а не с корневого README.
 
 | Документ | О чём |
 |---|---|
-| [01-goals](docs/v2/01-goals.md) | зачем, для кого, MVP и non-goals |
+| [01-goals](docs/v2/01-goals.md) | зачем, для кого, границы, критерии приёмки |
 | [02-architecture](docs/v2/02-architecture.md) | systemd, пользователи, данные, бюджет |
 | [03-contracts](docs/v2/03-contracts.md) | JSON, коды, архивы, retention, HTTP API |
 | [04-ops](docs/v2/04-ops.md) | команды и алгоритмы ops |
 | [05-panel](docs/v2/05-panel.md) | auth, TLS, публичные бэкапы, админка |
 | [06-client](docs/v2/06-client.md) | мастер, моды, шрифты, запуск |
-| [07-testing](docs/v2/07-testing.md) | тесты, фикстуры, retention, acceptance |
+| [07-testing](docs/v2/07-testing.md) | тесты, фикстуры, retention, приёмка |
 | [08-runbook](docs/v2/08-runbook.md) | установка, восстановление, аварии |
-| [09-plan](docs/v2/09-plan.md) | декомпозиция, статусы задач, acceptance |
 
 `docs/reference/` — справки по TES3MP 0.8.1, они не описывают нашу
-архитектуру. Старые гайды удалены; актуальна только документация v2.
+архитектуру.
 
-## Ветки
+## Требования
 
-```text
-master
-└── v2
-    ├── v2-docs
-    ├── v2-infra
-    ├── v2-ops
-    ├── v2-panel
-    └── v2-client
+- Go 1.24+;
+- для сборки клиента на Linux — `libgl1-mesa-dev` и `xorg-dev`;
+- для сервера — Debian 12+/Ubuntu 24.04+ x86_64 с systemd.
+
+## Сборка
+
+```bash
+go build -trimpath -o /tmp/tes3mp-easy-ops ./cmd/tes3mp-easy-ops
+go build -trimpath -o /tmp/tes3mp-easy-panel ./cmd/tes3mp-easy-panel
+go build -trimpath -o /tmp/tes3mp-easy-client ./cmd/tes3mp-easy-client
 ```
 
-`master` не трогаем до milestone. Работа идёт в `v2` и ветках подсистем;
-подробности — в [`docs/v2/README.md`](docs/v2/README.md) §4.
+Серверные бинарники можно собрать на другой машине:
 
-## Разработка
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+  go build -trimpath -o tes3mp-easy-ops ./cmd/tes3mp-easy-ops
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+  go build -trimpath -o tes3mp-easy-panel ./cmd/tes3mp-easy-panel
+```
 
-Требуется Go 1.24+. В `v2` есть `tes3mp-easy-ops`; для панели добавлен
-`tes3mp-easy-panel` с HTTP/HTTPS listener-ами, TLS и graceful lifecycle.
-Команды панели появляются по мере реализации P02–P06.
+Релизного пакета и установщика бинарников нет: `bootstrap.sh` готовит
+хост и runtime, а `ops` и панель устанавливаются в `/opt/tes3mp-easy/bin`
+вручную. Подробная последовательность — в
+[`docs/v2/08-runbook.md`](docs/v2/08-runbook.md) §2.
 
-Перед реализацией любой подсистемы сначала обновляется
-`docs/v2/03-contracts.md`, затем фикстуры и тесты.
+## Проверка
 
 ```bash
 bash -n bootstrap.sh
+sh -n rootctl/tes3mp-easy-rootctl
 go test ./...
+go test -race ./...
 go vet ./...
-go build -o /tmp/tes3mp-easy-ops ./cmd/tes3mp-easy-ops
-go build -o /tmp/tes3mp-easy-panel ./cmd/tes3mp-easy-panel
-go run ./cmd/tes3mp-easy-ops --help
-go run ./cmd/tes3mp-easy-panel --help
+test -z "$(gofmt -l .)"
 ```
 
 Preflight bootstrap можно проверить без изменений на диске:
