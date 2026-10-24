@@ -90,7 +90,7 @@ type DeployResult struct {
 }
 
 // ConfigSnapshot is the full decoded `data` object of `ops config get`. The
-// public Ops interface exposes only Values through ConfigGet; P05 can use this
+// public Ops interface exposes only Values through ConfigGet so the admin
 // method when it also needs read_only keys.
 type ConfigSnapshot struct {
 	File     string         `json:"file"`

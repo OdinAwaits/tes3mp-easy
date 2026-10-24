@@ -14,12 +14,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Saagilat/tes3mp-easy/internal/version"
+)
+
+var (
+	// Version is reported by the panel binary and the public API.
+	Version = version.Version
 )
 
 const (
-	// Version is reported by the panel binary and the public API.
-	Version = "0.1.0"
-
 	// DefaultRoot is the production data root.
 	DefaultRoot = "/tes3mp-easy"
 

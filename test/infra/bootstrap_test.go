@@ -546,6 +546,17 @@ func (h *fakeHost) removeCommand(name string) {
 	_ = os.Remove(filepath.Join(h.bin, name))
 }
 
+func (h *fakeHost) writeServerBinaries() string {
+	h.t.Helper()
+	dir := filepath.Join(h.dir, "release-bin")
+	for _, name := range []string{"tes3mp-easy-ops", "tes3mp-easy-panel"} {
+		h.writeFile(filepath.Join(dir, name),
+			"#!/bin/sh\nprintf '"+name+"\\n'\n", 0o755)
+	}
+	h.env["TES3MP_EASY_BIN_SOURCE"] = dir
+	return dir
+}
+
 func (h *fakeHost) removeSystemdRunDir() {
 	_ = os.RemoveAll(h.systemdRun)
 }
@@ -632,14 +643,14 @@ func TestBootstrapPreflightPassesAndInstalls(t *testing.T) {
 		"swap: 512 MiB total",
 		"disk: 7168 MiB free of 8192 MiB",
 		"Preflight passed: 7 checks, 0 warning(s), 0 error(s).",
-		"Installing the I02 privilege model",
+		"Installing the privilege model",
 		"group: tes3mp created",
 		"group: tes3mp-panel created",
 		"user: tes3mp created",
 		"user: tes3mp-panel created",
 		"rootctl: " + filepath.Join(h.installRoot, "usr/local/libexec/tes3mp-easy-rootctl"),
 		"sudoers: " + filepath.Join(h.installRoot, "etc/sudoers.d/tes3mp-easy"),
-		"Installing the I03 systemd units, journald limits and sysctl",
+		"Installing systemd units, journald limits and sysctl",
 		"unit syntax: tes3mp.service",
 		"unit syntax: tes3mp-panel.service",
 		"unit syntax: tes3mp-easy-backup.service",
@@ -657,12 +668,12 @@ func TestBootstrapPreflightPassesAndInstalls(t *testing.T) {
 		"mods: created mods-init-",
 		"canonical backups/mods/current.txt",
 		"runtime link: " + filepath.Join(h.installRoot, "opt/tes3mp-easy/tes3mp/server/data/player"),
-		"Bootstrap stage I04 complete: TES3MP 0.8.1",
-		"Starting the I05 TES3MP service and backup timer",
+		"Runtime ready: TES3MP 0.8.1",
+		"Starting TES3MP services",
 		"service: tes3mp.service enabled for boot",
 		"service: tes3mp.service active",
 		"timer: tes3mp-easy-backup.timer enabled and active",
-		"Bootstrap stage I05 complete: TES3MP 0.8.1 is running.",
+		"Bootstrap complete: TES3MP 0.8.1 is running.",
 	} {
 		assertContains(t, got.stdout, want)
 	}
@@ -911,6 +922,76 @@ func assertSymlink(t *testing.T, path, want string) {
 	}
 	if got != want {
 		t.Fatalf("%s -> %s, want %s", path, got, want)
+	}
+}
+
+func TestBootstrapInstallsReleaseBinariesAndStartsPanel(t *testing.T) {
+	h := newFakeHost(t)
+	binDir := h.writeServerBinaries()
+
+	got := h.run(t)
+
+	assertExit(t, got, 0)
+	if got.stderr != "" {
+		t.Fatalf("stderr = %q, want empty", got.stderr)
+	}
+	for _, want := range []string{
+		"Installing server binaries from " + binDir,
+		"binary: " + filepath.Join(h.installRoot, "opt/tes3mp-easy/bin/tes3mp-easy-ops"),
+		"binary: " + filepath.Join(h.installRoot, "opt/tes3mp-easy/bin/tes3mp-easy-panel"),
+		"service: tes3mp-panel.service enabled for boot",
+		"service: tes3mp-panel.service active",
+		"panel: open https://<IP>/",
+	} {
+		assertContains(t, got.stdout, want)
+	}
+
+	for _, name := range []string{"tes3mp-easy-ops", "tes3mp-easy-panel"} {
+		path := filepath.Join(h.installRoot, "opt/tes3mp-easy/bin", name)
+		assertPathMode(t, path, 0o755, false)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		assertContains(t, string(data), name)
+	}
+	assertInstalledFile(t, h, "opt/tes3mp-easy/bin/tes3mp-easy-ops")
+	assertInstalledFile(t, h, "opt/tes3mp-easy/bin/tes3mp-easy-panel")
+
+	logData, err := os.ReadFile(h.commandLog)
+	if err != nil {
+		t.Fatalf("read command log: %v", err)
+	}
+	logText := string(logData)
+	for _, want := range []string{
+		"systemctl args=--no-ask-password start tes3mp.service",
+		"systemctl args=--no-ask-password enable --now tes3mp-easy-backup.timer",
+		"systemctl args=--no-ask-password enable tes3mp-panel.service",
+		"systemctl args=--no-ask-password restart tes3mp-panel.service",
+		"systemctl args=--no-ask-password is-active --quiet tes3mp-panel.service",
+	} {
+		assertContains(t, logText, want)
+	}
+	if strings.Index(logText, "start tes3mp.service") >
+		strings.Index(logText, "restart tes3mp-panel.service") {
+		t.Fatalf("panel started before the game service:\n%s", logText)
+	}
+}
+
+func TestBootstrapRejectsIncompleteReleaseBinaries(t *testing.T) {
+	h := newFakeHost(t)
+	binDir := h.writeServerBinaries()
+	if err := os.Remove(filepath.Join(binDir, "tes3mp-easy-panel")); err != nil {
+		t.Fatalf("remove panel binary: %v", err)
+	}
+
+	got := h.run(t)
+
+	assertExit(t, got, 1)
+	assertContains(t, got.stderr, "release binary not found or not a regular file")
+	ops := filepath.Join(h.installRoot, "opt/tes3mp-easy/bin/tes3mp-easy-ops")
+	if _, err := os.Stat(ops); err == nil {
+		t.Fatalf("bootstrap installed a partial binary set at %s", ops)
 	}
 }
 

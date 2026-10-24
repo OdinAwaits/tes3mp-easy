@@ -1,7 +1,8 @@
 // Command tes3mp-easy-client is the desktop client for players.
 //
-// K01 provides the Fyne shell, local configuration and server profiles. Game
-// discovery, downloads and launch scenarios are added by later client steps.
+// The client owns the Fyne shell, local configuration, setup wizard, mods and
+// launcher. Filesystem and HTTP scenarios live in internal/app so they can be
+// tested without a display.
 package main
 
 import (

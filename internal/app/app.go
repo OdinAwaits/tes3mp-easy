@@ -1,8 +1,7 @@
 // Package app contains client scenarios that do not depend on Fyne.
 //
-// K01 exposes configuration and profile operations for the shell. Later client
-// steps add setup, update and launch scenarios here; the UI only calls this
-// package and renders the result.
+// It exposes configuration, setup, download and launch operations for the
+// shell; the UI only calls this package and renders the result.
 package app
 
 import (
@@ -24,15 +23,18 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/mods"
 	"github.com/Saagilat/tes3mp-easy/internal/serverapi"
 	"github.com/Saagilat/tes3mp-easy/internal/tes3mp"
+	"github.com/Saagilat/tes3mp-easy/internal/version"
 )
 
 // TailLines is the number of recent client log lines shown by the UI.
 const TailLines = 300
 
-const (
+var (
 	// Version is the client version shown in About and the CLI.
-	Version = "0.1.0"
+	Version = version.Version
+)
 
+const (
 	// TES3MPVersion is the bundled TES3MP version expected by the client.
 	TES3MPVersion = tes3mp.Version
 

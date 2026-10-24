@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the v prefix (for example 0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          version="${{ inputs.version }}"
+          if [ -z "$version" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "invalid release version: $version" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+  server:
+    needs: metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build server release
+        run: |
+          go run ./cmd/tes3mp-easy-pack \
+            --version "${{ needs.metadata.outputs.version }}" \
+            --output dist
+          cd dist
+          sha256sum -c ./*.sha256
+      - name: Verify reproducibility
+        run: |
+          cp dist/*.tar.gz /tmp/first.tar.gz
+          rm -rf /tmp/release-second
+          go run ./cmd/tes3mp-easy-pack \
+            --version "${{ needs.metadata.outputs.version }}" \
+            --output /tmp/release-second
+          cmp /tmp/first.tar.gz /tmp/release-second/*.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-release
+          path: dist/*
+          if-no-files-found: error
+
+  client-linux:
+    needs: metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install Fyne build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+      - name: Build client
+        run: |
+          version="${{ needs.metadata.outputs.version }}"
+          mkdir -p dist
+          CGO_ENABLED=1 go build -trimpath -buildvcs=false \
+            -ldflags "-s -w -X github.com/Saagilat/tes3mp-easy/internal/version.Version=${version}" \
+            -o dist/tes3mp-easy-client ./cmd/tes3mp-easy-client
+          cd dist
+          tar -czf "tes3mp-easy-client-${version}-linux-amd64.tar.gz" tes3mp-easy-client
+          sha256sum "tes3mp-easy-client-${version}-linux-amd64.tar.gz" > \
+            "tes3mp-easy-client-${version}-linux-amd64.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-linux
+          path: dist/*
+          if-no-files-found: error
+
+  client-windows:
+    needs: metadata
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Ensure MinGW
+        shell: pwsh
+        run: |
+          if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
+            choco install mingw -y --no-progress
+            $gcc = Get-ChildItem -Path "$env:ProgramData\chocolatey\lib" `
+              -Filter gcc.exe -Recurse -ErrorAction SilentlyContinue |
+              Select-Object -First 1
+            if (-not $gcc) {
+              throw "MinGW gcc was not found"
+            }
+            $env:Path = "$($gcc.DirectoryName);$env:Path"
+            "$($gcc.DirectoryName)" >> $env:GITHUB_PATH
+            "CC=$($gcc.FullName)" >> $env:GITHUB_ENV
+          }
+      - name: Build client
+        shell: pwsh
+        run: |
+          $version = "${{ needs.metadata.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $ldflags = "-s -w -H=windowsgui -extldflags=-static -X github.com/Saagilat/tes3mp-easy/internal/version.Version=$version"
+          $env:CGO_ENABLED = "1"
+          go build -trimpath -buildvcs=false -ldflags $ldflags `
+            -o dist/tes3mp-easy-client.exe ./cmd/tes3mp-easy-client
+          $zip = "tes3mp-easy-client-$version-windows-amd64.zip"
+          Compress-Archive -Path dist/tes3mp-easy-client.exe `
+            -DestinationPath "dist/$zip" -Force
+          $hash = (Get-FileHash "dist/$zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $zip" | Set-Content "dist/$zip.sha256" -NoNewline
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-windows
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [metadata, server, client-linux, client-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: server-release
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: client-linux
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: client-windows
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

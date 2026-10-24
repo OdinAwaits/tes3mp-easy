@@ -2,13 +2,9 @@
 #
 # bootstrap.sh — TES3MP Easy v2 bootstrap.
 #
-# I01 implements the read-only preflight. I02 adds the privilege model: system
-# users and groups, the data directory layout, sudoers and the fixed rootctl
-# helper. I03 installs the systemd units, the backup timer, journald limits and
-# the sysctl drop-in. I04 installs the verified TES3MP runtime, symlinks its
-# mutable paths into the data root and seeds the canonical base mods archive.
-# I05 enables and starts the game service and backup timer; the panel unit stays
-# inactive until its binary ships in M4.
+# The script validates the host, creates the privilege model and data layout,
+# installs systemd units and the verified TES3MP runtime, installs the ops/panel
+# binaries when they are shipped next to this script, and starts the services.
 #
 # Usage: sudo ./bootstrap.sh [--check] [--root PATH]
 #
@@ -47,6 +43,10 @@ SYSTEMD_SOURCE_DIR="${TES3MP_EASY_SYSTEMD_SOURCE:-$SCRIPT_DIR/systemd}"
 JOURNALD_SOURCE="${TES3MP_EASY_JOURNALD_SOURCE:-$SYSTEMD_SOURCE_DIR/journald.conf.d/tes3mp-easy.conf}"
 SYSCTL_SOURCE="${TES3MP_EASY_SYSCTL_SOURCE:-$SCRIPT_DIR/sysctl.d/99-tes3mp-easy.conf}"
 TES3MP_VERSION_FILE="${TES3MP_EASY_VERSION_FILE:-$SCRIPT_DIR/server/tes3mp-version.txt}"
+# A release archive ships bin/ next to bootstrap.sh. Source checkouts do not,
+# so this directory is optional: source installs keep the documented manual
+# binary step, while the release archive installs both binaries in one run.
+BIN_SOURCE_DIR="${TES3MP_EASY_BIN_SOURCE:-$SCRIPT_DIR/bin}"
 
 readonly -a UNIT_FILES=(
     tes3mp.service
@@ -141,9 +141,9 @@ usage() {
     cat <<EOF
 Usage: sudo ./bootstrap.sh [OPTIONS]
 
-TES3MP Easy v2 bootstrap. The current stage installs the host layout and the
-TES3MP runtime, then starts the game service. It can be run repeatedly: existing
-users, groups, directories and a running server are kept.
+TES3MP Easy v2 bootstrap. It installs the host layout, the TES3MP runtime and,
+when bin/ is shipped in a release archive, both server binaries. It can be run
+repeatedly: existing users, groups, directories and a running server are kept.
 
 Options:
   --check        run only the preflight and change nothing
@@ -154,21 +154,25 @@ Checks:
   root privileges, Debian 12+/Ubuntu 24.04+, x86_64, systemd,
   RAM, swap and free disk.
 
-Installs (I02):
+Installs the privilege model:
   users and groups tes3mp/tes3mp-panel, the data directory layout,
   /usr/local/libexec/tes3mp-easy-rootctl and /etc/sudoers.d/tes3mp-easy.
 
-Installs (I03):
+Installs the systemd layout:
   tes3mp.service, tes3mp-panel.service, tes3mp-easy-backup.service,
   tes3mp-easy-backup.timer, the journald drop-in and vm.swappiness=10.
 
-Installs (I04):
+Installs the runtime:
   the pinned TES3MP runtime under /opt/tes3mp-easy/tes3mp, base configs in
   configs/, base mods-init-* and backups/mods/current.txt.
 
-Starts (I05):
-  tes3mp.service and tes3mp-easy-backup.timer. The panel unit is installed but
-  remains inactive until its binary is installed in M4.
+Installs server binaries:
+  tes3mp-easy-ops and tes3mp-easy-panel from bin/ next to this script, when
+  present. Source checkouts without bin/ install them manually.
+
+Starts:
+  tes3mp.service, tes3mp-easy-backup.timer and, after a release install, the
+  panel service.
 
 Exit status:
   0  all checks and installation steps passed (warnings are allowed)
@@ -1085,11 +1089,11 @@ install_privilege_layout() {
 
 # verify_unit_source UNIT
 #
-# This stage runs before I04 installs the TES3MP runtime and before I05 ships
-# the ops/panel binaries. systemd-analyze treats an absent ExecStart target as
-# a verification failure, so before the target exists only that exact
-# diagnostic is accepted. Syntax errors, unknown directives and dependency
-# problems still abort the install.
+# This stage runs before the TES3MP runtime and the optional ops/panel binaries
+# are installed. systemd-analyze treats an absent ExecStart target as a
+# verification failure, so before the target exists only that exact diagnostic
+# is accepted. Syntax errors, unknown directives and dependency problems still
+# abort the install.
 verify_unit_source() {
     local unit=$1
     local unit_name=${unit##*/}
@@ -1113,7 +1117,7 @@ verify_unit_source() {
         [[ -z $line ]] && continue
         if [[ -n $expected_exec &&
             $line == *": Command $expected_exec is not executable: No such file or directory" ]]; then
-            # Expected until the matching binary is installed by I04 or I05.
+            # Expected until the matching binary is installed.
             # A typo in ExecStart, a wrong binary for this unit or any other
             # diagnostic still fails verification.
             saw_pending=1
@@ -1179,7 +1183,7 @@ install_systemd_layout() {
     pass "systemd: daemon reloaded"
 
     # journald reads drop-ins at process start; restart it now so the caps are
-    # active before the first service start in I05.
+    # active before the first service start.
     run_install systemctl --no-ask-password restart systemd-journald.service
     pass "journald: restarted with the TES3MP Easy limits"
 
@@ -1187,11 +1191,37 @@ install_systemd_layout() {
     pass "sysctl: applied $SYSCTL_CONFIG_DEST"
 }
 
+install_server_binaries() {
+    if [[ ! -d $BIN_SOURCE_DIR ]]; then
+        info "binaries: $BIN_SOURCE_DIR not present; source installs must install ops and the panel manually"
+        return
+    fi
+
+    local name src dest staged
+    for name in tes3mp-easy-ops tes3mp-easy-panel; do
+        src="$BIN_SOURCE_DIR/$name"
+        if [[ ! -f $src || -L $src ]]; then
+            abort_install "release binary not found or not a regular file: $src"
+        fi
+    done
+
+    ensure_dir "$OPT_ROOT/bin" root root 0755
+    for name in tes3mp-easy-ops tes3mp-easy-panel; do
+        src="$BIN_SOURCE_DIR/$name"
+        dest="$OPT_ROOT/bin/$name"
+        staged="$dest.new.$$"
+        rm -f -- "$staged"
+        run_install install -m 0755 -o root -g root "$src" "$staged"
+        run_install mv -f -T -- "$staged" "$dest"
+        pass "binary: $dest"
+    done
+}
+
 start_runtime_services() {
-    # The panel binary does not exist until M4. Enabling it here would install a
-    # unit that enters a restart loop, so only the game and the timer are
-    # started. `enable` makes both survive a reboot; `start` is deliberately not
-    # `restart`, so rerunning the installer never disconnects players.
+    # `enable` makes the game and timer survive a reboot; `start` is
+    # deliberately not `restart`, so rerunning the installer never disconnects
+    # players. The panel is restarted only when its binary is installed, which
+    # both starts it after a release install and loads a replaced binary.
     run_install systemctl --no-ask-password enable tes3mp.service
     pass "service: tes3mp.service enabled for boot"
 
@@ -1207,7 +1237,21 @@ start_runtime_services() {
     fi
     pass "timer: tes3mp-easy-backup.timer enabled and active"
 
-    info "panel: tes3mp-panel.service remains inactive until its binary ships in M4"
+    if [[ -x "$OPT_ROOT/bin/tes3mp-easy-panel" ]]; then
+        run_install systemctl --no-ask-password enable tes3mp-panel.service
+        pass "service: tes3mp-panel.service enabled for boot"
+        # restart loads a replaced binary on upgrades and starts the panel on
+        # the first release install. The game service keeps using start above,
+        # so rerunning bootstrap does not disconnect players.
+        run_install systemctl --no-ask-password restart tes3mp-panel.service
+        if ! systemctl --no-ask-password is-active --quiet tes3mp-panel.service; then
+            abort_install "tes3mp-panel.service is not active; inspect journalctl -u tes3mp-panel.service"
+        fi
+        pass "service: tes3mp-panel.service active"
+        info "panel: open https://<IP>/ and read $DATA_ROOT/panel-data/initial-password.txt"
+    else
+        info "panel: tes3mp-panel.service remains inactive until /opt/tes3mp-easy/bin/tes3mp-easy-panel is installed"
+    fi
 }
 
 main() {
@@ -1234,11 +1278,13 @@ main() {
         return
     fi
 
-    info "Installing the I02 privilege model"
+    info "Installing the privilege model"
     install_privilege_layout
-    info "Installing the I03 systemd units, journald limits and sysctl"
+    info "Installing systemd units, journald limits and sysctl"
     install_systemd_layout
-    info "Installing the I04 TES3MP runtime and base data"
+    info "Installing server binaries from $BIN_SOURCE_DIR"
+    install_server_binaries
+    info "Installing the TES3MP runtime and base data"
     load_tes3mp_release
     install_runtime_packages
     install_tes3mp_runtime
@@ -1247,10 +1293,10 @@ main() {
     install_base_mods_archive
     wire_runtime_to_data_root
     install_runtime_home
-    info "Bootstrap stage I04 complete: TES3MP $TES3MP_VERSION, configs and base mods-init archive are in place."
-    info "Starting the I05 TES3MP service and backup timer"
+    info "Runtime ready: TES3MP $TES3MP_VERSION, configs and base mods-init archive are in place."
+    info "Starting TES3MP services"
     start_runtime_services
-    info "Bootstrap stage I05 complete: TES3MP $TES3MP_VERSION is running."
+    info "Bootstrap complete: TES3MP $TES3MP_VERSION is running."
 }
 
 main "$@"
