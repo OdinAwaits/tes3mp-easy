@@ -52,14 +52,16 @@ func TestRunRejectsInvalidConfig(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "bad http address", args: []string{"--http-addr", "bad"}, want: "http address"},
 		{name: "bad https address", args: []string{"--https-addr", "bad"}, want: "https address"},
-		{name: "bad public address", args: []string{"--public-address", "https://x"}, want: "URL scheme"},
-		{name: "same address", args: []string{"--http-addr", "127.0.0.1:8080", "--https-addr", "127.0.0.1:8080"}, want: "must differ"},
+		{name: "bad public address", args: []string{"--tls-mode", "files", "--public-address", "https://x"}, want: "URL scheme"},
+		{name: "acme requires public ip", args: []string{"--https-addr", "127.0.0.1:8443"}, want: "required in acme mode"},
+		{name: "acme rejects private ip", args: []string{"--public-address", "127.0.0.1"}, want: "public unicast"},
 		{name: "empty root", args: []string{"--root="}, want: "--root"},
 		{name: "empty data dir", args: []string{"--data-dir="}, want: "--data-dir"},
-		{name: "empty http", args: []string{"--http-addr="}, want: "--http-addr"},
 		{name: "empty https", args: []string{"--https-addr="}, want: "--https-addr"},
+		{name: "empty tls mode", args: []string{"--tls-mode="}, want: "--tls-mode"},
+		{name: "empty acme directory", args: []string{"--acme-directory="}, want: "--acme-directory"},
+		{name: "empty acme profile", args: []string{"--acme-profile="}, want: "--acme-profile"},
 		{name: "empty cert", args: []string{"--tls-cert="}, want: "--tls-cert"},
 		{name: "empty key", args: []string{"--tls-key="}, want: "--tls-key"},
 		{name: "unexpected argument", args: []string{"status"}, want: "unexpected argument"},
@@ -88,6 +90,12 @@ func TestParseConfigFlagsOverrideEnv(t *testing.T) {
 			return "/env/root"
 		case panel.EnvPublicAddress:
 			return "198.51.100.1"
+		case panel.EnvTLSMode:
+			return panel.TLSModeFiles
+		case panel.EnvACMEDirectory:
+			return "https://env.example/directory"
+		case panel.EnvACMEProfile:
+			return "env-profile"
 		default:
 			return ""
 		}
@@ -95,6 +103,10 @@ func TestParseConfigFlagsOverrideEnv(t *testing.T) {
 	cfg, version, err := parseConfig([]string{
 		"--root", "/flag/root",
 		"--https-addr", "127.0.0.1:8443",
+		"--tls-mode", panel.TLSModeACME,
+		"--acme-directory", "https://flag.example/directory",
+		"--acme-email", "admin@example.test",
+		"--acme-profile", "shortlived",
 		"--version",
 	}, env)
 	if err != nil {
@@ -109,21 +121,31 @@ func TestParseConfigFlagsOverrideEnv(t *testing.T) {
 	if cfg.DataDir != filepath.Join("/flag/root", "panel-data") {
 		t.Fatalf("DataDir = %q", cfg.DataDir)
 	}
-	if cfg.HTTPSAddr != "127.0.0.1:8443" || cfg.HTTPAddr != panel.DefaultHTTPAddr {
-		t.Fatalf("addresses = %q, %q", cfg.HTTPAddr, cfg.HTTPSAddr)
+	if cfg.HTTPSAddr != "127.0.0.1:8443" {
+		t.Fatalf("HTTPSAddr = %q", cfg.HTTPSAddr)
 	}
 	if cfg.PublicAddress != "198.51.100.1" {
 		t.Fatalf("PublicAddress = %q", cfg.PublicAddress)
 	}
+	if cfg.TLSMode != panel.TLSModeACME ||
+		cfg.ACMEDirectory != "https://flag.example/directory" ||
+		cfg.ACMEEmail != "admin@example.test" ||
+		cfg.ACMEProfile != "shortlived" {
+		t.Fatalf("ACME config = %#v", cfg)
+	}
 }
 
-func TestRunContextGeneratesTLSForEnvRoot(t *testing.T) {
+func TestRunContextCancelledBeforeACMEIssuanceCreatesNoCertificate(t *testing.T) {
 	root := t.TempDir()
 	env := func(key string) string {
-		if key == panel.EnvRoot {
+		switch key {
+		case panel.EnvRoot:
 			return root
+		case panel.EnvPublicAddress:
+			return "203.0.113.10"
+		default:
+			return ""
 		}
-		return ""
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -134,12 +156,12 @@ func TestRunContextGeneratesTLSForEnvRoot(t *testing.T) {
 	}
 	for _, name := range []string{"cert.pem", "key.pem"} {
 		path := filepath.Join(root, "panel-data", "tls", name)
-		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("stat %s: %v", path, err)
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("%s exists after a cancelled start: %v", path, err)
 		}
 	}
-	if !strings.Contains(stderr.String(), "generated self-signed certificate") {
-		t.Fatalf("stderr = %q, want self-signed warning", stderr.String())
+	if strings.Contains(stderr.String(), "self-signed") {
+		t.Fatalf("stderr = %q, want no self-signed certificate", stderr.String())
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())

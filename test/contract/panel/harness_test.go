@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/Saagilat/tes3mp-easy/test/fixtures"
 )
 
 const panelTimeout = 20 * time.Second
@@ -33,7 +35,6 @@ type panelProc struct {
 	modePath string
 	logFile  *os.File
 
-	httpAddr  string
 	httpsAddr string
 
 	done     chan struct{}
@@ -56,8 +57,8 @@ type panelSession struct {
 	PasswordResponse panelResponse
 }
 
-// startPanel launches the real panel binary on ephemeral loopback ports and
-// waits until both listeners report their addresses in the log.
+// startPanel launches the real panel binary on an ephemeral loopback port and
+// waits until the HTTPS listener reports its address in the log.
 func startPanel(t *testing.T, extraEnv map[string]string) *panelProc {
 	t.Helper()
 
@@ -72,12 +73,16 @@ func startPanel(t *testing.T, extraEnv map[string]string) *panelProc {
 		t.Fatalf("create panel log: %v", err)
 	}
 
-	httpPort, httpsPort := reservePorts(t)
+	httpsPort := reservePort(t)
+	certFile, keyFile := fixtures.WriteSelfSigned(t,
+		filepath.Join(root, "panel-data"), "127.0.0.1")
 	cmd := exec.Command(testPanelBinary,
 		"--root", root,
-		"--http-addr", fmt.Sprintf("127.0.0.1:%d", httpPort),
 		"--https-addr", fmt.Sprintf("127.0.0.1:%d", httpsPort),
-		"--public-address", fmt.Sprintf("127.0.0.1:%d", httpsPort),
+		"--public-address", "127.0.0.1",
+		"--tls-mode", "files",
+		"--tls-cert", certFile,
+		"--tls-key", keyFile,
 	)
 	cmd.Env = panelEnvironment(map[string]string{
 		"FAKE_OPS_LOG":       filepath.Join(t.TempDir(), "ops.log"),
@@ -107,7 +112,7 @@ func startPanel(t *testing.T, extraEnv map[string]string) *panelProc {
 		_ = p.logFile.Close()
 	})
 
-	p.httpAddr, p.httpsAddr = p.waitForListeners(t)
+	p.httpsAddr = p.waitForListeners(t)
 	return p
 }
 
@@ -139,46 +144,33 @@ func panelEnvironment(extra ...map[string]string) []string {
 	return env
 }
 
-func reservePorts(t *testing.T) (int, int) {
+func reservePort(t *testing.T) int {
 	t.Helper()
 
-	first, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("reserve HTTP port: %v", err)
-	}
-	second, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		_ = first.Close()
 		t.Fatalf("reserve HTTPS port: %v", err)
 	}
-	httpPort := first.Addr().(*net.TCPAddr).Port
-	httpsPort := second.Addr().(*net.TCPAddr).Port
-	if err := first.Close(); err != nil {
-		_ = second.Close()
-		t.Fatalf("release HTTP port: %v", err)
-	}
-	if err := second.Close(); err != nil {
+	port := ln.Addr().(*net.TCPAddr).Port
+	if err := ln.Close(); err != nil {
 		t.Fatalf("release HTTPS port: %v", err)
 	}
-	return httpPort, httpsPort
+	return port
 }
 
-func (p *panelProc) waitForListeners(t *testing.T) (httpAddr, httpsAddr string) {
+func (p *panelProc) waitForListeners(t *testing.T) (httpsAddr string) {
 	t.Helper()
 
 	deadline := time.Now().Add(panelTimeout)
 	for {
 		data, _ := os.ReadFile(p.logPath)
 		for _, match := range listenPattern.FindAllStringSubmatch(string(data), -1) {
-			switch match[1] {
-			case "http":
-				httpAddr = match[2]
-			case "https":
+			if match[1] == "https" {
 				httpsAddr = match[2]
 			}
 		}
-		if httpAddr != "" && httpsAddr != "" {
-			return httpAddr, httpsAddr
+		if httpsAddr != "" {
+			return httpsAddr
 		}
 		select {
 		case <-p.done:
@@ -218,10 +210,6 @@ func (p *panelProc) opsLogPath() string {
 	return ""
 }
 
-func (p *panelProc) httpURL(path string) string {
-	return "http://" + p.httpAddr + path
-}
-
 func (p *panelProc) httpsURL(path string) string {
 	return "https://" + p.httpsAddr + path
 }
@@ -232,7 +220,7 @@ func (p *panelProc) newClient() *http.Client {
 		panic(err)
 	}
 	transport := &http.Transport{
-		// The panel creates a self-signed certificate on first start.
+		// The harness uses a fixture certificate, not a public CA.
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402
 	}
 	return &http.Client{

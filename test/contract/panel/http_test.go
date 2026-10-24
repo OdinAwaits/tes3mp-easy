@@ -12,37 +12,8 @@ func TestPanelHTTPContract(t *testing.T) {
 
 	client := p.newClient()
 
-	// The HTTP listener only redirects to HTTPS; paths that ACME uses are
-	// reserved and must never inherit the catch-all redirect.
-	resp := doHTTP(t, client, http.MethodGet, p.httpURL("/healthz?probe=1"), "panel.example")
-	if resp.Status != http.StatusPermanentRedirect {
-		t.Fatalf("HTTP /healthz = %d, want %d", resp.Status, http.StatusPermanentRedirect)
-	}
-	wantLocation := "https://127.0.0.1" + httpsPort(t, p) + "/healthz?probe=1"
-	if got := resp.Header.Get("Location"); got != wantLocation {
-		t.Fatalf("HTTP /healthz Location = %q, want %q", got, wantLocation)
-	}
-
-	resp = doHTTP(t, client, http.MethodGet, p.httpURL("/"), "panel.example")
-	if resp.Status != http.StatusPermanentRedirect {
-		t.Fatalf("HTTP / = %d, want %d", resp.Status, http.StatusPermanentRedirect)
-	}
-	if got := resp.Header.Get("Location"); got !=
-		"https://127.0.0.1"+httpsPort(t, p)+"/" {
-		t.Fatalf("HTTP / Location = %q", got)
-	}
-
-	resp = doHTTP(t, client, http.MethodGet,
-		p.httpURL("/.well-known/acme-challenge/token"), "panel.example")
-	if resp.Status != http.StatusNotFound {
-		t.Fatalf("ACME path = %d, want %d", resp.Status, http.StatusNotFound)
-	}
-	if location := resp.Header.Get("Location"); location != "" {
-		t.Fatalf("ACME path Location = %q, want empty", location)
-	}
-
 	// HTTPS serves health, public pages, and the read-only public API.
-	resp = doHTTP(t, client, http.MethodGet, p.httpsURL("/healthz"), "127.0.0.1")
+	resp := doHTTP(t, client, http.MethodGet, p.httpsURL("/healthz"), "127.0.0.1")
 	requireStatus(t, resp, http.StatusOK, "HTTPS /healthz")
 	requireBody(t, resp, "ok\n")
 	requireSecurityHeaders(t, resp)
@@ -132,21 +103,13 @@ func doHTTP(t *testing.T, client *http.Client, method, url, host string) panelRe
 	}
 }
 
-func httpsPort(t *testing.T, p *panelProc) string {
-	t.Helper()
-	_, port, ok := strings.Cut(p.httpsAddr, ":")
-	if !ok {
-		t.Fatalf("HTTPS address %q has no port", p.httpsAddr)
-	}
-	return ":" + port
-}
-
 func requireSecurityHeaders(t *testing.T, resp panelResponse) {
 	t.Helper()
 	want := map[string]string{
-		"X-Content-Type-Options": "nosniff",
-		"X-Frame-Options":        "DENY",
-		"Referrer-Policy":        "same-origin",
+		"X-Content-Type-Options":    "nosniff",
+		"X-Frame-Options":           "DENY",
+		"Referrer-Policy":           "same-origin",
+		"Strict-Transport-Security": "max-age=31536000",
 	}
 	for name, value := range want {
 		if got := resp.Header.Get(name); got != value {

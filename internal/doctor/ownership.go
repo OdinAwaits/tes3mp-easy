@@ -36,6 +36,7 @@ var ownershipDirs = []ownershipDir{
 	{rel: "backups", user: ownerTes3MP, group: ownerTes3MP, mode: 0o750},
 	{rel: "panel-data", user: ownerTes3MPPanel, group: ownerTes3MP, mode: 0o750},
 	{rel: "panel-data/tls", user: ownerTes3MPPanel, group: ownerTes3MP, mode: 0o700},
+	{rel: "panel-data/acme", user: ownerTes3MPPanel, group: ownerTes3MP, mode: 0o700},
 	{rel: "panel-data/uploads", user: ownerTes3MPPanel, group: ownerTes3MP, mode: 0o2770},
 	{rel: ".locks", user: ownerTes3MP, group: ownerTes3MP, mode: 0o700},
 	{rel: ".staging", user: ownerTes3MP, group: ownerTes3MP, mode: 0o700},

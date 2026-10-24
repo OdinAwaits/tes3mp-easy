@@ -68,6 +68,8 @@ JOURNALD_CONFIG_DIR=$(prefixed /etc/systemd/journald.conf.d)
 JOURNALD_CONFIG_DEST="$JOURNALD_CONFIG_DIR/tes3mp-easy.conf"
 SYSCTL_CONFIG_DIR=$(prefixed /etc/sysctl.d)
 SYSCTL_CONFIG_DEST="$SYSCTL_CONFIG_DIR/99-tes3mp-easy.conf"
+PANEL_ENV_DIR=$(prefixed /etc/tes3mp-easy)
+PANEL_ENV_DEST="$PANEL_ENV_DIR/panel.env"
 OPT_ROOT=$(prefixed /opt/tes3mp-easy)
 TES3MP_RUNTIME_DIR="$OPT_ROOT/tes3mp"
 TES3MP_INSTALL_INFO="$TES3MP_RUNTIME_DIR/.tes3mp-install-info"
@@ -98,6 +100,7 @@ MEMINFO="$PROC_ROOT/meminfo"
 SYSTEMD_RUN_DIR="${TES3MP_EASY_SYSTEMD_RUN_DIR:-/run/systemd/system}"
 
 DATA_ROOT="$DEFAULT_ROOT"
+PUBLIC_ADDRESS="${TES3MP_EASY_PUBLIC_ADDRESS:-}"
 CHECK_ONLY=false
 
 passes=0
@@ -148,6 +151,9 @@ repeatedly: existing users, groups, directories and a running server are kept.
 Options:
   --check        run only the preflight and change nothing
   --root PATH    data root to validate and create (default $DEFAULT_ROOT)
+  --public-address IP
+                 public IPv4 for the Let's Encrypt certificate; auto-detected
+                 when omitted (env TES3MP_EASY_PUBLIC_ADDRESS)
   -h, --help     show this help and exit
 
 Checks:
@@ -170,9 +176,16 @@ Installs server binaries:
   tes3mp-easy-ops and tes3mp-easy-panel from bin/ next to this script, when
   present. Source checkouts without bin/ install them manually.
 
+Configures panel TLS:
+  writes /etc/tes3mp-easy/panel.env with TES3MP_PANEL_TLS_MODE=acme and the
+  public IP. The panel obtains a six-day Let's Encrypt IP certificate through
+  HTTP-01, so TCP port 80 must be reachable from the internet while the panel
+  issues or renews a certificate. The panel itself listens only on port 443.
+
 Starts:
   tes3mp.service, tes3mp-easy-backup.timer and, after a release install, the
-  panel service.
+  panel service. It waits for the panel's HTTPS health check, so an ACME
+  failure stops the bootstrap with a journalctl hint.
 
 Exit status:
   0  all checks and installation steps passed (warnings are allowed)
@@ -199,6 +212,19 @@ parse_args() {
                 ;;
             --root=*)
                 DATA_ROOT=${1#*=}
+                shift
+                ;;
+            --public-address)
+                if (($# < 2)) || [[ -z $2 ]]; then
+                    printf 'bootstrap: --public-address requires an IPv4 address\n' >&2
+                    usage >&2
+                    exit 2
+                fi
+                PUBLIC_ADDRESS=$2
+                shift 2
+                ;;
+            --public-address=*)
+                PUBLIC_ADDRESS=${1#*=}
                 shift
                 ;;
             -h | --help)
@@ -592,7 +618,7 @@ install_runtime_packages() {
     local -x DEBIAN_FRONTEND=noninteractive
     run_install apt-get update
     run_install apt-get install -y --no-install-recommends \
-        libluajit-5.1-2 ca-certificates curl tar gzip rsync coreutils
+        libluajit-5.1-2 ca-certificates openssl curl tar gzip rsync coreutils iproute2
     pass "packages: TES3MP runtime dependencies installed"
 }
 
@@ -1056,6 +1082,7 @@ install_privilege_layout() {
 
     ensure_dir "$DATA_ROOT/panel-data" tes3mp-panel tes3mp 0750
     ensure_dir "$DATA_ROOT/panel-data/tls" tes3mp-panel tes3mp 0700
+    ensure_dir "$DATA_ROOT/panel-data/acme" tes3mp-panel tes3mp 0700
     ensure_dir "$DATA_ROOT/panel-data/uploads" tes3mp-panel tes3mp 2770
     ensure_dir "$DATA_ROOT/.locks" tes3mp tes3mp 0700
     ensure_dir "$DATA_ROOT/.staging" tes3mp tes3mp 0700
@@ -1217,6 +1244,143 @@ install_server_binaries() {
     done
 }
 
+valid_ipv4() {
+    local ip=$1
+    local octet
+    [[ $ip =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+    local IFS=.
+    for octet in $ip; do
+        [[ $octet =~ ^[0-9]+$ ]] || return 1
+        # net.ParseIP rejects leading zeroes, so accept only their canonical form.
+        [[ $octet == "0" || $octet != 0* ]] || return 1
+        ((10#$octet <= 255)) || return 1
+    done
+    return 0
+}
+
+# public_ipv4 rejects addresses that are not publicly routable. The panel
+# repeats these checks, but failing here avoids a slow health timeout.
+public_ipv4() {
+    local ip=$1
+    valid_ipv4 "$ip" || return 1
+    local IFS=.
+    local octets=()
+    read -r -a octets <<<"$ip"
+    local a=${octets[0]} b=${octets[1]}
+    ((a == 0 || a == 10 || a == 127)) && return 1
+    ((a == 100 && b >= 64 && b <= 127)) && return 1
+    ((a == 169 && b == 254)) && return 1
+    ((a == 172 && b >= 16 && b <= 31)) && return 1
+    ((a == 192 && b == 168)) && return 1
+    ((a >= 224)) && return 1
+    return 0
+}
+
+detect_public_ipv4() {
+    if [[ -n $PUBLIC_ADDRESS ]]; then
+        printf '%s\n' "$PUBLIC_ADDRESS"
+        return 0
+    fi
+
+    if ! command -v curl >/dev/null 2>&1; then
+        return 1
+    fi
+    local url candidate
+    for url in https://api.ipify.org https://ifconfig.me/ip; do
+        candidate=$(curl -4 -fsS --max-time 10 "$url" 2>/dev/null || true)
+        candidate=${candidate//$'\r'/}
+        candidate=${candidate%%$'\n'*}
+        candidate=$(printf '%s' "$candidate" | tr -d '[:space:]')
+        if public_ipv4 "$candidate"; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+port_80_is_free() {
+    if ! command -v ss >/dev/null 2>&1; then
+        abort_install "ss (iproute2) is required to verify that port 80 is free"
+    fi
+
+    local listeners
+    if ! listeners=$(ss -H -ltn 2>/dev/null); then
+        abort_install "cannot inspect listening TCP ports with ss"
+    fi
+    if [[ $listeners =~ (^|[[:space:]])[^[:space:]]*:80([[:space:]]|$) ]]; then
+        return 1
+    fi
+    return 0
+}
+
+configure_panel_tls() {
+    if [[ ! -x "$OPT_ROOT/bin/tes3mp-easy-panel" ]]; then
+        info "panel TLS: skipped; the panel binary is not installed"
+        return
+    fi
+
+    local address
+    if ! address=$(detect_public_ipv4); then
+        abort_install "cannot determine the public IPv4; rerun with --public-address IP"
+    fi
+    if ! valid_ipv4 "$address"; then
+        abort_install "public address is not a valid IPv4 address: $address"
+    fi
+    if ! public_ipv4 "$address"; then
+        abort_install "public address is not a public IPv4 address: $address"
+    fi
+    PUBLIC_ADDRESS=$address
+
+    # On upgrade an old panel process can still own :80. Stop the unit before
+    # the challenge check; restart in start_runtime_services brings the new
+    # binary up with the ACME settings.
+    run_install systemctl --no-ask-password stop tes3mp-panel.service
+    # Clear a previous start-limit hit so an operator can retry ACME
+    # immediately after fixing port 80, the firewall or the public IP.
+    run_install systemctl --no-ask-password reset-failed tes3mp-panel.service
+    pass "service: tes3mp-panel.service stopped before the ACME port check"
+
+    if ! port_80_is_free; then
+        abort_install "TCP port 80 is already in use; ACME HTTP-01 needs it"
+    fi
+    pass "network: TCP port 80 is free for ACME HTTP-01"
+
+    ensure_dir "$PANEL_ENV_DIR" root tes3mp-panel 0750
+    local temp
+    if ! temp=$(mktemp); then
+        abort_install "cannot create a temporary panel environment file"
+    fi
+    if ! printf '%s\n%s\n' \
+        '# Managed by bootstrap.sh; rerunning bootstrap overwrites this file.' \
+        'TES3MP_PANEL_TLS_MODE=acme' >"$temp"; then
+        rm -f -- "$temp"
+        abort_install "cannot write the temporary panel environment file"
+    fi
+    if ! printf 'TES3MP_PANEL_PUBLIC_ADDRESS=%s\n' "$PUBLIC_ADDRESS" >>"$temp"; then
+        rm -f -- "$temp"
+        abort_install "cannot write the panel public address"
+    fi
+    run_install install -m 0640 -o root -g tes3mp-panel "$temp" "$PANEL_ENV_DEST"
+    rm -f -- "$temp"
+    pass "panel TLS: acme for $PUBLIC_ADDRESS ($PANEL_ENV_DEST)"
+}
+
+wait_for_panel_health() {
+    local deadline=$((SECONDS + 300))
+    while ((SECONDS < deadline)); do
+        if curl -kfsS --noproxy '*' --max-time 2 https://127.0.0.1/healthz >/dev/null 2>&1; then
+            pass "panel: HTTPS /healthz is ready"
+            return
+        fi
+        if ! systemctl --no-ask-password is-active --quiet tes3mp-panel.service; then
+            abort_install "tes3mp-panel.service stopped during startup; inspect journalctl -u tes3mp-panel.service"
+        fi
+        sleep 2
+    done
+    abort_install "panel did not become healthy in 300s; inspect journalctl -u tes3mp-panel.service"
+}
+
 start_runtime_services() {
     # `enable` makes the game and timer survive a reboot; `start` is
     # deliberately not `restart`, so rerunning the installer never disconnects
@@ -1247,8 +1411,9 @@ start_runtime_services() {
         if ! systemctl --no-ask-password is-active --quiet tes3mp-panel.service; then
             abort_install "tes3mp-panel.service is not active; inspect journalctl -u tes3mp-panel.service"
         fi
+        wait_for_panel_health
         pass "service: tes3mp-panel.service active"
-        info "panel: open https://<IP>/ and read $DATA_ROOT/panel-data/initial-password.txt"
+        info "panel: open https://$PUBLIC_ADDRESS/ and read $DATA_ROOT/panel-data/initial-password.txt"
     else
         info "panel: tes3mp-panel.service remains inactive until /opt/tes3mp-easy/bin/tes3mp-easy-panel is installed"
     fi
@@ -1294,6 +1459,8 @@ main() {
     wire_runtime_to_data_root
     install_runtime_home
     info "Runtime ready: TES3MP $TES3MP_VERSION, configs and base mods-init archive are in place."
+    info "Configuring the panel TLS certificate"
+    configure_panel_tls
     info "Starting TES3MP services"
     start_runtime_services
     info "Bootstrap complete: TES3MP $TES3MP_VERSION is running."

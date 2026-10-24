@@ -9,7 +9,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"path/filepath"
 	"sync"
 	"time"
 )
@@ -21,25 +20,24 @@ const (
 	shutdownTimeout   = 10 * time.Second
 )
 
-// Server owns the HTTP redirect listener and the HTTPS listener. New prepares
-// TLS material; Listen and Serve are separate so tests and operators can learn
-// the actual ephemeral addresses before traffic starts.
+// Server owns the HTTPS listener. New prepares the certificate manager; Listen
+// and Serve are separate so tests and operators can learn the actual ephemeral
+// address before traffic starts.
 type Server struct {
 	cfg    Config
 	logger *log.Logger
+	certs  *certificateManager
 
-	httpSrv  *http.Server
 	httpsSrv *http.Server
 
 	mu        sync.Mutex
-	httpLn    net.Listener
 	httpsLn   net.Listener
 	listening bool
 }
 
-// New validates cfg, loads or creates TLS material and the password hash, and
-// builds both servers. A nil handler installs the built-in admin UI. A nil
-// logger discards logs.
+// New validates cfg, prepares TLS material and the password hash, and builds
+// the server. A nil handler installs the built-in admin UI. A nil logger
+// discards logs.
 func New(cfg Config, handler http.Handler, logger *log.Logger) (*Server, error) {
 	cfg = cfg.Normalize()
 	if err := cfg.Validate(); err != nil {
@@ -49,15 +47,9 @@ func New(cfg Config, handler http.Handler, logger *log.Logger) (*Server, error) 
 		logger = log.New(io.Discard, "", 0)
 	}
 
-	certificate, created, err := loadOrCreateCertificate(cfg)
+	certs, err := newCertificateManager(cfg, logger)
 	if err != nil {
 		return nil, err
-	}
-	if created {
-		logger.Printf("tls: generated self-signed certificate in %s; browsers will warn",
-			filepath.Dir(cfg.CertFile))
-	} else {
-		logger.Printf("tls: loaded certificate %s", cfg.CertFile)
 	}
 
 	if handler == nil {
@@ -82,14 +74,7 @@ func New(cfg Config, handler http.Handler, logger *log.Logger) (*Server, error) 
 	server := &Server{
 		cfg:    cfg,
 		logger: logger,
-	}
-	server.httpSrv = &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           newHTTPRedirectHandler(cfg),
-		ReadHeaderTimeout: readHeaderTimeout,
-		IdleTimeout:       idleTimeout,
-		MaxHeaderBytes:    maxHeaderBytes,
-		ErrorLog:          logger,
+		certs:  certs,
 	}
 	server.httpsSrv = &http.Server{
 		Addr:              cfg.HTTPSAddr,
@@ -99,15 +84,14 @@ func New(cfg Config, handler http.Handler, logger *log.Logger) (*Server, error) 
 		MaxHeaderBytes:    maxHeaderBytes,
 		ErrorLog:          logger,
 		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{certificate},
-			MinVersion:   tls.VersionTLS12,
+			GetCertificate: certs.GetCertificate,
+			MinVersion:     tls.VersionTLS12,
 		},
 	}
 	return server, nil
 }
 
-// Listen binds both addresses. It is idempotent. If the HTTPS bind fails, the
-// already-bound HTTP listener is closed so a failed start leaves no port open.
+// Listen binds the HTTPS address. It is idempotent.
 func (s *Server) Listen() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -115,36 +99,14 @@ func (s *Server) Listen() error {
 		return nil
 	}
 
-	httpLn, err := net.Listen("tcp", s.cfg.HTTPAddr)
-	if err != nil {
-		return fmt.Errorf("listen http %s: %w", s.cfg.HTTPAddr, err)
-	}
 	httpsLn, err := net.Listen("tcp", s.cfg.HTTPSAddr)
 	if err != nil {
-		closeErr := httpLn.Close()
-		return errors.Join(
-			fmt.Errorf("listen https %s: %w", s.cfg.HTTPSAddr, err),
-			closeErr,
-		)
+		return fmt.Errorf("listen https %s: %w", s.cfg.HTTPSAddr, err)
 	}
-
-	s.httpLn = httpLn
 	s.httpsLn = httpsLn
 	s.listening = true
-	s.logger.Printf("http listening on %s", httpLn.Addr())
 	s.logger.Printf("https listening on %s", httpsLn.Addr())
 	return nil
-}
-
-// HTTPAddr returns the actual HTTP listener address, or an empty string before
-// Listen.
-func (s *Server) HTTPAddr() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.httpLn == nil {
-		return ""
-	}
-	return s.httpLn.Addr().String()
 }
 
 // HTTPSAddr returns the actual HTTPS listener address, or an empty string before
@@ -158,35 +120,46 @@ func (s *Server) HTTPSAddr() string {
 	return s.httpsLn.Addr().String()
 }
 
-// Serve binds if needed, serves both listeners until ctx is cancelled or one
-// listener fails, then performs a graceful shutdown. A cancelled context is a
-// normal stop and returns nil.
+// Serve ensures a certificate is available, binds if needed, and serves HTTPS
+// until ctx is cancelled or the listener fails. A cancelled context is a normal
+// stop and returns nil.
 func (s *Server) Serve(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if ctx.Err() != nil {
-		// The caller may have bound the listeners explicitly before starting
-		// Serve; a cancelled start must not leave those ports open.
+		// The caller may have bound the listener explicitly before starting
+		// Serve; a cancelled start must not leave the port open.
 		return s.closeListeners()
+	}
+	if err := s.certs.Ensure(ctx); err != nil {
+		closeErr := s.closeListeners()
+		if errors.Is(err, context.Canceled) {
+			// SIGTERM during the initial ACME request is a normal stop.
+			return closeErr
+		}
+		return errors.Join(err, closeErr)
 	}
 	if err := s.Listen(); err != nil {
 		return err
 	}
 
 	s.mu.Lock()
-	httpLn, httpsLn := s.httpLn, s.httpsLn
+	httpsLn := s.httpsLn
 	s.mu.Unlock()
 
-	serveErr := make(chan error, 2)
-	go func() { serveErr <- s.httpSrv.Serve(httpLn) }()
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go s.certs.Run(runCtx)
+
+	serveErr := make(chan error, 1)
 	go func() { serveErr <- s.httpsSrv.ServeTLS(httpsLn, "", "") }()
 
 	var firstErr error
-	handled := 0
+	handled := false
 	select {
 	case err := <-serveErr:
-		handled = 1
+		handled = true
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			firstErr = err
 		}
@@ -197,10 +170,9 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 
 	shutdownErr := s.shutdown()
-	for handled < 2 {
-		err := <-serveErr
-		handled++
-		if firstErr == nil && err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if !handled {
+		if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) &&
+			firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -215,10 +187,7 @@ func (s *Server) shutdown() error {
 	defer cancel()
 
 	var errs []error
-	for _, server := range []*http.Server{s.httpsSrv, s.httpSrv} {
-		if server == nil {
-			continue
-		}
+	if server := s.httpsSrv; server != nil {
 		if err := server.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("shutdown %s: %w", server.Addr, err))
 			if closeErr := server.Close(); closeErr != nil &&
@@ -244,18 +213,14 @@ func (s *Server) shutdown() error {
 
 func (s *Server) closeListeners() error {
 	s.mu.Lock()
-	listeners := []net.Listener{s.httpLn, s.httpsLn}
+	listener := s.httpsLn
 	s.mu.Unlock()
 
-	var errs []error
-	for _, listener := range listeners {
-		if listener == nil {
-			continue
-		}
-		if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-			errs = append(errs, fmt.Errorf("close listener %s: %w",
-				listener.Addr(), err))
-		}
+	if listener == nil {
+		return nil
 	}
-	return errors.Join(errs...)
+	if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		return fmt.Errorf("close listener %s: %w", listener.Addr(), err)
+	}
+	return nil
 }

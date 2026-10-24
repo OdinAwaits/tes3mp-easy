@@ -142,11 +142,13 @@ predeploy-лимиты, защиту текущего mods-архива и за�
 
 ## 4. Панель
 
-`test/contract/panel` собирает бинарник панели и запускает его на эфемерных
-портах. Проверяются:
+`test/contract/panel` собирает бинарник панели и запускает его на эфемерном
+HTTPS-порту с fixture-парой в режиме `files`. Проверяются:
 
-- lifecycle: env/flags и derived paths, self-signed generation/reuse/partial
-  pair, TLS ≥ 1.2, `/healthz`, HTTP→HTTPS `308`, bind rollback, `SIGTERM`;
+- lifecycle: env/flags и derived paths, ACME fake-obtainer (IP SAN, shortlived
+  profile, wrong IP, renewal window, отказ продления, замена legacy
+  self-signed), `files` pair, TLS ≥ 1.2, `/healthz`, HSTS, bind rollback,
+  `SIGTERM`;
 - auth: создание/reuse/corrupt `auth.json`, режимы `0600`, `reset-password`,
   первый вход с временным паролем, смена пароля, cookie-флаги, CSRF,
   rate limit;
@@ -162,8 +164,8 @@ predeploy-лимиты, защиту текущего mods-архива и за�
 Панель не тестирует tar и CRC — это тесты ops. Панель тестирует, что она
 правильно вызывает ops и правильно показывает результат. Тест на загрузку
 большого файла проверяет, что память панели не растёт пропорционально размеру
-upload. Bind на 80/443 проверяется на VM с `CAP_NET_BIND_SERVICE`; unit-тесты
-используют эфемерные порты и не требуют root.
+upload. Bind на 443 и временный 80 проверяются на VM с
+`CAP_NET_BIND_SERVICE`; unit-тесты используют эфемерные порты и не требуют root.
 
 ## 5. Клиент
 
@@ -282,8 +284,10 @@ GUI-тесты не гоняются в CI: Fyne требует дисплея. 
    пути и логи; пагинация работает на длинной истории.
 6. **Retention.** Синтетическая история на 5 лет: месячные живы, дневные и
    недельные прорежены, бюджет не превышен.
-7. **TLS.** Self-signed сертификат принимается после импорта `cert.pem` или
-   подложена валидная пара; HTTP редиректит на HTTPS.
+7. **TLS.** Панель получает сертификат Let's Encrypt для публичного IP через
+   HTTP-01; браузер не показывает предупреждение. После освобождения порта 80
+   продление проходит в фоне без рестарта. `files` режим с готовой парой тоже
+   поднимается.
 8. **Отказ systemd.** Недоступный systemd или unit → панель показывает 503
    `service_unavailable`; после восстановления статус возвращается.
 9. **Мало места.** Заполнить диск до порога → `doctor` `error`, мутации
@@ -305,8 +309,10 @@ sudo ./test/e2e/release-smoke.sh /tmp/tes3mp-easy-<version>-linux-amd64
 ```
 
 Скрипт делает preflight, установку, проверяет бинарники, три systemd-юнита,
-`doctor`, `/healthz`, ручной state-бэкап и таймер. Остальные сценарии требуют
-Morrowind/Proton и браузера, поэтому остаются ручными.
+`/etc/tes3mp-easy/panel.env`, SAN сертификата Let's Encrypt для публичного IP,
+отсутствие постоянного listener на `:80`, `doctor`, `/healthz`, ручной
+state-бэкап и таймер. Остальные сценарии требуют Morrowind/Proton и браузера,
+поэтому остаются ручными.
 
 ## 10. CI
 

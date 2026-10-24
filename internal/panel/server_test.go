@@ -15,7 +15,7 @@ import (
 
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
-	server, err := New(testConfig(t), nil, log.New(io.Discard, "", 0))
+	server, err := New(testConfigWithCertificate(t), nil, log.New(io.Discard, "", 0))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -63,7 +63,7 @@ func testClient() *http.Client {
 		},
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // the test intentionally uses self-signed TLS
+				InsecureSkipVerify: true, // tests use a fixture certificate
 				MinVersion:         tls.VersionTLS12,
 			},
 		},
@@ -100,28 +100,6 @@ func TestServerServesHTTPSHealthz(t *testing.T) {
 	assertSecurityHeaders(t, resp.Header)
 }
 
-func TestServerRedirectsHTTPToHTTPS(t *testing.T) {
-	server, _ := serveTestServer(t)
-	client := testClient()
-	defer client.CloseIdleConnections()
-
-	resp, err := client.Get("http://" + server.HTTPAddr() + "/admin?x=1")
-	if err != nil {
-		t.Fatalf("GET http: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusPermanentRedirect {
-		t.Fatalf("status = %d, want 308", resp.StatusCode)
-	}
-	location := resp.Header.Get("Location")
-	if !strings.HasPrefix(location, "https://") ||
-		!strings.HasSuffix(location, "/admin?x=1") {
-		t.Fatalf("Location = %q", location)
-	}
-	assertSecurityHeaders(t, resp.Header)
-}
-
 func TestServerRejectsPostHealthz(t *testing.T) {
 	server, _ := serveTestServer(t)
 	client := testClient()
@@ -144,17 +122,17 @@ func TestServerRejectsPostHealthz(t *testing.T) {
 
 func TestServeStopsOnContextCancel(t *testing.T) {
 	server, stop := serveTestServer(t)
-	if server.HTTPAddr() == "" || server.HTTPSAddr() == "" {
+	if server.HTTPSAddr() == "" {
 		t.Fatal("server is not listening")
 	}
 	if err := stop(); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
 
-	conn, err := net.DialTimeout("tcp", server.HTTPAddr(), 200*time.Millisecond)
+	conn, err := net.DialTimeout("tcp", server.HTTPSAddr(), 200*time.Millisecond)
 	if err == nil {
 		conn.Close()
-		t.Fatal("HTTP listener still accepts connections after shutdown")
+		t.Fatal("HTTPS listener still accepts connections after shutdown")
 	}
 }
 
@@ -166,19 +144,19 @@ func TestServeCancelledBeforeStartDoesNotListen(t *testing.T) {
 	if err := server.Serve(ctx); err != nil {
 		t.Fatalf("Serve = %v, want nil", err)
 	}
-	if server.HTTPAddr() != "" || server.HTTPSAddr() != "" {
-		t.Fatalf("listeners = %q, %q, want empty", server.HTTPAddr(), server.HTTPSAddr())
+	if server.HTTPSAddr() != "" {
+		t.Fatalf("listener = %q, want empty", server.HTTPSAddr())
 	}
 }
 
-func TestListenClosesHTTPWhenHTTPSFails(t *testing.T) {
+func TestListenFailsOnOccupiedHTTPSPort(t *testing.T) {
 	occupied, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("occupy port: %v", err)
 	}
 	defer occupied.Close()
 
-	cfg := testConfig(t)
+	cfg := testConfigWithCertificate(t)
 	cfg.HTTPSAddr = occupied.Addr().String()
 	server, err := New(cfg, nil, log.New(io.Discard, "", 0))
 	if err != nil {
@@ -187,14 +165,14 @@ func TestListenClosesHTTPWhenHTTPSFails(t *testing.T) {
 	if err := server.Listen(); err == nil {
 		t.Fatal("Listen succeeded with an occupied HTTPS port")
 	}
-	if server.HTTPAddr() != "" || server.HTTPSAddr() != "" {
-		t.Fatalf("listeners = %q, %q, want empty", server.HTTPAddr(), server.HTTPSAddr())
+	if server.HTTPSAddr() != "" {
+		t.Fatalf("listener = %q, want empty", server.HTTPSAddr())
 	}
 }
 
 func TestNewRejectsInvalidConfig(t *testing.T) {
-	cfg := testConfig(t)
-	cfg.HTTPAddr = "not-an-address"
+	cfg := testConfigWithCertificate(t)
+	cfg.HTTPSAddr = "not-an-address"
 	if _, err := New(cfg, nil, nil); err == nil ||
 		!strings.Contains(err.Error(), "invalid panel config") {
 		t.Fatalf("New error = %v, want invalid config", err)

@@ -1,6 +1,6 @@
 // Command tes3mp-easy-panel serves the tes3mp-easy HTTPS panel.
 //
-// This step provides the HTTP/HTTPS listener pair, TLS material, password
+// This step provides the HTTPS listener, ACME TLS material, password
 // authentication, sessions, CSRF protection, and the public server/mods/backups
 // API and pages. Admin server management is added in later steps.
 package main
@@ -31,23 +31,37 @@ Flags:
   --root <path>             data root (default /tes3mp-easy; env TES3MP_PANEL_ROOT)
   --data-dir <path>         panel data directory (default <root>/panel-data;
                             env TES3MP_PANEL_DATA_DIR)
-  --http-addr <addr>        HTTP redirect listener (default :80;
-                            env TES3MP_PANEL_HTTP_ADDR)
   --https-addr <addr>       HTTPS listener (default :443;
                             env TES3MP_PANEL_HTTPS_ADDR)
-  --public-address <host>   public IP or host[:port] for redirects
-                            (env TES3MP_PANEL_PUBLIC_ADDRESS)
-  --tls-cert <path>         certificate (default <data-dir>/tls/cert.pem;
+  --public-address <ip>     public IP used in the ACME certificate; required in
+                            acme mode (env TES3MP_PANEL_PUBLIC_ADDRESS)
+  --tls-mode <mode>         acme or files (default acme;
+                            env TES3MP_PANEL_TLS_MODE)
+  --acme-directory <url>    ACME directory (default Let's Encrypt production;
+                            env TES3MP_PANEL_ACME_DIRECTORY)
+  --acme-email <address>    optional ACME account contact
+                            (env TES3MP_PANEL_ACME_EMAIL)
+  --acme-profile <name>     ACME certificate profile (default shortlived;
+                            env TES3MP_PANEL_ACME_PROFILE)
+  --tls-cert <path>         certificate for files mode
+                            (default <data-dir>/tls/cert.pem;
                             env TES3MP_PANEL_TLS_CERT)
-  --tls-key <path>          private key (default <data-dir>/tls/key.pem;
+  --tls-key <path>          private key for files mode
+                            (default <data-dir>/tls/key.pem;
                             env TES3MP_PANEL_TLS_KEY)
   --version                 print version and exit
   --help                    print this help and exit
 
-If both TLS files are absent, the panel creates a self-signed certificate with
-mode 0600 under <data-dir>/tls and logs a warning. If only one file exists or the
-pair is invalid, startup fails without overwriting it. Ports 80/443 require
-CAP_NET_BIND_SERVICE in the systemd unit; logs go to stdout/stderr.
+The panel only listens on :443. In acme mode it obtains and renews an RFC 8738
+Let's Encrypt certificate for the public IP through HTTP-01, temporarily binding
+:80 only while a challenge is active. Port 80 must be reachable from the
+internet and free at issuance time. The shortlived profile is required by Let's
+Encrypt for IP certificates. The account key lives in
+<data-dir>/acme/account.key; cert.pem and key.pem are written with mode 0600.
+
+In files mode the panel never contacts an ACME server and serves the existing
+certificate/key pair. The 443 listener requires CAP_NET_BIND_SERVICE in the
+systemd unit; logs go to stdout/stderr.
 
 If auth.json is absent, startup creates a random temporary password, stores its
 hash in <data-dir>/auth.json (0600) and writes the password to
@@ -135,9 +149,12 @@ func parseConfig(args []string, getenv func(string) string) (panel.Config, bool,
 
 	fs.StringVar(&cfg.Root, "root", cfg.Root, "")
 	fs.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "")
-	fs.StringVar(&cfg.HTTPAddr, "http-addr", cfg.HTTPAddr, "")
 	fs.StringVar(&cfg.HTTPSAddr, "https-addr", cfg.HTTPSAddr, "")
 	fs.StringVar(&cfg.PublicAddress, "public-address", cfg.PublicAddress, "")
+	fs.StringVar(&cfg.TLSMode, "tls-mode", cfg.TLSMode, "")
+	fs.StringVar(&cfg.ACMEDirectory, "acme-directory", cfg.ACMEDirectory, "")
+	fs.StringVar(&cfg.ACMEEmail, "acme-email", cfg.ACMEEmail, "")
+	fs.StringVar(&cfg.ACMEProfile, "acme-profile", cfg.ACMEProfile, "")
 	fs.StringVar(&cfg.CertFile, "tls-cert", cfg.CertFile, "")
 	fs.StringVar(&cfg.KeyFile, "tls-key", cfg.KeyFile, "")
 	showVersion := fs.Bool("version", false, "")
@@ -161,8 +178,10 @@ func parseConfig(args []string, getenv func(string) string) (panel.Config, bool,
 	}{
 		{name: "root", value: cfg.Root},
 		{name: "data-dir", value: cfg.DataDir},
-		{name: "http-addr", value: cfg.HTTPAddr},
 		{name: "https-addr", value: cfg.HTTPSAddr},
+		{name: "tls-mode", value: cfg.TLSMode},
+		{name: "acme-directory", value: cfg.ACMEDirectory},
+		{name: "acme-profile", value: cfg.ACMEProfile},
 		{name: "tls-cert", value: cfg.CertFile},
 		{name: "tls-key", value: cfg.KeyFile},
 	} {

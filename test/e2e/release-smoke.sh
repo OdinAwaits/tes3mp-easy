@@ -75,6 +75,18 @@ systemctl is-active --quiet tes3mp-panel.service ||
     fail "tes3mp-panel.service is not active"
 [[ -s $ROOT/panel-data/initial-password.txt ]] ||
     fail "initial-password.txt was not created"
+[[ -s /etc/tes3mp-easy/panel.env ]] ||
+    fail "/etc/tes3mp-easy/panel.env was not created"
+grep -q '^TES3MP_PANEL_TLS_MODE=acme$' /etc/tes3mp-easy/panel.env ||
+    fail "panel.env does not select acme mode"
+public_ip=$(sed -n 's/^TES3MP_PANEL_PUBLIC_ADDRESS=//p' /etc/tes3mp-easy/panel.env)
+[[ -n $public_ip ]] || fail "panel.env has no public address"
+command -v ss >/dev/null || fail "ss is required to inspect listeners"
+# ss reports the 15-character kernel comm, so match the truncated name.
+panel_port80=$(ss -H -ltnp | grep -F 'tes3mp-easy-pan' |
+    grep -E ':80([[:space:]]|$)' || true)
+[[ -z $panel_port80 ]] ||
+    fail "panel still listens on :80 after startup: $panel_port80"
 
 printf '\n== doctor ==\n'
 sudo -u tes3mp "$OPS" --root "$ROOT" --json doctor
@@ -82,7 +94,7 @@ sudo -u tes3mp "$OPS" --root "$ROOT" --json doctor
 printf '\n== panel health ==\n'
 ready=0
 for _ in $(seq 1 30); do
-    if curl -kfsS --max-time 2 https://127.0.0.1/healthz >/dev/null; then
+    if curl -kfsS --noproxy '*' --max-time 2 https://127.0.0.1/healthz >/dev/null; then
         ready=1
         break
     fi
@@ -90,6 +102,13 @@ for _ in $(seq 1 30); do
 done
 ((ready)) || fail "panel /healthz did not become ready"
 printf 'healthz: ok\n'
+
+command -v openssl >/dev/null || fail "openssl is required to inspect the certificate"
+cert_san=$(openssl s_client -connect 127.0.0.1:443 </dev/null 2>/dev/null |
+    openssl x509 -noout -ext subjectAltName 2>/dev/null || true)
+[[ $cert_san == *"IP Address:$public_ip"* ]] ||
+    fail "panel certificate does not contain public IP $public_ip"
+printf 'certificate SAN: %s\n' "$cert_san"
 
 printf '\n== backup ==\n'
 sudo -u tes3mp "$OPS" --root "$ROOT" --json \

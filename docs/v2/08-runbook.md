@@ -11,9 +11,9 @@ Runbook для нативной установки на Debian/Ubuntu x86_64 с 
 - 512 MiB RAM минимум, 640 MiB рекомендуется;
 - 512 MiB swap;
 - 7 GiB NVMe/SSD;
-- открытые `25565/udp`, `80/tcp`, `443/tcp`;
+- открытые `25565/udp`, `443/tcp` и `80/tcp` (только на время ACME HTTP-01);
 - root/sudo и доступ по SSH;
-- `curl`, `tar`, `gzip`, `sha256sum`;
+- `curl`, `openssl`, `tar`, `gzip`, `sha256sum`;
 - Go 1.24+ и `git` — только для сборки релиза или установки из исходников;
 - время синхронизировано (systemd-timesyncd).
 
@@ -111,7 +111,7 @@ TES3MP_EASY_VERSION=0.1.0 bash <(curl -Ls https://raw.githubusercontent.com/Saag
    sudo systemctl status tes3mp-panel.service --no-pager
    sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
      --root /tes3mp-easy --json doctor
-   curl -kfsS https://127.0.0.1/healthz
+   curl -kfsS --noproxy '*' https://127.0.0.1/healthz
    ```
 
    Ожидаемо: игра и панель `active (running)`, таймер `active (waiting)`,
@@ -155,8 +155,8 @@ TES3MP_EASY_VERSION=0.1.0 bash <(curl -Ls https://raw.githubusercontent.com/Saag
 Source bootstrap:
 
 - проверяет Debian/Ubuntu, x86_64, systemd, RAM/swap/диск;
-- ставит пакеты: `libluajit-5.1-2`, `ca-certificates`, `curl`, `tar`,
-  `gzip`, `rsync`, `coreutils`;
+- ставит пакеты: `libluajit-5.1-2`, `ca-certificates`, `openssl`, `curl`,
+  `tar`, `gzip`, `rsync`, `coreutils`, `iproute2`;
 - создаёт пользователей `tes3mp` и `tes3mp-panel`, группы, каталоги и права;
 - скачивает TES3MP 0.8.1 из `server/tes3mp-version.txt`, проверяет sha256,
   распаковывает staging, делает его `root:root`, пишет маркер
@@ -179,7 +179,9 @@ Source bootstrap:
   `vm.swappiness=10`;
 - включает в автозагрузку и запускает `tes3mp.service` и
   `tes3mp-easy-backup.timer`, затем проверяет `is-active`; при наличии
-  установленной панели включает и перезапускает `tes3mp-panel.service`.
+  установленной панели определяет публичный IPv4, проверяет свободный `80/tcp`,
+  пишет `/etc/tes3mp-easy/panel.env`, включает и перезапускает
+  `tes3mp-panel.service` и ждёт HTTPS `/healthz` (включая первый ACME-выпуск).
 
 3. Соберите и установите серверные бинарники из каталога `/opt/tes3mp-easy`.
    Сборку можно выполнить на этой же машине или кросс-компиляцией на другой:
@@ -202,11 +204,24 @@ Source bootstrap:
    первый тик создаёт первый архив; можно не ждать и запустить
    `sudo systemctl start tes3mp-easy-backup.service`.
 
-4. Включите панель после установки её бинарника:
+4. Настройте TLS и включите панель. Повторный bootstrap увидит установленный
+   бинарник, определит публичный IPv4, проверит `80/tcp`, запишет
+   `/etc/tes3mp-easy/panel.env` и запустит панель:
 
    ```bash
-   sudo systemctl enable --now tes3mp-panel.service
+   sudo /opt/tes3mp-easy/bootstrap.sh
    sudo cat /tes3mp-easy/panel-data/initial-password.txt
+   ```
+
+   Вместо повторного bootstrap можно создать env-файл вручную:
+
+   ```bash
+   sudo install -d -o root -g tes3mp-panel -m 0750 /etc/tes3mp-easy
+   printf 'TES3MP_PANEL_TLS_MODE=acme\nTES3MP_PANEL_PUBLIC_ADDRESS=%s\n' \
+     '<IP>' | sudo tee /etc/tes3mp-easy/panel.env >/dev/null
+   sudo chown root:tes3mp-panel /etc/tes3mp-easy/panel.env
+   sudo chmod 0640 /etc/tes3mp-easy/panel.env
+   sudo systemctl enable --now tes3mp-panel.service
    ```
 
    `initial-password.txt` создаётся при первом старте панели. Откройте
@@ -331,12 +346,18 @@ sudo cat /tes3mp-easy/panel-data/initial-password.txt
    если она была остановлена. Повторный запуск использует `start`, поэтому
    игроки не отключаются.
 
+   При обновлении со старой версии с self-signed TLS bootstrap остановит
+   панель, проверит `80/tcp`, перезапишет `/etc/tes3mp-easy/panel.env` и
+   заменит локальный сертификат сертификатом Let's Encrypt для публичного IP.
+   Первый выпуск может занять несколько минут; при ошибке bootstrap
+   завершится с подсказкой `journalctl`. Повторный запуск безопасен.
+
 3. Проверьте:
 
    ```bash
    sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
      --root /tes3mp-easy --json doctor
-   curl -kfsS https://127.0.0.1/healthz
+   curl -kfsS --noproxy '*' https://127.0.0.1/healthz
    ```
 
 ### 5.2. Из исходников (developer/emergency)
@@ -633,9 +654,10 @@ sudo systemctl restart tes3mp-panel.service
 
 Если панель не поднимается:
 
-- проверьте порты `80/443`: `ss -ltnp | grep -E ":80|:443"`;
+- проверьте порты `80/443` (постоянно нужен только 443, 80 — на время ACME):
+  `ss -ltnp | grep -E ':(80|443)([[:space:]]|$)'`;
 - проверьте права `panel-data`: `ls -la /tes3mp-easy/panel-data`;
-- проверьте TLS: `openssl x509 -in /tes3mp-easy/panel-data/tls/cert.pem -noout -dates`;
+- проверьте TLS: `sudo openssl x509 -in /tes3mp-easy/panel-data/tls/cert.pem -noout -dates`;
 - проверьте, что `tes3mp-panel` входит в группу `tes3mp` и читает бэкапы;
 - проверьте sudo: `sudo -u tes3mp-panel sudo -n -u tes3mp \
   /opt/tes3mp-easy/bin/tes3mp-easy-ops --root /tes3mp-easy --json status`.
@@ -663,23 +685,44 @@ sudo /usr/local/libexec/tes3mp-easy-rootctl restart
 ## 13. TLS
 
 ```bash
-curl -I http://<IP>/          # ожидаем 308 на https
 curl -I https://<IP>/         # ожидаем 200
-openssl s_client -connect <IP>:443 -servername <IP> </dev/null \
-  2>/dev/null | openssl x509 -noout -subject -dates
+openssl s_client -connect <IP>:443 </dev/null 2>/dev/null | \
+  openssl x509 -noout -subject -dates -ext subjectAltName
+sudo journalctl -u tes3mp-panel.service -n 100 --no-pager
 ```
 
-Если сертификат self-signed:
+Панель постоянно слушает только `443/tcp`. Сертификат Let's Encrypt для
+публичного IP выпускается и продлевается встроенным ACME-клиентом. На время
+HTTP-01 challenge панель занимает `80/tcp`; после проверки порт освобождается.
 
-- панель работает, но браузер и клиент могут ругаться;
-- ACME-выпуск по IP не реализован: панель использует готовую пару или
-  создаёт self-signed при первом старте;
-- чтобы использовать доверенный сертификат, положите `cert.pem` и `key.pem` в
-  `/tes3mp-easy/panel-data/tls/` с правами `0600` и перезапустите панель;
-- проверьте системное время: `timedatectl`.
+Если сертификата нет или он не продлился:
 
-Не отключайте проверку TLS в клиенте ради self-signed сертификата. Это
-превращает MITM в норму.
+- проверьте, что `TES3MP_PANEL_PUBLIC_ADDRESS` в
+  `/etc/tes3mp-easy/panel.env` совпадает с публичным IPv4;
+- проверьте firewall/NAT: `80/tcp` должен быть доступен из интернета на время
+  выпуска; `443/tcp` — постоянно;
+- проверьте, что `80/tcp` не занят: `ss -ltnp | grep ':80 '`;
+- если в journald есть `too many failed authorizations`, Let's Encrypt временно
+  заблокировал повторные проверки для этого IP: исправьте причину и подождите
+  около часа либо используйте staging;
+- проверьте системное время: `timedatectl`;
+- посмотрите journald: панель пишет причину отказа ACME;
+- при ошибке выпуска `bootstrap.sh` завершается с подсказкой `journalctl`;
+  повторный запуск безопасен.
+
+Для отладки используйте staging, чтобы не расходовать production-лимиты:
+
+```bash
+sudo systemctl edit tes3mp-panel.service
+# [Service]
+# Environment=TES3MP_PANEL_ACME_DIRECTORY=https://acme-staging-v02.api.letsencrypt.org/directory
+sudo systemctl restart tes3mp-panel.service
+```
+
+Режим готовой пары (`--tls-mode files`) оставлен для нестандартных установок:
+положите `cert.pem` и `key.pem` в `/tes3mp-easy/panel-data/tls/` с правами
+`0600` и укажите `TES3MP_PANEL_TLS_MODE=files`. Штатная установка этого не
+требует.
 
 ## 14. Копия бэкапов на другую машину
 

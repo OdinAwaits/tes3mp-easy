@@ -3,16 +3,20 @@ Description=TES3MP Easy panel
 Documentation=https://github.com/Saagilat/tes3mp-easy
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=30min
+StartLimitBurst=2
 
 [Service]
 Type=simple
 User=tes3mp-panel
 Group=tes3mp-panel
 SupplementaryGroups=tes3mp
+EnvironmentFile=-/etc/tes3mp-easy/panel.env
 WorkingDirectory=/opt/tes3mp-easy
 ExecStart=/opt/tes3mp-easy/bin/tes3mp-easy-panel
 Restart=on-failure
-RestartSec=3s
+RestartSec=60s
+TimeoutStartSec=5min
 Environment=GOMAXPROCS=1
 Environment=GOMEMLIMIT=64MiB
 MemoryHigh=48M

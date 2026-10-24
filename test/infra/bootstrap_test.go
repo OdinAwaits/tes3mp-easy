@@ -128,6 +128,7 @@ func newFakeHost(t *testing.T) *fakeHost {
 	h.env["TES3MP_FAKE_STATE_DIR"] = h.stateDir
 	h.env["TES3MP_FAKE_COMMAND_LOG"] = h.commandLog
 	h.env["TES3MP_FAKE_CURL_SOURCE"] = h.runtimeArchive
+	h.env["TES3MP_EASY_PUBLIC_ADDRESS"] = "203.0.113.10"
 
 	return h
 }
@@ -495,6 +496,7 @@ fi
 `, 0o755)
 	h.writeFile(filepath.Join(h.bin, "curl"), `#!/bin/sh
 out=
+original=$*
 while [ "$#" -gt 0 ]; do
     case "$1" in
         -o)
@@ -506,7 +508,20 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
-[ -n "$out" ] || exit 2
+if [ -z "$out" ]; then
+    case " $original " in
+        *" https://127.0.0.1/healthz "*)
+            exit 0
+            ;;
+        *" https://api.ipify.org "* | *" https://ifconfig.me/ip "*)
+            if [ -n "${TES3MP_FAKE_PUBLIC_IP:-}" ]; then
+                printf '%s\n' "$TES3MP_FAKE_PUBLIC_IP"
+                exit 0
+            fi
+            ;;
+    esac
+    exit 2
+fi
 printf 'curl out=%s\n' "$out" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
 if [ "${TES3MP_FAKE_CURL_FAIL:-0}" = "1" ]; then
     printf 'curl failed\n' >&2
@@ -523,6 +538,13 @@ if [ "${TES3MP_FAKE_CHOWN_FAIL:-0}" = "1" ]; then
 fi
 exit 0
 `, 0o755)
+	h.writeFile(filepath.Join(h.bin, "ss"), `#!/bin/sh
+printf 'ss args=%s\n' "$*" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+if [ "${TES3MP_FAKE_SS_BUSY:-0}" = "1" ]; then
+    printf 'LISTEN 0 128 *:80 *:*\n'
+fi
+exit 0
+`, 0o755)
 	for name, command := range map[string]string{
 		"chmod":     "chmod",
 		"date":      "date",
@@ -535,6 +557,7 @@ exit 0
 		"rm":        "rm",
 		"sha256sum": "sha256sum",
 		"tar":       "tar",
+		"tr":        "tr",
 	} {
 		h.writeFile(filepath.Join(h.bin, name), fmt.Sprintf(`#!/bin/sh
 exec /usr/bin/%s "$@"
@@ -700,6 +723,7 @@ func TestBootstrapPreflightPassesAndInstalls(t *testing.T) {
 		{filepath.Join(h.dataRoot, "backups", "state"), 0o750, false},
 		{filepath.Join(h.dataRoot, "panel-data"), 0o750, false},
 		{filepath.Join(h.dataRoot, "panel-data", "tls"), 0o700, false},
+		{filepath.Join(h.dataRoot, "panel-data", "acme"), 0o700, false},
 		{filepath.Join(h.dataRoot, "panel-data", "uploads"), 0o770, true},
 		{filepath.Join(h.dataRoot, ".locks"), 0o700, false},
 		{filepath.Join(h.dataRoot, ".staging"), 0o700, false},
@@ -835,7 +859,7 @@ func TestBootstrapPreflightPassesAndInstalls(t *testing.T) {
 		"systemctl args=--no-ask-password restart systemd-journald.service",
 		"sysctl args=-q -p " + filepath.Join(h.installRoot, "etc/sysctl.d/99-tes3mp-easy.conf"),
 		"apt-get args=update",
-		"apt-get args=install -y --no-install-recommends libluajit-5.1-2 ca-certificates curl tar gzip rsync coreutils",
+		"apt-get args=install -y --no-install-recommends libluajit-5.1-2 ca-certificates openssl curl tar gzip rsync coreutils iproute2",
 		"curl out=" + filepath.Join(h.installRoot, "opt/tes3mp-easy") + "/.tes3mp-0.8.1.tar.gz.",
 		"chown args=-R root:root " + filepath.Join(h.installRoot, "opt/tes3mp-easy") + "/.tes3mp-0.8.1.",
 		"systemctl args=--no-ask-password enable tes3mp.service",
@@ -939,9 +963,15 @@ func TestBootstrapInstallsReleaseBinariesAndStartsPanel(t *testing.T) {
 		"Installing server binaries from " + binDir,
 		"binary: " + filepath.Join(h.installRoot, "opt/tes3mp-easy/bin/tes3mp-easy-ops"),
 		"binary: " + filepath.Join(h.installRoot, "opt/tes3mp-easy/bin/tes3mp-easy-panel"),
+		"Configuring the panel TLS certificate",
+		"network: TCP port 80 is free for ACME HTTP-01",
+		"panel TLS: acme for 203.0.113.10 (" +
+			filepath.Join(h.installRoot, "etc/tes3mp-easy/panel.env") + ")",
+		"service: tes3mp-panel.service stop",
 		"service: tes3mp-panel.service enabled for boot",
+		"panel: HTTPS /healthz is ready",
 		"service: tes3mp-panel.service active",
-		"panel: open https://<IP>/",
+		"panel: open https://203.0.113.10/",
 	} {
 		assertContains(t, got.stdout, want)
 	}
@@ -957,6 +987,11 @@ func TestBootstrapInstallsReleaseBinariesAndStartsPanel(t *testing.T) {
 	}
 	assertInstalledFile(t, h, "opt/tes3mp-easy/bin/tes3mp-easy-ops")
 	assertInstalledFile(t, h, "opt/tes3mp-easy/bin/tes3mp-easy-panel")
+	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.env",
+		"TES3MP_PANEL_TLS_MODE=acme",
+		"TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10")
+	assertPathMode(t, filepath.Join(h.installRoot, "etc/tes3mp-easy/panel.env"),
+		0o640, false)
 
 	logData, err := os.ReadFile(h.commandLog)
 	if err != nil {
@@ -964,6 +999,11 @@ func TestBootstrapInstallsReleaseBinariesAndStartsPanel(t *testing.T) {
 	}
 	logText := string(logData)
 	for _, want := range []string{
+		"systemctl args=--no-ask-password stop tes3mp-panel.service",
+		"systemctl args=--no-ask-password reset-failed tes3mp-panel.service",
+		"ss args=-H -ltn",
+		"install owner=root group=tes3mp-panel mode=0640 src=",
+		"dest=" + filepath.Join(h.installRoot, "etc/tes3mp-easy/panel.env"),
 		"systemctl args=--no-ask-password start tes3mp.service",
 		"systemctl args=--no-ask-password enable --now tes3mp-easy-backup.timer",
 		"systemctl args=--no-ask-password enable tes3mp-panel.service",
@@ -975,6 +1015,58 @@ func TestBootstrapInstallsReleaseBinariesAndStartsPanel(t *testing.T) {
 	if strings.Index(logText, "start tes3mp.service") >
 		strings.Index(logText, "restart tes3mp-panel.service") {
 		t.Fatalf("panel started before the game service:\n%s", logText)
+	}
+}
+
+func TestBootstrapRejectsBusyPort80ForACME(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	h.env["TES3MP_FAKE_SS_BUSY"] = "1"
+
+	got := h.run(t)
+
+	assertExit(t, got, 1)
+	assertContains(t, got.stderr, "TCP port 80 is already in use")
+	assertContains(t, got.stderr, "Installation failed.")
+}
+
+func TestBootstrapRejectsInvalidPublicAddress(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	h.env["TES3MP_EASY_PUBLIC_ADDRESS"] = "not-an-ip"
+
+	got := h.run(t)
+
+	assertExit(t, got, 1)
+	assertContains(t, got.stderr, "not a valid IPv4 address")
+	assertContains(t, got.stderr, "Installation failed.")
+}
+
+func TestBootstrapRejectsNonCanonicalPublicAddress(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	h.env["TES3MP_EASY_PUBLIC_ADDRESS"] = "203.0.113.010"
+
+	got := h.run(t)
+
+	assertExit(t, got, 1)
+	assertContains(t, got.stderr, "not a valid IPv4 address")
+	assertContains(t, got.stderr, "Installation failed.")
+}
+
+func TestBootstrapRejectsNonPublicAddress(t *testing.T) {
+	for _, address := range []string{"10.0.0.1", "100.64.0.1", "127.0.0.1", "240.0.0.1"} {
+		t.Run(address, func(t *testing.T) {
+			h := newFakeHost(t)
+			h.writeServerBinaries()
+			h.env["TES3MP_EASY_PUBLIC_ADDRESS"] = address
+
+			got := h.run(t)
+
+			assertExit(t, got, 1)
+			assertContains(t, got.stderr, "not a public IPv4 address")
+			assertContains(t, got.stderr, "Installation failed.")
+		})
 	}
 }
 
@@ -1400,6 +1492,21 @@ func TestBootstrapReportsAllFailures(t *testing.T) {
 	} {
 		assertContains(t, got.stderr, want)
 	}
+}
+
+func TestBootstrapAutoDetectsPublicAddress(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	h.env["TES3MP_EASY_PUBLIC_ADDRESS"] = ""
+	h.env["TES3MP_FAKE_PUBLIC_IP"] = "203.0.113.10"
+
+	got := h.run(t)
+
+	assertExit(t, got, 0)
+	assertContains(t, got.stdout, "panel TLS: acme for 203.0.113.10 (")
+	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.env",
+		"TES3MP_PANEL_TLS_MODE=acme",
+		"TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10")
 }
 
 func TestBootstrapInstallIsIdempotent(t *testing.T) {

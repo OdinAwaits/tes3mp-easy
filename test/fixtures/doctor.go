@@ -26,6 +26,7 @@ func DoctorRoot(t testing.TB) (string, map[string]string) {
 		{path: "backups", mode: 0o750},
 		{path: "panel-data", mode: 0o750},
 		{path: "panel-data/tls", mode: 0o700},
+		{path: "panel-data/acme", mode: 0o700},
 		{path: "panel-data/uploads", mode: 0o2770},
 		{path: ".locks", mode: 0o700},
 		{path: ".staging", mode: 0o700},

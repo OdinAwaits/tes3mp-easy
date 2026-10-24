@@ -23,9 +23,10 @@ HTTP-контракты — в `03-contracts.md`; при расхождении 
 - `html/template` + `embed` для HTML, CSS и минимального JS.
 - Никакого Node.js, SPA-фреймворка и сборки фронтенда.
 - Argon2id для пароля (`golang.org/x/crypto/argon2`), память 32 MiB, 1 поток.
-- TLS: готовая пара в `panel-data/tls` или self-signed при первом старте.
-  ACME-выпуск не реализован; внешний клиент не нужен.
-- Файлы: `auth.json`, TLS-сертификаты, uploads. Внешней БД нет.
+- TLS: встроенный `github.com/go-acme/lego/v4` получает и продлевает
+  сертификат Let's Encrypt для публичного IP (RFC 8738, профиль `shortlived`).
+  Внешний ACME-клиент не нужен. Режим `files` служит готовую пару.
+- Файлы: `auth.json`, TLS-сертификаты, ACME-аккаунт, uploads. Внешней БД нет.
 
 Почему так: панель — это несколько форм и таблиц. SPA и Node.js добавили бы
 сборку, зависимости и ещё один слой отладки без пользы для одного админа.
@@ -41,14 +42,17 @@ HTTP-контракты — в `03-contracts.md`; при расхождении 
 ```
 
 Панель запускается как `tes3mp-panel.service` от пользователя
-`tes3mp-panel`, слушает `:80` и `:443`, пишет логи в stdout/stderr → journald.
-`panel-data` принадлежит `tes3mp-panel:tes3mp` и не зависит от жизненного
-цикла игры. Сессии живут в памяти и при рестарте теряются — это осознанно.
+`tes3mp-panel`, постоянно слушает только `:443`, пишет логи в stdout/stderr →
+journald. На время ACME HTTP-01 challenge она занимает `:80` и сразу закрывает
+его после проверки. `panel-data` принадлежит `tes3mp-panel:tes3mp` и не зависит
+от жизненного цикла игры. Сессии живут в памяти и при рестарте теряются — это
+осознанно.
 
 Systemd-лимиты: `MemoryHigh=48M`, `MemoryMax=64M`, `GOMAXPROCS=1`,
-`GOMEMLIMIT=64MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE` для портов
-80/443. Ops, который панель запускает, наследует cgroup панели; поэтому все
-операции с архивами обязаны быть потоковыми и не держать файл в памяти.
+`GOMEMLIMIT=64MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE` для `:443` и
+временного `:80`. `EnvironmentFile=-/etc/tes3mp-easy/panel.env` задаёт режим TLS
+и публичный IP. Ops, который панель запускает, наследует cgroup панели; поэтому
+все операции с архивами обязаны быть потоковыми и не держать файл в памяти.
 
 ### Конфигурация процесса
 
@@ -60,25 +64,34 @@ Systemd-лимиты: `MemoryHigh=48M`, `MemoryMax=64M`, `GOMAXPROCS=1`,
 |---|---|---|---|
 | `TES3MP_PANEL_ROOT` | `--root` | `/tes3mp-easy` | Корень данных |
 | `TES3MP_PANEL_DATA_DIR` | `--data-dir` | `<root>/panel-data` | Изменяемые данные панели |
-| `TES3MP_PANEL_HTTP_ADDR` | `--http-addr` | `:80` | HTTP redirect/ACME listener |
-| `TES3MP_PANEL_HTTPS_ADDR` | `--https-addr` | `:443` | HTTPS listener |
-| `TES3MP_PANEL_PUBLIC_ADDRESS` | `--public-address` | пусто | Публичный IP или `host[:port]` для redirect и API |
-| `TES3MP_PANEL_TLS_CERT` | `--tls-cert` | `<data-dir>/tls/cert.pem` | Сертификат |
-| `TES3MP_PANEL_TLS_KEY` | `--tls-key` | `<data-dir>/tls/key.pem` | Приватный ключ |
+| `TES3MP_PANEL_HTTPS_ADDR` | `--https-addr` | `:443` | Единственный постоянный listener |
+| `TES3MP_PANEL_PUBLIC_ADDRESS` | `--public-address` | пусто | Публичный IP для ACME-сертификата и API; обязателен в `acme` |
+| `TES3MP_PANEL_TLS_MODE` | `--tls-mode` | `acme` | `acme` или `files` |
+| `TES3MP_PANEL_ACME_DIRECTORY` | `--acme-directory` | Let's Encrypt production | ACME directory URL |
+| `TES3MP_PANEL_ACME_EMAIL` | `--acme-email` | пусто | Необязательный контакт аккаунта |
+| `TES3MP_PANEL_ACME_PROFILE` | `--acme-profile` | `shortlived` | Профиль сертификата; для IP обязателен `shortlived` |
+| `TES3MP_PANEL_TLS_CERT` | `--tls-cert` | `<data-dir>/tls/cert.pem` | Сертификат (в `files` — входной) |
+| `TES3MP_PANEL_TLS_KEY` | `--tls-key` | `<data-dir>/tls/key.pem` | Приватный ключ (в `files` — входной) |
 
-`--public-address` не принимает scheme, path и query. Если он пуст, HTTP
-redirect берёт host из запроса; в production публичный IP нужно задать явно,
-иначе `/api/v1/server` не сможет отдать стабильный `address`. Пример drop-in:
+`--public-address` в режиме `acme` принимает только публичный IP без порта,
+scheme и path; частные, loopback, link-local, CGNAT (`100.64.0.0/10`) и
+зарезервированные диапазоны отклоняются. Bootstrap получает его автоматически
+или через `--public-address` и пишет в `/etc/tes3mp-easy/panel.env`:
 
 ```ini
-[Service]
-Environment=TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10
+TES3MP_PANEL_TLS_MODE=acme
+TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10
 ```
 
-Коды выхода: `0` — штатный старт/остановка и `--help`/`--version`, `2` —
-ошибка конфигурации, `1` — ошибка TLS, bind или runtime. Оба listener-а и
-TLS-пара готовятся до приёма трафика; отказ HTTPS-bind закрывает уже открытый
-HTTP.
+Если публичный IP не задан, `/api/v1/server` не сможет отдать стабильный
+`address`. В `files` режиме `public_address` не участвует в TLS и может быть
+пустым.
+
+Коды выхода: `0` — штатный старт/остановка и `--help`/`--version`, `2` — ошибка
+конфигурации, `1` — ошибка ACME/TLS, bind или runtime. В `acme` режиме панель
+до приёма трафика проверяет сертификат и, если нужно, выпускает новый; при
+ошибке старт завершается. HTTPS-listener открывается только после успешной
+проверки/выпуска.
 
 ## 4. Маршруты
 
@@ -99,9 +112,9 @@ HTTP.
 `/api/v1/mods/current/archive` — в `03-contracts.md` §7. Пароль сервера в
 публичном API отсутствует; клиент спрашивает его у игрока.
 
-Маршруты реализованы в `internal/panel`: `/healthz`, HTTP→HTTPS redirect и
-TLS-listener; auth (`/admin/login`, `/admin/logout`, `/admin/password`);
-публичные страницы и API (`public.go`); админские страницы (`admin.go`);
+Маршруты реализованы в `internal/panel`: `/healthz` и TLS-listener; auth
+(`/admin/login`, `/admin/logout`, `/admin/password`); публичные страницы и API
+(`public.go`); админские страницы (`admin.go`);
 ops-клиент (`ops.go`). Contract-тесты панели живут в `test/contract/panel` и
 проверяют cookie, ошибки и реальный бинарник; лимиты памяти — в
 `test/resource`.
@@ -450,27 +463,39 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
 
 ## 14. TLS
 
-- HTTP-listener резервирует ACME HTTP-01 challenge и редиректит остальные
-  запросы на HTTPS с кодом `308`; path и query сохраняются.
-  `/.well-known/acme-challenge/` не редиректится.
-- `:443` — TLS не ниже 1.2.
+- Панель постоянно слушает только `:443`; TLS не ниже 1.2.
+- В режиме `acme` (по умолчанию) встроенный lego получает сертификат Let's
+  Encrypt для публичного IP по RFC 8738. Let's Encrypt требует профиль
+  `shortlived` (шесть дней); `--acme-profile` можно переопределить, но другой
+  профиль для IP не выдаст сертификат.
+- HTTP-01 challenge обслуживает `http01.NewProviderServer("", "80")`. Порт 80
+  открывается только на время `Present`/`CleanUp`; после выпуска или продления
+  listener закрывается. Постоянного HTTP-редиректа нет.
+- Аккаунт ACME хранится в `panel-data/acme/account.key` (`0600`, каталог `0700`).
+  При старте панель находит аккаунт по ключу или регистрирует его (Terms of
+  Service Let's Encrypt принимаются автоматически); email необязателен.
 - Сертификаты и ключи — в `panel-data/tls/`, права `0600`, каталог `0700`.
+  Запись атомарная (temp + rename).
 - При старте:
-  - если есть оба файла, панель загружает пару;
-  - если нет обоих, создаёт self-signed ECDSA P-256 на 365 дней с SAN
-    `localhost`, hostname, IP интерфейсов и `public_address`, пишет файлы
-    атомарно и логирует предупреждение;
-  - если есть только один файл или пара не совпадает, старт завершается
-    ошибкой; панель не перезаписывает и не «лечит» её молча.
-- Self-signed — режим по умолчанию, если готовой пары нет: браузер будет
-  ругаться, а клиентские загрузки могут не пройти проверку TLS. Клиент не
-  отключает проверку сертификата.
-- ACME-выпуск по IP не реализован. HTTP-listener резервирует challenge-path и
-  отдаёт `404`; для доверенного сертификата положите `cert.pem` и `key.pem` в
-  `panel-data/tls/` и перезапустите панель.
-- Домен не требуется.
-- Порты 80/443 открываются ambient-капабилити `CAP_NET_BIND_SERVICE`, а не
-  запуском панели под root.
+  - если пара есть и сертификат покрывает публичный IP и ещё не в окне
+    продления, панель его использует;
+  - legacy self-signed пара заменяется, даже если покрывает IP: ACME-режим не
+    должен обслуживать локально сгенерированный сертификат;
+  - если сертификат истекает, панель пытается продлить его сейчас; при ошибке
+    продолжает работу со старым сертификатом и повторяет попытку в фоне;
+  - если пары нет, сертификат просрочен или не покрывает IP, выпуск
+    обязателен, и его ошибка завершает старт.
+- Фоновое продление проверяет сертификат каждые 6 часов. Окно — треть срока
+  жизни (для шестидневного сертификата — двое суток), не больше 30 суток.
+  После ошибки повтор через 30 минут; сертификат подменяется атомарно, без
+  рестарта и без разрыва соединений.
+- Режим `files` не обращается к ACME и требует готовые `cert.pem`/`key.pem`.
+  Он предназначен для нестандартных установок и тестов; self-signed генерации
+  в production-коде нет.
+- Домен не требуется. Порты 443 и временный 80 открываются ambient-капабилити
+  `CAP_NET_BIND_SERVICE`, а не запуском панели под root.
+- Для отладки можно направить `--acme-directory` на staging; production-ветка
+  Let's Encrypt имеет лимиты на неудачные проверки.
 
 ## 15. Данные панели
 
@@ -478,9 +503,11 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
 panel-data/
 ├── auth.json                 # Argon2id-хеш, 0600
 ├── initial-password.txt      # только до первой смены, 0600
+├── acme/
+│   └── account.key           # ключ аккаунта ACME, 0600
 ├── tls/
-│   ├── cert.pem
-│   └── key.pem
+│   ├── cert.pem              # текущий сертификат
+│   └── key.pem               # текущий ключ
 └── uploads/                  # временные архивы модов, чистится после import
 ```
 
@@ -523,14 +550,14 @@ panel-data/
 | Ошибки ops | каждый `error.code` → ожидаемый HTTP и текст |
 | Конфиги | валидация, повторное чтение, `config_invalid` |
 | Staff | список из `players/*.json`, вызов `ops staff set` |
-| Lifecycle и TLS | конфиг env/flags, self-signed generation/reuse/partial pair, TLS ≥ 1.2, `/healthz`, `308`, bind rollback, `SIGTERM` |
+| Lifecycle и TLS | конфиг env/flags, ACME fake-obtainer (IP SAN, shortlived profile, wrong IP, renewal window, отказ продления, замена legacy self-signed), `files` pair, TLS ≥ 1.2, `/healthz`, HSTS, bind rollback, `SIGTERM` |
 | Интеграция | реальный ops на temp-root, fake systemd/journalctl |
 
 Панель не тестирует tar и CRC — это тесты ops. Панель тестирует, что она
 правильно вызывает ops и правильно показывает результат. Тест на загрузку
 большого файла проверяет, что память панели не растёт пропорционально
-размеру upload. Bind на 80/443 проверяется на VM с `CAP_NET_BIND_SERVICE`;
-unit-тесты используют эфемерные порты и не требуют root.
+размеру upload. Bind на 443 и временный 80 проверяются на VM с
+`CAP_NET_BIND_SERVICE`; unit-тесты используют эфемерные порты и не требуют root.
 
 ## 18. Non-goals панели
 

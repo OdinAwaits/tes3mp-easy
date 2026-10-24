@@ -42,7 +42,7 @@ best-effort и не входят в поддерживаемую конфигу�
 | Компонент | Где | Роль | Что пишет |
 |---|---|---|---|
 | `tes3mp.service` | VPS, systemd, UDP 25565 | Игровой сервер | `players/`, `world/`, `configs/banlist.json` во время игры |
-| `tes3mp-panel.service` | VPS, systemd, :80/:443 | HTTPS-панель, публичный API, админка | `panel-data/` |
+| `tes3mp-panel.service` | VPS, systemd, :443 (+ временный :80 для ACME) | HTTPS-панель, публичный API, админка | `panel-data/` |
 | `tes3mp-easy-backup.timer` | VPS, systemd | Запускает бэкап каждые 5 минут | — |
 | `tes3mp-easy-backup.service` | VPS, systemd, oneshot | Один запуск `ops backups create` | через `ops` в `backups/` |
 | `tes3mp-easy-ops` | CLI, `/opt/tes3mp-easy/bin` | Все административные операции | `configs/`, `players/`, `world/`, `mods/`, `backups/`, `.locks/` |
@@ -58,7 +58,7 @@ best-effort и не входят в поддерживаемую конфигу�
 | Unit | User | Память | Дополнительно |
 |---|---|---|---|
 | `tes3mp.service` | `tes3mp` | `MemoryHigh=384M`, `MemoryMax=448M` | `OOMScoreAdjust=-500`, `Restart=on-failure` |
-| `tes3mp-panel.service` | `tes3mp-panel` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=64MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE` |
+| `tes3mp-panel.service` | `tes3mp-panel` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=64MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE`, `EnvironmentFile=-/etc/tes3mp-easy/panel.env` |
 | `tes3mp-easy-backup.service` | `tes3mp` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=64MiB`, `Nice=19`, `IOSchedulingClass=idle`, `OOMScoreAdjust=+500` |
 | `tes3mp-easy-backup.timer` | — | — | `OnBootSec=2min`, `OnUnitActiveSec=5min`, `AccuracySec=30s` |
 
@@ -86,8 +86,11 @@ ops дополнительно пропускает бэкап, если игр�
 `tes3mp-panel.service`:
 
 - `WorkingDirectory=/opt/tes3mp-easy`;
+- `EnvironmentFile=-/etc/tes3mp-easy/panel.env` задаёт `TES3MP_PANEL_TLS_MODE=acme`
+  и `TES3MP_PANEL_PUBLIC_ADDRESS`;
 - `ExecStart=/opt/tes3mp-easy/bin/tes3mp-easy-panel`;
 - `AmbientCapabilities=CAP_NET_BIND_SERVICE`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE`;
+  capability нужна для `:443` и временного `:80` во время ACME HTTP-01;
 - `ProtectSystem=strict`, `PrivateTmp=yes`, `ProtectHome=yes`;
 - `ReadWritePaths=/tes3mp-easy/panel-data`;
 - `ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/mods`;
@@ -97,7 +100,13 @@ ops дополнительно пропускает бэкап, если игр�
   панели писать туда напрямую;
 - `NoNewPrivileges=no` — иначе не сработает узкий `sudo`; граница безопасности —
   не этот флаг, а точные правила sudoers и root-helper;
-- `Restart=on-failure`, `RestartSec=3s`.
+- `Restart=on-failure`, `RestartSec=60s`, `StartLimitBurst=2`: падение ACME не
+  должно превращаться в шквал запросов к Let's Encrypt. Let's Encrypt считает
+  пять неудачных проверок на hostname в час, поэтому после двух попыток юнит
+  останавливается, а оператор исправляет `80/tcp` и перезапускает bootstrap.
+- `TimeoutStartSec=5min` ограничивает запуск процесса; готовность HTTPS после
+  первого выпуска сертификата проверяет `bootstrap.sh` (до 300 с), а не
+  systemd, потому что юнит имеет `Type=simple`.
 
 `tes3mp-easy-backup.service` не получает прав root и не управляет юнитами:
 ему достаточно прочитать состояние (`systemctl is-active`) и записать архив от
@@ -134,6 +143,7 @@ Bootstrap устанавливает `tes3mp.service`, `tes3mp-easy-backup.timer
 - `panel-data/` — `tes3mp-panel:tes3mp 0750`;
 - `panel-data/auth.json`, `panel-data/initial-password.txt` — `0600`;
 - `panel-data/tls/` — `0700`, файлы `0600`;
+- `panel-data/acme/` — `0700`, `account.key` — `0600`;
 - `panel-data/uploads/` — `tes3mp-panel:tes3mp 2770`, файлы `0640`; группа
   `tes3mp` должна иметь write, иначе `ops` не сможет сделать rename upload в
   `backups/mods/`;
@@ -210,6 +220,8 @@ rootctl.
 ├── panel-data/                   # tes3mp-panel:tes3mp
 │   ├── auth.json
 │   ├── initial-password.txt
+│   ├── acme/
+│   │   └── account.key
 │   ├── tls/
 │   └── uploads/                  # временные загрузки модов
 ├── .config/openmw/               # HOME-каталоги для tes3mp-prelaunch
@@ -337,9 +349,10 @@ tes3mp-easy-backup.timer ──каждые 5 минут──► tes3mp-easy-ba
 - **Path traversal.** Все имена архивов и игроков проверяются: только
   `filepath.Base`, без `/`, `\`, `..` и NUL. Распаковка tar запрещает
   абсолютные пути, `..`, symlink и hardlink.
-- **TLS.** Панель не работает по голому HTTP для админки. Целевой режим —
-  сертификат Let’s Encrypt по IP; self-signed — аварийный режим с явным
-  предупреждением.
+- **TLS.** Панель не работает по голому HTTP для админки. Встроенный ACME-клиент
+  получает и продлевает сертификат Let's Encrypt для публичного IP (RFC 8738,
+  профиль `shortlived`). Постоянно открыт только `:443`; `:80` занимается
+  HTTP-01 challenge на время выпуска/продления.
 - **CSRF и сессии.** Все изменяющие запросы — с CSRF-токеном. Cookie:
   `HttpOnly`, `Secure`, `SameSite=Strict`.
 - **Rate limit.** Логин и публичные скачивания ограничены по IP.
@@ -353,6 +366,7 @@ tes3mp-easy-backup.timer ──каждые 5 минут──► tes3mp-easy-ba
 | Сбой | Поведение |
 |---|---|
 | Панель упала | `tes3mp.service` и таймер бэкапов продолжают работать |
+| ACME не выпустил сертификат | Панель не открывает `:443`, пишет причину в journald; `bootstrap.sh` ждёт `/healthz` и завершается ошибкой |
 | Бэкап упал | Панель показывает предупреждение; ручной `backups create` работает |
 | systemd недоступен | Панель отдаёт 503 `service_unavailable`, не изображает «running» |
 | Кривой архив модов | `ops mods import` отклоняет до записи в `backups/mods/`; `mods deploy` — до подмены `mods/` |
