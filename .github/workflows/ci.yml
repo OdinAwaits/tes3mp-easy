@@ -34,7 +34,7 @@ jobs:
       - name: Install Fyne build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
 
       - name: Validate sudoers
         run: sudo visudo -cf sudoers.d/tes3mp-easy

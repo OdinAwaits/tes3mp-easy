@@ -323,7 +323,7 @@ bash -n bootstrap.sh
 bash -n test/e2e/release-smoke.sh
 sh -n rootctl/tes3mp-easy-rootctl
 sudo apt-get update
-sudo apt-get install -y libgl1-mesa-dev xorg-dev
+sudo apt-get install -y libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev wayland-protocols
 sudo visudo -cf sudoers.d/tes3mp-easy
 test -z "$(gofmt -l .)"
 go vet ./...
