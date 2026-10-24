@@ -128,7 +128,8 @@ internal/
   `tes3mp-easy-backup.timer` активен и `enabled`;
 - journald читается, `journalctl -u tes3mp.service -n 1` не требует пароля;
 - `tes3mp-server` и библиотеки релиза на месте; `libluajit-5.1.so.2` находится
-  через `ldconfig -p`; `ldd tes3mp-server.x86_64` не показывает `not found`;
+  через `ldconfig -p`; `LD_LIBRARY_PATH=/opt/tes3mp-easy/tes3mp/lib ldd
+  tes3mp-server.x86_64` не показывает `not found`;
 - RAM не меньше 512 MiB; swap не меньше 480 MiB (bootstrap создаёт 512 MiB
   `/swapfile`, если swap меньше 480 MiB), `vm.swappiness=10`;
 - cgroup-лимиты юнитов соответствуют §3 `02-architecture.md`;
@@ -172,8 +173,8 @@ internal/
   требует пароля; при недоступном systemd проверка не вызывается и даёт
   `error`;
 - `runtime` — обязательные файлы TES3MP 0.8.1 на месте и исполняемые,
-  `libluajit-5.1.so.2` виден в `ldconfig -p`, а `ldd tes3mp-server.x86_64` не
-  содержит `not found`;
+  `libluajit-5.1.so.2` виден в `ldconfig -p`, а `LD_LIBRARY_PATH=lib ldd
+  tes3mp-server.x86_64` не содержит `not found`;
 - `memory` — RAM не меньше 512 MiB, swap не меньше 480 MiB и
   `vm.swappiness=10` в drop-in и, если доступно, в `/proc/sys/vm/swappiness`;
   если bootstrap не смог создать `/swapfile`, проверка остаётся `error`;

@@ -58,7 +58,7 @@ best-effort и не входят в поддерживаемую конфигу�
 | Unit | User | Память | Дополнительно |
 |---|---|---|---|
 | `tes3mp.service` | `tes3mp` | `MemoryHigh=384M`, `MemoryMax=448M` | `OOMScoreAdjust=-500`, `Restart=on-failure` |
-| `tes3mp-panel.service` | `tes3mp-panel` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=64MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE`, `EnvironmentFile=-/etc/tes3mp-easy/panel.env` |
+| `tes3mp-panel.service` | `tes3mp-panel` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=64MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE`, bounding `CAP_SETUID`/`CAP_SETGID`/`CAP_AUDIT_WRITE`/`CAP_SYS_RESOURCE` для sudo, `EnvironmentFile=-/etc/tes3mp-easy/panel.env` |
 | `tes3mp-easy-backup.service` | `tes3mp` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=64MiB`, `Nice=19`, `IOSchedulingClass=idle`, `OOMScoreAdjust=+500` |
 | `tes3mp-easy-backup.timer` | — | — | `OnBootSec=2min`, `OnUnitActiveSec=5min`, `AccuracySec=30s` |
 
@@ -89,8 +89,12 @@ ops дополнительно пропускает бэкап, если игр�
 - `EnvironmentFile=-/etc/tes3mp-easy/panel.env` задаёт `TES3MP_PANEL_TLS_MODE=acme`
   и `TES3MP_PANEL_PUBLIC_ADDRESS`;
 - `ExecStart=/opt/tes3mp-easy/bin/tes3mp-easy-panel`;
-- `AmbientCapabilities=CAP_NET_BIND_SERVICE`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE`;
-  capability нужна для `:443` и временного `:80` во время ACME HTTP-01;
+- `AmbientCapabilities=CAP_NET_BIND_SERVICE`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_SYS_RESOURCE`;
+  ambient capability нужна для `:443` и временного `:80` во время ACME HTTP-01;
+  остальные capability доступны только setuid-`sudo`, который панель использует
+  для запуска фиксированной команды `ops` от `tes3mp`: `CAP_SETUID`/`CAP_SETGID`
+  переключают пользователя, `CAP_AUDIT_WRITE` пишет audit-запись, а
+  `CAP_SYS_RESOURCE` позволяет sudo применить PAM-лимиты без предупреждений;
 - `ProtectSystem=strict`, `PrivateTmp=yes`, `ProtectHome=yes`;
 - `ReadWritePaths=/tes3mp-easy/panel-data`;
 - `ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/mods`;
@@ -141,7 +145,8 @@ Bootstrap устанавливает `tes3mp.service`, `tes3mp-easy-backup.timer
 - `players/`, `world/`, `mods/`, `backups/` — `tes3mp:tes3mp 0750`, файлы
   `0640`;
 - `panel-data/` — `tes3mp-panel:tes3mp 0750`;
-- `panel-data/auth.json`, `panel-data/initial-password.txt` — `0600`;
+- `panel-data/auth.json`, `panel-data/initial-password.txt` —
+  `tes3mp-panel:tes3mp-panel 0600`;
 - `panel-data/tls/` — `0700`, файлы `0600`;
 - `panel-data/acme/` — `0700`, `account.key` — `0600`;
 - `panel-data/uploads/` — `tes3mp-panel:tes3mp 2770`, файлы `0640`; группа

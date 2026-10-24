@@ -69,7 +69,10 @@ OS-матрица: Debian 12 и Ubuntu 24.04, x86_64, systemd. Другие ОС
 - что релизный `bin/` устанавливает оба бинарника с режимом `0755`, а
   неполный набор отвергается до записи;
 - что при наличии панели bootstrap включает её и использует `restart`, чтобы
-  подхватить заменённый бинарник.
+  подхватить заменённый бинарник;
+- что `reset-failed` для панели вызывается только при реальном `failed`:
+  systemd 252 возвращает ошибку для inactive unit, и это не должно срывать
+  первую установку.
 
 `internal/release` собирает архив дважды и сравнивает байты: tar/gzip не
 содержат времени, uid/gid или пути хоста, `VERSION` генерируется из аргумента,
@@ -149,10 +152,10 @@ predeploy-лимиты, защиту текущего mods-архива и за�
 `test/contract/panel` собирает бинарник панели и запускает его на эфемерном
 HTTPS-порту с fixture-парой в режиме `files`. Проверяются:
 
-- lifecycle: env/flags и derived paths, ACME fake-obtainer (IP SAN, shortlived
-  profile, wrong IP, renewal window, отказ продления, замена legacy
-  self-signed), `files` pair, TLS ≥ 1.2, `/healthz`, HSTS, bind rollback,
-  `SIGTERM`;
+- lifecycle: env/flags и derived paths, ACME fake-obtainer (IP SAN без
+  Common Name, shortlived profile, wrong IP, renewal window, отказ продления,
+  замена legacy self-signed), `files` pair, TLS ≥ 1.2, `/healthz`, HSTS,
+  bind rollback, `SIGTERM`;
 - auth: создание/reuse/corrupt `auth.json`, режимы `0600`, `reset-password`,
   первый вход с временным паролем, смена пароля, cookie-флаги, CSRF,
   rate limit;

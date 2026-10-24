@@ -85,7 +85,11 @@ func checkRuntime(ctx context.Context, root string, timeout time.Duration,
 	if binariesPresent {
 		target := filepath.Join(root, "tes3mp-server.x86_64")
 		callCtx, cancel = context.WithTimeout(ctx, timeout)
-		lddOut, err := run(callCtx, "ldd", target)
+		// The tes3mp-server wrapper starts the binary with LD_LIBRARY_PATH=./lib.
+		// Use the same path for ldd, otherwise the bundled boost libraries are
+		// reported as "not found" on a healthy runtime.
+		lddOut, err := run(callCtx, "env",
+			"LD_LIBRARY_PATH="+filepath.Join(root, "lib"), "ldd", target)
 		cancel()
 		switch {
 		case err != nil:

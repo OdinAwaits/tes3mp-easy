@@ -65,8 +65,10 @@ type ownershipFile struct {
 
 var ownershipFiles = []ownershipFile{
 	{rel: "backups/mods/current.txt", user: ownerTes3MP, group: ownerTes3MP, mode: 0o640},
-	{rel: "panel-data/auth.json", user: ownerTes3MPPanel, group: ownerTes3MP, mode: 0o600},
-	{rel: "panel-data/initial-password.txt", user: ownerTes3MPPanel, group: ownerTes3MP, mode: 0o600},
+	// The panel creates these with its primary group. Mode 0600 means the
+	// group has no access; keep the check exact for the panel's own group.
+	{rel: "panel-data/auth.json", user: ownerTes3MPPanel, group: ownerTes3MPPanel, mode: 0o600},
+	{rel: "panel-data/initial-password.txt", user: ownerTes3MPPanel, group: ownerTes3MPPanel, mode: 0o600},
 }
 
 type ownerLookup func(label, wantUser, wantGroup string, info os.FileInfo) string

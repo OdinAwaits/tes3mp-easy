@@ -1434,10 +1434,19 @@ configure_panel_tls() {
     # On upgrade an old panel process can still own :80. Stop the unit before
     # the challenge check; restart in start_runtime_services brings the new
     # binary up with the ACME settings.
-    run_install systemctl --no-ask-password stop tes3mp-panel.service
+    #
     # Clear a previous start-limit hit so an operator can retry ACME
-    # immediately after fixing port 80, the firewall or the public IP.
-    run_install systemctl --no-ask-password reset-failed tes3mp-panel.service
+    # immediately after fixing port 80, the firewall or the public IP. Only
+    # call reset-failed for a unit that is actually failed: systemd 252
+    # returns an error for an inactive unit that was never started, and that
+    # must not abort a first install.
+    if systemctl --no-ask-password is-failed --quiet tes3mp-panel.service; then
+        run_install systemctl --no-ask-password reset-failed tes3mp-panel.service
+        pass "service: tes3mp-panel.service failed state cleared"
+    else
+        pass "service: tes3mp-panel.service has no failed state to clear"
+    fi
+    run_install systemctl --no-ask-password stop tes3mp-panel.service
     pass "service: tes3mp-panel.service stopped before the ACME port check"
 
     if ! port_80_is_free; then

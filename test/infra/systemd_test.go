@@ -53,7 +53,7 @@ func TestSystemdAssetsContainRequiredSettings(t *testing.T) {
 				"MemoryMax=64M",
 				"OOMScoreAdjust=500",
 				"AmbientCapabilities=CAP_NET_BIND_SERVICE",
-				"CapabilityBoundingSet=CAP_NET_BIND_SERVICE",
+				"CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_SYS_RESOURCE",
 				"NoNewPrivileges=no",
 				"ReadWritePaths=/tes3mp-easy/panel-data",
 				"ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/mods",

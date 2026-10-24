@@ -360,14 +360,35 @@ func writeCertificatePair(cfg Config, certPEM, keyPEM []byte) error {
 	return nil
 }
 
-// acmeObtainRequest is kept separate so tests can assert that IP identifiers
-// always carry the shortlived-compatible profile and a full chain.
-func acmeObtainRequest(cfg Config) legoCertificate.ObtainRequest {
-	return legoCertificate.ObtainRequest{
-		Domains: []string{cfg.PublicAddress},
-		Bundle:  true,
-		Profile: cfg.ACMEProfile,
+// acmeCSRRequest builds the CSR used for the ACME order. The IP identifier
+// must live in subjectAltName only: lego's Obtain helper puts the first domain
+// in Common Name, and Let's Encrypt rejects an IP address in CN with badCSR.
+// ObtainForCSR lets us keep Common Name empty and still carry the shortlived
+// profile and the full chain.
+func acmeCSRRequest(cfg Config) (legoCertificate.ObtainForCSRRequest, error) {
+	privateKey, err := certcrypto.GeneratePrivateKey(certcrypto.EC256)
+	if err != nil {
+		return legoCertificate.ObtainForCSRRequest{}, fmt.Errorf(
+			"generate ACME private key: %w", err)
 	}
+	csrDER, err := certcrypto.CreateCSR(privateKey, certcrypto.CSROptions{
+		SAN: []string{cfg.PublicAddress},
+	})
+	if err != nil {
+		return legoCertificate.ObtainForCSRRequest{}, fmt.Errorf(
+			"create ACME CSR: %w", err)
+	}
+	csr, err := x509.ParseCertificateRequest(csrDER)
+	if err != nil {
+		return legoCertificate.ObtainForCSRRequest{}, fmt.Errorf(
+			"parse ACME CSR: %w", err)
+	}
+	return legoCertificate.ObtainForCSRRequest{
+		CSR:        csr,
+		PrivateKey: privateKey,
+		Bundle:     true,
+		Profile:    cfg.ACMEProfile,
+	}, nil
 }
 
 // legoObtainer implements RFC 8738 certificates through lego. The HTTP-01
@@ -424,7 +445,11 @@ func (o *legoObtainer) Obtain(ctx context.Context, cfg Config) ([]byte, []byte, 
 		}
 	}
 
-	resource, err := client.Certificate.Obtain(acmeObtainRequest(cfg))
+	acmeRequest, err := acmeCSRRequest(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	resource, err := client.Certificate.ObtainForCSR(acmeRequest)
 	if err != nil {
 		return nil, nil, err
 	}

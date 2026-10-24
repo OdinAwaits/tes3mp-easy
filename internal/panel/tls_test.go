@@ -473,16 +473,32 @@ func generateSelfSignedCertificate(t *testing.T, ip string,
 		pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
 }
 
-func TestACMEObtainRequestUsesIPAndShortlivedProfile(t *testing.T) {
+func TestACMECSRUsesIPSANWithoutCommonName(t *testing.T) {
 	cfg := Config{
 		PublicAddress: "203.0.113.10",
 		ACMEProfile:   DefaultACMEProfile,
 	}.Normalize()
 
-	request := acmeObtainRequest(cfg)
-
-	if len(request.Domains) != 1 || request.Domains[0] != "203.0.113.10" {
-		t.Fatalf("Domains = %v", request.Domains)
+	request, err := acmeCSRRequest(cfg)
+	if err != nil {
+		t.Fatalf("acmeCSRRequest: %v", err)
+	}
+	if request.CSR == nil {
+		t.Fatal("CSR = nil")
+	}
+	if request.PrivateKey == nil {
+		t.Fatal("PrivateKey = nil")
+	}
+	if request.CSR.Subject.CommonName != "" {
+		t.Fatalf("CommonName = %q, want empty for an IP identifier",
+			request.CSR.Subject.CommonName)
+	}
+	if len(request.CSR.DNSNames) != 0 {
+		t.Fatalf("DNSNames = %v, want empty", request.CSR.DNSNames)
+	}
+	if len(request.CSR.IPAddresses) != 1 ||
+		request.CSR.IPAddresses[0].String() != "203.0.113.10" {
+		t.Fatalf("IPAddresses = %v", request.CSR.IPAddresses)
 	}
 	if request.Profile != "shortlived" {
 		t.Fatalf("Profile = %q, want shortlived", request.Profile)

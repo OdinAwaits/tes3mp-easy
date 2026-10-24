@@ -170,11 +170,25 @@ func TestCheckJournald(t *testing.T) {
 func TestCheckRuntime(t *testing.T) {
 	files := func(t *testing.T) (string, func(context.Context, string, ...string) ([]byte, error)) {
 		t.Helper()
-		return writeRuntimeRoot(t), func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		root := writeRuntimeRoot(t)
+		return root, func(_ context.Context, name string, args ...string) ([]byte, error) {
 			switch name {
 			case "ldconfig":
 				return []byte("libluajit-5.1.so.2\n"), nil
-			case "ldd":
+			case "env":
+				want := []string{
+					"LD_LIBRARY_PATH=" + filepath.Join(root, "lib"),
+					"ldd",
+					filepath.Join(root, "tes3mp-server.x86_64"),
+				}
+				if len(args) != len(want) {
+					return nil, fmt.Errorf("env args = %v, want %v", args, want)
+				}
+				for i := range want {
+					if args[i] != want[i] {
+						return nil, fmt.Errorf("env args = %v, want %v", args, want)
+					}
+				}
 				return []byte("libc.so.6 => /lib/libc.so.6\n"), nil
 			default:
 				return nil, fmt.Errorf("unexpected %s", name)
@@ -297,7 +311,7 @@ func deepOptions(t *testing.T) Options {
 			switch name {
 			case "ldconfig":
 				return []byte("libluajit-5.1.so.2 (libc6,x86-64) => /lib/libluajit-5.1.so.2\n"), nil
-			case "ldd":
+			case "env":
 				return []byte("linux-vdso.so.1\nlibluajit-5.1.so.2 => /lib/libluajit-5.1.so.2\n"), nil
 			default:
 				return nil, fmt.Errorf("unexpected command %s", name)

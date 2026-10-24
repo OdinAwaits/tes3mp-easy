@@ -50,7 +50,10 @@ journald. На время ACME HTTP-01 challenge она занимает `:80` �
 
 Systemd-лимиты: `MemoryHigh=48M`, `MemoryMax=64M`, `GOMAXPROCS=1`,
 `GOMEMLIMIT=64MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE` для `:443` и
-временного `:80`. `EnvironmentFile=-/etc/tes3mp-easy/panel.env` задаёт режим TLS
+временного `:80`; bounding set дополнительно содержит
+`CAP_SETUID`/`CAP_SETGID`/`CAP_AUDIT_WRITE`/`CAP_SYS_RESOURCE`, иначе setuid-`sudo`
+не сможет переключиться на `tes3mp` и применить PAM-лимиты.
+`EnvironmentFile=-/etc/tes3mp-easy/panel.env` задаёт режим TLS
 и публичный IP. Ops, который панель запускает, наследует cgroup панели; поэтому
 все операции с архивами обязаны быть потоковыми и не держать файл в памяти.
 
@@ -468,6 +471,9 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
   Encrypt для публичного IP по RFC 8738. Let's Encrypt требует профиль
   `shortlived` (шесть дней); `--acme-profile` можно переопределить, но другой
   профиль для IP не выдаст сертификат.
+- CSR строится через `ObtainForCSR` с пустым Common Name и IP только в
+  subjectAltName: lego `Obtain` кладёт первый identifier в CN, а Let's Encrypt
+  отклоняет IP в CN с `badCSR`.
 - HTTP-01 challenge обслуживает `http01.NewProviderServer("", "80")`. Порт 80
   открывается только на время `Present`/`CleanUp`; после выпуска или продления
   listener закрывается. Постоянного HTTP-редиректа нет.

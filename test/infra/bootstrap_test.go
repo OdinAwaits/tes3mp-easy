@@ -263,6 +263,18 @@ if [ "${1:-}" = "--version" ]; then
 fi
 printf 'systemctl args=%s\n' "$*" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
 case " $* " in
+    *" is-failed --quiet tes3mp-panel.service "*)
+        if [ "${TES3MP_FAKE_PANEL_FAILED:-0}" = "1" ]; then
+            exit 0
+        fi
+        exit 1
+        ;;
+    *" reset-failed tes3mp-panel.service "*)
+        if [ "${TES3MP_FAKE_PANEL_FAILED:-0}" != "1" ]; then
+            printf 'Failed to reset failed state of unit tes3mp-panel.service: Unit tes3mp-panel.service not loaded.\n' >&2
+            exit 1
+        fi
+        ;;
     *" start tes3mp.service "*)
         if [ "${TES3MP_FAKE_SERVICE_START_FAIL:-0}" = "1" ]; then
             printf 'fake tes3mp.service start failed\n' >&2
@@ -951,7 +963,7 @@ func TestBootstrapPreflightPassesAndInstalls(t *testing.T) {
 	assertContains(t, string(sudoers), "tes3mp ALL=(root) NOPASSWD: /usr/local/libexec/tes3mp-easy-rootctl start")
 
 	assertInstalledFile(t, h, "etc/systemd/system/tes3mp.service", "MemoryMax=448M", "OOMScoreAdjust=-500")
-	assertInstalledFile(t, h, "etc/systemd/system/tes3mp-panel.service", "CapabilityBoundingSet=CAP_NET_BIND_SERVICE", "NoNewPrivileges=no")
+	assertInstalledFile(t, h, "etc/systemd/system/tes3mp-panel.service", "CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_SYS_RESOURCE", "NoNewPrivileges=no")
 	assertInstalledFile(t, h, "etc/systemd/system/tes3mp-easy-backup.service", "Type=oneshot", "TimeoutStartSec=9min", "Nice=19", "ConditionPathExists=/opt/tes3mp-easy/bin/tes3mp-easy-ops")
 	assertInstalledFile(t, h, "etc/systemd/system/tes3mp-easy-backup.timer", "OnUnitActiveSec=5min", "AccuracySec=30s")
 	assertInstalledFile(t, h, "etc/systemd/journald.conf.d/tes3mp-easy.conf", "SystemMaxUse=100M", "RuntimeMaxUse=32M")
@@ -1023,7 +1035,8 @@ func TestBootstrapInstallsReleaseBinariesAndStartsPanel(t *testing.T) {
 		"network: TCP port 80 is free for ACME HTTP-01",
 		"panel TLS: acme for 203.0.113.10 (" +
 			filepath.Join(h.installRoot, "etc/tes3mp-easy/panel.env") + ")",
-		"service: tes3mp-panel.service stop",
+		"service: tes3mp-panel.service has no failed state to clear",
+		"service: tes3mp-panel.service stopped before the ACME port check",
 		"service: tes3mp-panel.service enabled for boot",
 		"panel: HTTPS /healthz is ready",
 		"service: tes3mp-panel.service active",
@@ -1055,8 +1068,8 @@ func TestBootstrapInstallsReleaseBinariesAndStartsPanel(t *testing.T) {
 	}
 	logText := string(logData)
 	for _, want := range []string{
+		"systemctl args=--no-ask-password is-failed --quiet tes3mp-panel.service",
 		"systemctl args=--no-ask-password stop tes3mp-panel.service",
-		"systemctl args=--no-ask-password reset-failed tes3mp-panel.service",
 		"ss args=-H -ltn",
 		"install owner=root group=tes3mp-panel mode=0640 src=",
 		"dest=" + filepath.Join(h.installRoot, "etc/tes3mp-easy/panel.env"),
@@ -1068,9 +1081,36 @@ func TestBootstrapInstallsReleaseBinariesAndStartsPanel(t *testing.T) {
 	} {
 		assertContains(t, logText, want)
 	}
+	if strings.Contains(logText, "reset-failed tes3mp-panel.service") {
+		t.Fatalf("reset-failed called for a panel that never failed:\n%s", logText)
+	}
 	if strings.Index(logText, "start tes3mp.service") >
 		strings.Index(logText, "restart tes3mp-panel.service") {
 		t.Fatalf("panel started before the game service:\n%s", logText)
+	}
+}
+
+func TestBootstrapClearsFailedPanelBeforeACME(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	h.env["TES3MP_FAKE_PANEL_FAILED"] = "1"
+
+	got := h.run(t)
+
+	assertExit(t, got, 0)
+	assertContains(t, got.stdout, "service: tes3mp-panel.service failed state cleared")
+
+	logData, err := os.ReadFile(h.commandLog)
+	if err != nil {
+		t.Fatalf("read command log: %v", err)
+	}
+	logText := string(logData)
+	for _, want := range []string{
+		"systemctl args=--no-ask-password is-failed --quiet tes3mp-panel.service",
+		"systemctl args=--no-ask-password reset-failed tes3mp-panel.service",
+		"systemctl args=--no-ask-password stop tes3mp-panel.service",
+	} {
+		assertContains(t, logText, want)
 	}
 }
 
