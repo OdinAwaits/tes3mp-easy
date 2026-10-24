@@ -41,6 +41,21 @@ timedatectl
 
 Рекомендуемый путь: на VPS не нужны Go и исходники.
 
+Самый короткий путь — установщик скачивает последний серверный архив,
+проверяет SHA256 и запускает `bootstrap.sh`:
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
+```
+
+Конкретную версию можно закрепить:
+
+```bash
+TES3MP_EASY_VERSION=0.1.0 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
+```
+
+Ручной путь, если архив нужно скачать заранее:
+
 1. Скачайте архив и checksum с GitHub Releases (или возьмите локально
    собранный `dist/tes3mp-easy-<version>-linux-amd64.tar.gz`):
 
@@ -297,6 +312,9 @@ sudo cat /tes3mp-easy/panel-data/initial-password.txt
 ## 5. Обновление
 
 ### 5.1. Из релизного архива
+
+Для обычного обновления достаточно команды из §2.1: установщик скачает свежий
+архив и запустит `bootstrap.sh`. Ручной путь:
 
 1. Скачайте и проверьте новый архив по §2.1 и распакуйте его во временный
    каталог.
