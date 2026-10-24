@@ -73,6 +73,8 @@ PANEL_ENV_DEST="$PANEL_ENV_DIR/panel.env"
 OPT_ROOT=$(prefixed /opt/tes3mp-easy)
 TES3MP_RUNTIME_DIR="$OPT_ROOT/tes3mp"
 TES3MP_INSTALL_INFO="$TES3MP_RUNTIME_DIR/.tes3mp-install-info"
+SWAPFILE_PATH=$(prefixed /swapfile)
+FSTAB_PATH=$(prefixed /etc/fstab)
 
 # The base mods archive must satisfy the same contract as user uploads, so the
 # metadata contains plain JSON without TES3MP's // comments. Empty CRC lists
@@ -87,6 +89,7 @@ readonly BASE_REQUIRED_DATA='[{"Morrowind.esm":[]},{"Tribunal.esm":[]},{"Bloodmo
 readonly MIN_RAM_MIB=480
 readonly RECOMMENDED_RAM_MIB=640
 readonly MIN_SWAP_MIB=480
+readonly SWAP_SIZE_MIB=512
 readonly MIN_DISK_TOTAL_MIB=6144
 readonly MIN_DISK_FREE_MIB=4608
 readonly RECOMMENDED_DISK_FREE_MIB=5120
@@ -106,6 +109,7 @@ CHECK_ONLY=false
 passes=0
 warnings=0
 failures=0
+NEED_SWAP=false
 
 if [[ -t 1 && -z ${NO_COLOR:-} ]]; then
     readonly C_RED=$'\033[0;31m'
@@ -158,11 +162,16 @@ Options:
 
 Checks:
   root privileges, Debian 12+/Ubuntu 24.04+, x86_64, systemd,
-  RAM, swap and free disk.
+  RAM, swap and free disk. A swap total below 480 MiB is a warning, not a
+  failure: a normal install creates a 512 MiB /swapfile.
 
 Installs the privilege model:
   users and groups tes3mp/tes3mp-panel, the data directory layout,
   /usr/local/libexec/tes3mp-easy-rootctl and /etc/sudoers.d/tes3mp-easy.
+
+Creates the swap safety net:
+  when total swap is below 480 MiB, creates and activates a 512 MiB
+  /swapfile and records it in /etc/fstab. --check only reports the plan.
 
 Installs the systemd layout:
   tes3mp.service, tes3mp-panel.service, tes3mp-easy-backup.service,
@@ -471,12 +480,15 @@ check_swap() {
     local swap_kb swap_mib
     swap_kb=$(swap_total_kb "$swaps_file")
     swap_mib=$((swap_kb / 1024))
-    if ((swap_mib < MIN_SWAP_MIB)); then
-        fail "swap: $swap_mib MiB is below the ${MIN_SWAP_MIB} MiB minimum"
-        return
-    fi
-
     pass "swap: $swap_mib MiB total"
+    if ((swap_mib < MIN_SWAP_MIB)); then
+        NEED_SWAP=true
+        if [[ $CHECK_ONLY == true ]]; then
+            warn "swap: $swap_mib MiB is below the ${MIN_SWAP_MIB} MiB minimum; would create ${SWAP_SIZE_MIB} MiB at $SWAPFILE_PATH"
+        else
+            warn "swap: $swap_mib MiB is below the ${MIN_SWAP_MIB} MiB minimum; installer will create ${SWAP_SIZE_MIB} MiB at $SWAPFILE_PATH"
+        fi
+    fi
 }
 
 check_disk() {
@@ -560,6 +572,93 @@ run_install() {
     if ! "$@"; then
         abort_install "command failed: $*"
     fi
+}
+
+swap_file_active() {
+    local path=$1
+    local line first
+    [[ -r "$PROC_ROOT/swaps" ]] || return 1
+    while IFS= read -r line || [[ -n $line ]]; do
+        first=${line%%[[:space:]]*}
+        if [[ $first == "$path" ]]; then
+            return 0
+        fi
+    done <"$PROC_ROOT/swaps"
+    return 1
+}
+
+create_swapfile() {
+    if command -v fallocate >/dev/null 2>&1 &&
+        fallocate -l "${SWAP_SIZE_MIB}M" "$SWAPFILE_PATH"; then
+        return 0
+    fi
+    if command -v dd >/dev/null 2>&1 &&
+        dd if=/dev/zero of="$SWAPFILE_PATH" bs=1M count="$SWAP_SIZE_MIB" status=none; then
+        return 0
+    fi
+    return 1
+}
+
+ensure_swap_fstab() {
+    if [[ -f $FSTAB_PATH ]]; then
+        local line
+        while IFS= read -r line || [[ -n $line ]]; do
+            if [[ $line == "$SWAPFILE_PATH"[[:space:]]*"none"[[:space:]]*"swap"* ]]; then
+                pass "swap: $SWAPFILE_PATH is already recorded in $FSTAB_PATH"
+                return
+            fi
+        done <"$FSTAB_PATH"
+    fi
+    if ! printf '%s none swap sw 0 0\n' "$SWAPFILE_PATH" >>"$FSTAB_PATH"; then
+        warn "swap: cannot record $SWAPFILE_PATH in $FSTAB_PATH"
+        return
+    fi
+    pass "swap: recorded $SWAPFILE_PATH in $FSTAB_PATH"
+}
+
+install_swap() {
+    if [[ $NEED_SWAP != true ]]; then
+        return
+    fi
+
+    if swap_file_active "$SWAPFILE_PATH"; then
+        pass "swap: $SWAPFILE_PATH is already active"
+        ensure_swap_fstab
+        return
+    fi
+
+    info "Creating a ${SWAP_SIZE_MIB} MiB swap file at $SWAPFILE_PATH"
+    local cmd
+    for cmd in mkswap swapon; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            warn "swap: cannot create $SWAPFILE_PATH: $cmd is not installed"
+            return
+        fi
+    done
+
+    if ! create_swapfile; then
+        warn "swap: cannot create $SWAPFILE_PATH"
+        return
+    fi
+    if ! chmod 0600 "$SWAPFILE_PATH"; then
+        warn "swap: cannot set mode 0600 on $SWAPFILE_PATH"
+        return
+    fi
+    if command -v chown >/dev/null 2>&1 && ! chown root:root "$SWAPFILE_PATH"; then
+        warn "swap: cannot make $SWAPFILE_PATH root-owned"
+        return
+    fi
+    if ! mkswap "$SWAPFILE_PATH" >/dev/null; then
+        warn "swap: mkswap failed for $SWAPFILE_PATH"
+        return
+    fi
+    if ! swapon "$SWAPFILE_PATH"; then
+        warn "swap: swapon failed for $SWAPFILE_PATH"
+        return
+    fi
+
+    pass "swap: activated $SWAPFILE_PATH (${SWAP_SIZE_MIB} MiB)"
+    ensure_swap_fstab
 }
 
 ensure_group() {
@@ -1445,6 +1544,7 @@ main() {
 
     info "Installing the privilege model"
     install_privilege_layout
+    install_swap
     info "Installing systemd units, journald limits and sysctl"
     install_systemd_layout
     info "Installing server binaries from $BIN_SOURCE_DIR"

@@ -11,7 +11,10 @@ import (
 
 const (
 	minMemoryBytes int64 = 512 << 20
-	minSwapBytes   int64 = 512 << 20
+	// A 512 MiB swap file reports about 4 KiB less in /proc/swaps because the
+	// kernel reserves one page for the swap header. Accept the 480 MiB floor
+	// used by bootstrap so a freshly created swap file passes this check.
+	minSwapBytes   int64 = 480 << 20
 	wantSwappiness       = "10"
 )
 
@@ -37,7 +40,7 @@ func checkMemory(procRoot, sysctlPath string) Check {
 	}
 	if swapTotal < minSwapBytes {
 		problems = append(problems, fmt.Sprintf(
-			"swap %s is below the 512 MiB minimum", humanBytes(swapTotal)))
+			"swap %s is below the 480 MiB minimum", humanBytes(swapTotal)))
 	}
 
 	sysctl, err := readRegularFile(sysctlPath, 1<<20)

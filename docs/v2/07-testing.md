@@ -42,14 +42,18 @@ OS-матрица: Debian 12 и Ubuntu 24.04, x86_64, systemd. Другие ОС
 `test/infra` запускает настоящий `bootstrap.sh` с подменёнными `/etc/os-release`,
 `/proc`, системным каталогом systemd и командами `id`, `uname`, `df`,
 `systemctl`, `systemd-analyze`, `sysctl`, `getent`, `groupadd`, `useradd`,
-`usermod`, `install`, `mv`, `visudo`. Проверяются успех, предупреждения, каждый
-отказ (root, ОС, arch, systemd, RAM, swap, диск), границы порогов и то, что
-`--check` не меняет ни одного файла.
+`usermod`, `install`, `mv`, `visudo`, `fallocate`, `dd`, `mkswap`, `swapon`.
+Проверяются успех, предупреждения, каждый отказ (root, ОС, arch, systemd, RAM,
+диск), границы порогов, автоматическое создание `/swapfile` при нехватке swap
+и то, что `--check` не меняет ни одного файла.
 
 Дополнительно `test/infra` проверяет:
 
 - создание групп и пользователей, layout и режимы каталогов, установку
   `rootctl` (`root:tes3mp 0750`) и sudoers (валидация `visudo -cf` до записи);
+- нехватку swap: warning вместо fatal, создание и активацию `/swapfile` на
+  512 MiB, запись в `/etc/fstab`, идемпотентность и warning при неудачном
+  `swapon` без отмены установки;
 - отказы при отсутствии `systemd-journal` и при невалидном sudoers;
 - идемпотентность: второй запуск не вызывает `useradd`/`groupadd` и не меняет
   дерево;

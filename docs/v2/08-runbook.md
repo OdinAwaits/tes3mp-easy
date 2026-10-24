@@ -9,7 +9,8 @@ Runbook для нативной установки на Debian/Ubuntu x86_64 с 
 - Debian 12+ или Ubuntu 24.04+ x86_64 с systemd;
 - 1 vCPU;
 - 512 MiB RAM минимум, 640 MiB рекомендуется;
-- 512 MiB swap;
+- 512 MiB swap; если swap меньше 480 MiB, bootstrap создаст `/swapfile` на
+  512 MiB и включит его;
 - 7 GiB NVMe/SSD;
 - открытые `25565/udp`, `443/tcp` и `80/tcp` (только на время ACME HTTP-01);
 - root/sudo и доступ по SSH;
@@ -51,7 +52,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/in
 Конкретную версию можно закрепить:
 
 ```bash
-TES3MP_EASY_VERSION=0.1.0 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
+TES3MP_EASY_VERSION=0.1.1 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
 ```
 
 Ручной путь, если архив нужно скачать заранее:
@@ -60,7 +61,7 @@ TES3MP_EASY_VERSION=0.1.0 bash <(curl -Ls https://raw.githubusercontent.com/Saag
    собранный `dist/tes3mp-easy-<version>-linux-amd64.tar.gz`):
 
    ```bash
-   VERSION=0.1.0
+   VERSION=0.1.1
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz"
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
    sha256sum -c "tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
@@ -71,7 +72,7 @@ TES3MP_EASY_VERSION=0.1.0 bash <(curl -Ls https://raw.githubusercontent.com/Saag
    Локальная сборка релиза:
 
    ```bash
-   go run ./cmd/tes3mp-easy-pack --version 0.1.0
+   go run ./cmd/tes3mp-easy-pack --version 0.1.1
    ```
 
 2. Проверьте хост без изменений:
@@ -154,7 +155,8 @@ TES3MP_EASY_VERSION=0.1.0 bash <(curl -Ls https://raw.githubusercontent.com/Saag
 
 Source bootstrap:
 
-- проверяет Debian/Ubuntu, x86_64, systemd, RAM/swap/диск;
+- проверяет Debian/Ubuntu, x86_64, systemd, RAM/swap/диск; нехватка swap — это
+  warning, после которого создаётся `/swapfile` на 512 MiB;
 - ставит пакеты: `libluajit-5.1-2`, `ca-certificates`, `openssl`, `curl`,
   `tar`, `gzip`, `rsync`, `coreutils`, `iproute2`;
 - создаёт пользователей `tes3mp` и `tes3mp-panel`, группы, каталоги и права;

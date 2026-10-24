@@ -538,6 +538,62 @@ if [ "${TES3MP_FAKE_CHOWN_FAIL:-0}" = "1" ]; then
 fi
 exit 0
 `, 0o755)
+	h.writeFile(filepath.Join(h.bin, "fallocate"), `#!/bin/sh
+set -eu
+size=
+path=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -l)
+            size=$2
+            shift 2
+            ;;
+        *)
+            path=$1
+            shift
+            ;;
+    esac
+done
+[ -n "$path" ] || exit 2
+: >"$path"
+printf 'fallocate size=%s path=%s\n' "$size" "$path" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+if [ "${TES3MP_FAKE_FALLOCATE_FAIL:-0}" = "1" ]; then
+    printf 'fallocate failed\n' >&2
+    exit 1
+fi
+`, 0o755)
+	h.writeFile(filepath.Join(h.bin, "dd"), `#!/bin/sh
+set -eu
+out=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        of=*)
+            out=${1#of=}
+            ;;
+    esac
+    shift
+done
+[ -n "$out" ] || exit 2
+: >"$out"
+printf 'dd out=%s\n' "$out" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+`, 0o755)
+	h.writeFile(filepath.Join(h.bin, "mkswap"), `#!/bin/sh
+printf 'mkswap path=%s\n' "$1" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+if [ "${TES3MP_FAKE_MKSWAP_FAIL:-0}" = "1" ]; then
+    printf 'mkswap failed\n' >&2
+    exit 1
+fi
+`, 0o755)
+	h.writeFile(filepath.Join(h.bin, "swapon"), `#!/bin/sh
+path=${1:-}
+[ -n "$path" ] || exit 2
+printf 'swapon path=%s\n' "$path" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+if [ "${TES3MP_FAKE_SWAPON_FAIL:-0}" = "1" ]; then
+    printf 'swapon failed\n' >&2
+    exit 1
+fi
+printf '%s file 524284 0 -2\n' "$path" >>"${TES3MP_EASY_PROC_ROOT:?}/swaps"
+`, 0o755)
 	h.writeFile(filepath.Join(h.bin, "ss"), `#!/bin/sh
 printf 'ss args=%s\n' "$*" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
 if [ "${TES3MP_FAKE_SS_BUSY:-0}" = "1" ]; then
@@ -1335,6 +1391,135 @@ func TestBootstrapReportsRAMWarning(t *testing.T) {
 	assertContains(t, got.stdout, "Preflight passed with warnings: 7 checks, 1 warning(s), 0 error(s).")
 }
 
+func TestBootstrapCreatesSwapWhenMissing(t *testing.T) {
+	h := newFakeHost(t)
+	h.setRAM(542)
+	h.setSwap(0)
+	swapfile := filepath.Join(h.installRoot, "swapfile")
+	fstab := filepath.Join(h.installRoot, "etc/fstab")
+
+	first := h.run(t)
+	assertExit(t, first, 0)
+	if first.stderr != "" {
+		t.Fatalf("stderr = %q, want empty", first.stderr)
+	}
+	assertContains(t, first.stdout, "RAM: 542 MiB is below the recommended 640 MiB")
+	assertContains(t, first.stdout,
+		"swap: 0 MiB is below the 480 MiB minimum; installer will create 512 MiB at "+swapfile)
+	assertContains(t, first.stdout, "Preflight passed with warnings: 7 checks, 2 warning(s), 0 error(s).")
+	assertContains(t, first.stdout, "swap: activated "+swapfile+" (512 MiB)")
+	assertContains(t, first.stdout, "swap: recorded "+swapfile+" in "+fstab)
+
+	assertInstalledFile(t, h, "etc/fstab", swapfile+" none swap sw 0 0")
+	assertPathMode(t, swapfile, 0o600, false)
+
+	logData, err := os.ReadFile(h.commandLog)
+	if err != nil {
+		t.Fatalf("read command log: %v", err)
+	}
+	for _, want := range []string{
+		"fallocate size=512M path=" + swapfile,
+		"mkswap path=" + swapfile,
+		"swapon path=" + swapfile,
+	} {
+		assertContains(t, string(logData), want)
+	}
+
+	second := h.run(t)
+	assertExit(t, second, 0)
+	if second.stderr != "" {
+		t.Fatalf("second stderr = %q, want empty", second.stderr)
+	}
+	assertContains(t, second.stdout, "swap: 511 MiB total")
+	assertContains(t, second.stdout, "Preflight passed with warnings: 7 checks, 1 warning(s), 0 error(s).")
+
+	fstabData, err := os.ReadFile(fstab)
+	if err != nil {
+		t.Fatalf("read fstab: %v", err)
+	}
+	if count := strings.Count(string(fstabData), swapfile+" none swap"); count != 1 {
+		t.Fatalf("fstab contains %d swap entries, want 1:\n%s", count, fstabData)
+	}
+
+	logData, err = os.ReadFile(h.commandLog)
+	if err != nil {
+		t.Fatalf("read command log after second run: %v", err)
+	}
+	for _, command := range []string{"fallocate size=", "mkswap path=", "swapon path="} {
+		if count := strings.Count(string(logData), command); count != 1 {
+			t.Fatalf("%q ran %d times, want 1:\n%s", command, count, logData)
+		}
+	}
+}
+
+func TestBootstrapSwapFallsBackToDd(t *testing.T) {
+	h := newFakeHost(t)
+	h.setRAM(542)
+	h.setSwap(0)
+	h.env["TES3MP_FAKE_FALLOCATE_FAIL"] = "1"
+	swapfile := filepath.Join(h.installRoot, "swapfile")
+
+	got := h.run(t)
+
+	assertExit(t, got, 0)
+	assertContains(t, got.stdout, "swap: activated "+swapfile+" (512 MiB)")
+	logData, err := os.ReadFile(h.commandLog)
+	if err != nil {
+		t.Fatalf("read command log: %v", err)
+	}
+	assertContains(t, string(logData), "dd out="+swapfile)
+}
+
+func TestBootstrapCheckReportsSwapWithoutChanges(t *testing.T) {
+	h := newFakeHost(t)
+	h.setRAM(542)
+	h.setSwap(0)
+	swapfile := filepath.Join(h.installRoot, "swapfile")
+
+	before := snapshotInstalledState(t, h)
+	got := h.run(t, "--check")
+	after := snapshotInstalledState(t, h)
+
+	assertExit(t, got, 0)
+	if got.stderr != "" {
+		t.Fatalf("stderr = %q, want empty", got.stderr)
+	}
+	assertContains(t, got.stdout,
+		"swap: 0 MiB is below the 480 MiB minimum; would create 512 MiB at "+swapfile)
+	assertContains(t, got.stdout, "Preflight complete (--check). No changes were made.")
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("--check changed installed state")
+	}
+	if _, err := os.Stat(swapfile); !os.IsNotExist(err) {
+		t.Fatalf("--check created %s", swapfile)
+	}
+	if logData, err := os.ReadFile(h.commandLog); err == nil {
+		for _, command := range []string{"fallocate ", "mkswap ", "swapon "} {
+			if strings.Contains(string(logData), command) {
+				t.Fatalf("--check ran %q:\n%s", command, logData)
+			}
+		}
+	}
+}
+
+func TestBootstrapSwapActivationFailureIsWarning(t *testing.T) {
+	h := newFakeHost(t)
+	h.setRAM(542)
+	h.setSwap(0)
+	h.env["TES3MP_FAKE_SWAPON_FAIL"] = "1"
+	swapfile := filepath.Join(h.installRoot, "swapfile")
+
+	got := h.run(t)
+
+	assertExit(t, got, 0)
+	assertContains(t, got.stdout, "swap: swapon failed for "+swapfile)
+	assertContains(t, got.stdout, "Preflight passed with warnings: 7 checks, 2 warning(s), 0 error(s).")
+	assertContains(t, got.stdout, "Bootstrap complete: TES3MP 0.8.1 is running.")
+	if _, err := os.Stat(filepath.Join(h.installRoot, "etc/fstab")); !os.IsNotExist(err) {
+		t.Fatal("failed swapon must not record the swap file in fstab")
+	}
+}
+
 func TestBootstrapAcceptsMinimumHardware(t *testing.T) {
 	h := newFakeHost(t)
 	h.setRAM(480)
@@ -1426,11 +1611,6 @@ func TestBootstrapFailures(t *testing.T) {
 			want:  "RAM: cannot read",
 		},
 		{
-			name:  "swap below minimum",
-			setup: func(h *fakeHost) { h.setSwap(479) },
-			want:  "swap: 479 MiB is below the 480 MiB minimum",
-		},
-		{
 			name:  "swaps missing",
 			setup: func(h *fakeHost) { h.removeProcFile("swaps") },
 			want:  "swap: cannot read",
@@ -1486,12 +1666,14 @@ func TestBootstrapReportsAllFailures(t *testing.T) {
 		"architecture: aarch64 is not supported",
 		"systemd: PID 1 is bash",
 		"RAM: 256 MiB is below",
-		"swap: 0 MiB is below",
 		"disk: 4096 MiB total is below",
-		"Preflight failed: 7 checks, 0 warning(s), 7 error(s).",
+		"Preflight failed with warnings: 7 checks, 1 warning(s), 6 error(s).",
 	} {
 		assertContains(t, got.stderr, want)
 	}
+	assertContains(t, got.stdout,
+		"swap: 0 MiB is below the 480 MiB minimum; installer will create 512 MiB at "+
+			filepath.Join(h.installRoot, "swapfile"))
 }
 
 func TestBootstrapAutoDetectsPublicAddress(t *testing.T) {

@@ -129,7 +129,8 @@ internal/
 - journald читается, `journalctl -u tes3mp.service -n 1` не требует пароля;
 - `tes3mp-server` и библиотеки релиза на месте; `libluajit-5.1.so.2` находится
   через `ldconfig -p`; `ldd tes3mp-server.x86_64` не показывает `not found`;
-- RAM не меньше 512 MiB, swap не меньше 512 MiB, `vm.swappiness=10`;
+- RAM не меньше 512 MiB; swap не меньше 480 MiB (bootstrap создаёт 512 MiB
+  `/swapfile`, если swap меньше 480 MiB), `vm.swappiness=10`;
 - cgroup-лимиты юнитов соответствуют §3 `02-architecture.md`;
 - свободное место: `warn` меньше 1 GiB, `error` меньше 512 MiB;
 - `panel-data/uploads` и `backups/` на одной файловой системе (`stat.Dev`);
@@ -173,8 +174,9 @@ internal/
 - `runtime` — обязательные файлы TES3MP 0.8.1 на месте и исполняемые,
   `libluajit-5.1.so.2` виден в `ldconfig -p`, а `ldd tes3mp-server.x86_64` не
   содержит `not found`;
-- `memory` — RAM и swap не меньше 512 MiB, `vm.swappiness=10` в drop-in и,
-  если доступно, в `/proc/sys/vm/swappiness`;
+- `memory` — RAM не меньше 512 MiB, swap не меньше 480 MiB и
+  `vm.swappiness=10` в drop-in и, если доступно, в `/proc/sys/vm/swappiness`;
+  если bootstrap не смог создать `/swapfile`, проверка остаётся `error`;
 - `cgroup` — `MemoryHigh`/`MemoryMax` трёх service-юнитов совпадают с §3
   `02-architecture.md` (`384M/448M`, `48M/64M`, `48M/64M`);
 - `filesystems` — `panel-data/uploads` и `backups/` имеют одинаковый

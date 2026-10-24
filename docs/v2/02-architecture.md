@@ -265,7 +265,8 @@ Uploads и `backups/` обязаны быть на одной файловой �
 - `/usr/local/libexec/tes3mp-easy-rootctl`;
 - `/etc/systemd/journald.conf.d/tes3mp-easy.conf` с `SystemMaxUse=100M`,
   `RuntimeMaxUse=32M`;
-- `/etc/sysctl.d/99-tes3mp-easy.conf` с `vm.swappiness=10`.
+- `/etc/sysctl.d/99-tes3mp-easy.conf` с `vm.swappiness=10`;
+- `/swapfile` на 512 MiB и запись в `/etc/fstab`, если swap меньше 480 MiB.
 
 ## 6. Потоки
 
@@ -381,6 +382,8 @@ tes3mp-easy-backup.timer ──каждые 5 минут──► tes3mp-easy-ba
 ### RAM и CPU
 
 Расчётная VM: **1 vCPU, 512–640 MiB RAM, 512 MiB swap, 7 GiB NVMe**.
+Если swap меньше 480 MiB, `bootstrap.sh` создаёт `/swapfile` на 512 MiB и
+включает его до запуска сервисов.
 
 | Потребитель | Обычно | Лимит |
 |---|---|---|
@@ -395,7 +398,9 @@ tes3mp-easy-backup.timer ──каждые 5 минут──► tes3mp-easy-ba
   раздувать RSS.
 - `tes3mp` получает `OOMScoreAdjust=-500`, панель и backup — `+500`: при
   нехватке памяти ядро убивает вспомогательные процессы, а не игру.
-- `vm.swappiness=10`: swap — страховка от OOM, а не рабочая память.
+- `vm.swappiness=10`: swap — страховка от OOM, а не рабочая память. Нехватка
+  swap не блокирует установку: bootstrap создаёт `/swapfile` на 512 MiB, а
+  `doctor` сообщает об ошибке, только если swap так и остался меньше 480 MiB.
 - 512 MiB — минимум; 640 MiB рекомендуется, если на сервере одновременно
   работают панель, импорт модов и игроки. При 512 MiB пики панели и backup не
   должны совпадать; `MemoryHigh` их притормаживает.

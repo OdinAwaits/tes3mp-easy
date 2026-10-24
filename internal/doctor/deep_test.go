@@ -257,6 +257,16 @@ func TestCheckMemory(t *testing.T) {
 		}
 	})
 
+	t.Run("512 MiB swap file", func(t *testing.T) {
+		proc, sysctl := healthy(t)
+		fixtures.WriteFile(t, filepath.Join(proc, "meminfo"),
+			"MemTotal: 1048576 kB\nSwapTotal: 524284 kB\n")
+		check := checkMemory(proc, sysctl)
+		if check.Status != StatusOK {
+			t.Fatalf("check = %#v, want ok", check)
+		}
+	})
+
 	t.Run("wrong swappiness", func(t *testing.T) {
 		proc, sysctl := healthy(t)
 		fixtures.WriteFile(t, sysctl, "vm.swappiness=60\n")
