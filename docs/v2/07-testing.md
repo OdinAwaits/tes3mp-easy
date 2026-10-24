@@ -28,7 +28,8 @@
 | Contract (ops) | запуск бинарника, JSON-envelope, exit codes, stdout/stderr | `test/contract/ops` |
 | Contract (panel) | HTTP-коды, заголовки, cookie, JSON публичного API | `test/contract/panel` |
 | Client | разбор ответов API, профиль, установка модов и шрифтов, локализация, запуск | `internal/{app,serverapi,mods,fonts,locale,launcher}/**/*_test.go` |
-| Infra | preflight и установка `bootstrap.sh` на fake `/proc`, systemd и `df`; rootctl; unit-файлы | `test/infra` |
+| Infra | preflight и установка `bootstrap.sh` на fake `/proc`, systemd и `df`; rootctl; unit-файлы; установка бинарников из релиза | `test/infra` |
+| Release | воспроизводимый tar.gz, `VERSION`, режимы файлов, sha256, отказ на symlink/неполный набор бинарников | `internal/release/**/*_test.go` |
 | Fault | битый архив, path traversal, lock, недоступный systemd, обрыв записи | `test/fault` |
 | Resource | cgroup 64 MiB, 512 MiB upload, потоковый tar/gzip | `test/resource` |
 | Fixtures | валидные и невалидные mods/state-архивы, канонический `current.txt` | `test/fixtures` |
@@ -41,9 +42,9 @@ OS-матрица: Debian 12 и Ubuntu 24.04, x86_64, systemd. Другие ОС
 `test/infra` запускает настоящий `bootstrap.sh` с подменёнными `/etc/os-release`,
 `/proc`, системным каталогом systemd и командами `id`, `uname`, `df`,
 `systemctl`, `systemd-analyze`, `sysctl`, `getent`, `groupadd`, `useradd`,
-`usermod`, `install`, `visudo`. Проверяются успех, предупреждения, каждый отказ
-(root, ОС, arch, systemd, RAM, swap, диск), границы порогов и то, что `--check`
-не меняет ни одного файла.
+`usermod`, `install`, `mv`, `visudo`. Проверяются успех, предупреждения, каждый
+отказ (root, ОС, arch, systemd, RAM, swap, диск), границы порогов и то, что
+`--check` не меняет ни одного файла.
 
 Дополнительно `test/infra` проверяет:
 
@@ -59,8 +60,17 @@ OS-матрица: Debian 12 и Ubuntu 24.04, x86_64, systemd. Другие ОС
 - `ConditionPathExists` у backup service: таймер не запускает backup с
   отсутствующим `ExecStart` и не уходит в `failed`;
 - что bootstrap запускает `tes3mp.service` и `tes3mp-easy-backup.timer`, не
-  запускает и не включает панель, а повторный запуск использует `start`, а не
-  `restart`.
+  запускает и не включает панель без `bin/`, а повторный запуск использует
+  `start`, а не `restart`;
+- что релизный `bin/` устанавливает оба бинарника с режимом `0755`, а
+  неполный набор отвергается до записи;
+- что при наличии панели bootstrap включает её и использует `restart`, чтобы
+  подхватить заменённый бинарник.
+
+`internal/release` собирает архив дважды и сравнивает байты: tar/gzip не
+содержат времени, uid/gid или пути хоста, `VERSION` генерируется из аргумента,
+`.sha256` соответствует содержимому. Тест также проверяет режимы
+`bootstrap.sh`/бинарников и отказ на symlink или отсутствующий бинарник.
 
 `rootctl_test.go` запускает копию скрипта с fake `systemctl` и проверяет три
 разрешённых глагола, отказ для пустого/лишнего/неизвестного аргумента и
@@ -257,8 +267,9 @@ GUI-тесты не гоняются в CI: Fyne требует дисплея. 
 Сценарии на чистой VM **Debian 12 или Ubuntu 24.04, 1 vCPU, 512–640 MiB RAM,
 512 MiB swap, 7 GiB NVMe**:
 
-1. **Установка.** `bootstrap.sh` → пользователи, sudoers, rootctl, systemd,
-   journald, sysctl, runtime и base mods. Затем установка ops/панели →
+1. **Релиз.** Собранный `cmd/tes3mp-easy-pack` архив проходит `sha256sum -c`;
+   распаковка на чистой VM и `bootstrap.sh` ставят оба бинарника, пользователей,
+   sudoers, rootctl, systemd, journald, sysctl, runtime и base mods. Затем
    `doctor` без ошибок → панель по HTTPS → первый пароль → смена пароля.
 2. **Автобэкап.** Таймер активен; через 5–10 минут появляется `state-*`;
    `backups list` показывает его; при остановленной игре `--if-running` даёт
@@ -287,12 +298,23 @@ GUI-тесты не гоняются в CI: Fyne требует дисплея. 
 Критерий приёмки — не только «получилось», но и понятное сообщение при
 неудаче, путь к логу и отсутствие потери данных.
 
+Первый сценарий автоматизирован: на одноразовой VM запустите
+
+```bash
+sudo ./test/e2e/release-smoke.sh /tmp/tes3mp-easy-<version>-linux-amd64
+```
+
+Скрипт делает preflight, установку, проверяет бинарники, три systemd-юнита,
+`doctor`, `/healthz`, ручной state-бэкап и таймер. Остальные сценарии требуют
+Morrowind/Proton и браузера, поэтому остаются ручными.
+
 ## 10. CI
 
 `.github/workflows/ci.yml` на каждый push и pull request:
 
 ```bash
 bash -n bootstrap.sh
+bash -n test/e2e/release-smoke.sh
 sh -n rootctl/tes3mp-easy-rootctl
 sudo apt-get update
 sudo apt-get install -y libgl1-mesa-dev xorg-dev
@@ -301,18 +323,25 @@ test -z "$(gofmt -l .)"
 go vet ./...
 go test ./...
 go test -race ./...
+go build -o /tmp/tes3mp-easy-pack ./cmd/tes3mp-easy-pack
 go build -o /tmp/tes3mp-easy-ops ./cmd/tes3mp-easy-ops
 go build -o /tmp/tes3mp-easy-panel ./cmd/tes3mp-easy-panel
 go build -o /tmp/tes3mp-easy-client ./cmd/tes3mp-easy-client
+go run ./cmd/tes3mp-easy-pack --version 0.0.0 --output /tmp/release-a
+go run ./cmd/tes3mp-easy-pack --version 0.0.0 --output /tmp/release-b
+cmp /tmp/release-a/*.tar.gz /tmp/release-b/*.tar.gz
 ```
 
 - `test/fault` и `test/resource` входят в обычный `go test ./...`, но исключены
   из `-race` build-тегами. Cgroup `MemoryMax` — best-effort: без writable
   cgroup v2 проверка RSS продолжается.
 - Contract-тесты ops и панели собирают и запускают реальные бинарники.
-- Fyne GUI не запускается в CI; клиент только собирается под Linux.
-- Windows-сборка и реальный systemd E2E в CI не выполняются: это ручная
-  проверка по §9.
+- Fyne GUI не запускается в CI; клиент собирается под Linux.
+- Windows-клиент собирается на `windows-latest` в
+  `.github/workflows/release.yml`; GUI smoke остаётся ручной проверкой по §9.
+- `.github/workflows/release.yml` на тег `v*` собирает серверный архив и
+  Linux/Windows клиентские архивы, проверяет точную воспроизводимость
+  серверного архива и прикладывает `.sha256` к GitHub Release.
 - `test/docs` проверяет локальные ссылки, валидность JSON-примеров,
   отсутствие дублированных схем, запрещённых полей и устаревших имён
   backend-ов.

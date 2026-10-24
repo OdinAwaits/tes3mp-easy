@@ -40,9 +40,9 @@
 
 ## Требования
 
-- Go 1.24+;
-- для сборки клиента на Linux — `libgl1-mesa-dev` и `xorg-dev`;
-- для сервера — Debian 12+/Ubuntu 24.04+ x86_64 с systemd.
+- для установки на VPS — Debian 12+/Ubuntu 24.04+ x86_64 с systemd;
+- Go 1.24+ и `git` — для сборки/разработки;
+- для сборки клиента на Linux — `libgl1-mesa-dev` и `xorg-dev`.
 
 ## Сборка
 
@@ -61,10 +61,37 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -trimpath -o tes3mp-easy-panel ./cmd/tes3mp-easy-panel
 ```
 
-Релизного пакета и установщика бинарников нет: `bootstrap.sh` готовит
-хост и runtime, а `ops` и панель устанавливаются в `/opt/tes3mp-easy/bin`
-вручную. Подробная последовательность — в
-[`docs/v2/08-runbook.md`](docs/v2/08-runbook.md) §2.
+## Релиз и установка
+
+Серверный релиз собирается одной командой:
+
+```bash
+go run ./cmd/tes3mp-easy-pack --version 0.1.0
+```
+
+Команда собирает `ops` и `panel` под linux/amd64 и пишет
+`dist/tes3mp-easy-0.1.0-linux-amd64.tar.gz` вместе с `.sha256`. Архив
+воспроизводим: повторная сборка той же версии даёт тот же sha256. Внутри —
+`bootstrap.sh`, `bin/`, systemd/sudoers/sysctl, версия TES3MP и документация.
+
+Установка из архива:
+
+```bash
+sha256sum -c tes3mp-easy-0.1.0-linux-amd64.tar.gz.sha256
+tar -xzf tes3mp-easy-0.1.0-linux-amd64.tar.gz
+cd tes3mp-easy-0.1.0-linux-amd64
+sudo ./bootstrap.sh
+```
+
+`bootstrap.sh` устанавливает оба бинарника в `/opt/tes3mp-easy/bin`, включает
+и запускает игру, таймер бэкапов и панель. Исходники на VPS не нужны. Если
+запускать bootstrap из git checkout без `bin/`, он по-прежнему готовит хост и
+runtime, а бинарники нужно установить вручную — это аварийный/developer путь,
+описанный в [`docs/v2/08-runbook.md`](docs/v2/08-runbook.md) §2.
+
+Клиентские архивы для Linux и Windows собирает
+`.github/workflows/release.yml` на тег `v*`. Ручной smoke-чеклист — в
+[`docs/v2/06-client.md`](docs/v2/06-client.md) §15.
 
 ## Проверка
 

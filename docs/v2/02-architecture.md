@@ -109,11 +109,12 @@ ops дополнительно пропускает бэкап, если игр�
 бинарника: срабатывания пропускаются, а первый тик после установки ops создаёт
 бэкап без ручного вмешательства.
 
-Bootstrap включает и запускает `tes3mp.service` и
-`tes3mp-easy-backup.timer`. `tes3mp-panel.service` устанавливается, но не
-включается и не запускается: панель включают после установки её бинарника.
-Повторный bootstrap использует `start`, а не `restart`, поэтому не отключает
-игроков.
+Bootstrap устанавливает `tes3mp.service`, `tes3mp-easy-backup.timer` и, если в
+релизном архиве есть `bin/tes3mp-easy-panel`, `tes3mp-panel.service`. Игра
+запускается через `start`, поэтому повторный bootstrap не отключает игроков.
+Панель перезапускается, чтобы подхватить заменённый бинарник; при первом
+релизе это создаёт `initial-password.txt`. Source-установка без `bin/`
+оставляет панель выключенной до ручной установки бинарника.
 
 ## 4. Пользователи, группы и sudoers
 
@@ -171,27 +172,14 @@ rootctl.
 ## 5. Layout на VPS
 
 ```text
-/opt/tes3mp-easy/                 # неизменяемые файлы релиза, root:root
+/opt/tes3mp-easy/                 # immutable runtime and installed binaries
 ├── bin/
 │   ├── tes3mp-easy-ops
 │   └── tes3mp-easy-panel
-├── tes3mp/                       # TES3MP 0.8.1, root:root 0755
-│   ├── .tes3mp-install-info      # версия, URL и sha256 установленного релиза
-│   ├── tes3mp-server
-│   └── lib/                      # библиотеки из релиза TES3MP
-├── systemd/
-│   ├── tes3mp.service
-│   ├── tes3mp-panel.service
-│   ├── tes3mp-easy-backup.service
-│   ├── tes3mp-easy-backup.timer
-│   └── journald.conf.d/
-│       └── tes3mp-easy.conf
-├── sysctl.d/
-│   └── 99-tes3mp-easy.conf
-├── sudoers.d/
-├── rootctl/
-│   └── tes3mp-easy-rootctl
-└── bootstrap.sh
+└── tes3mp/                       # TES3MP 0.8.1, root:root 0755
+    ├── .tes3mp-install-info      # версия, URL и sha256 установленного релиза
+    ├── tes3mp-server
+    └── lib/                      # библиотеки из релиза TES3MP
 
 /tes3mp-easy/                     # данные; сам каталог root:root 0755
 ├── configs/
@@ -231,8 +219,11 @@ rootctl.
     └── ops.lock
 ```
 
-`/opt/tes3mp-easy/bin/` не создаётся bootstrap: каталог и бинарники появляются
-при установке `tes3mp-easy-ops` и `tes3mp-easy-panel`.
+`bootstrap.sh` из релизного архива создаёт `/opt/tes3mp-easy/bin/` и ставит
+оба бинарника. Сам архив можно распаковать во временный каталог: unit-файлы,
+sudoers, rootctl и sysctl копируются в системные пути, а дерево исходников в
+`/opt/tes3mp-easy` не остаётся. Source-установка без `bin/` копирует checkout в
+`/opt/tes3mp-easy` и оставляет каталог ручной установке бинарников.
 
 В дереве `/opt/tes3mp-easy/tes3mp` изменяемые пути — symlinks в data root:
 `tes3mp-server-default.cfg`, `server/scripts/{config.lua,customScripts.lua}`,
