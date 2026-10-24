@@ -194,7 +194,8 @@ Configures panel TLS:
 Starts:
   tes3mp.service, tes3mp-easy-backup.timer and, after a release install, the
   panel service. It waits for the panel's HTTPS health check, so an ACME
-  failure stops the bootstrap with a journalctl hint.
+  failure stops the bootstrap with the last panel log lines. A Let's Encrypt
+  rate limit is reported together with its retry time.
 
 Exit status:
   0  all checks and installation steps passed (warnings are allowed)
@@ -1474,6 +1475,61 @@ configure_panel_tls() {
     pass "panel TLS: acme for $PUBLIC_ADDRESS ($PANEL_ENV_DEST)"
 }
 
+panel_journal_tail() {
+    if ! command -v journalctl >/dev/null 2>&1; then
+        return 0
+    fi
+    journalctl --no-pager -u tes3mp-panel.service -n 40 -o cat 2>/dev/null || true
+}
+
+print_panel_journal_tail() {
+    local journal=$1 line
+    local -a lines=()
+    while IFS= read -r line; do
+        # The first start writes the initial admin password to journald. Keep
+        # it out of installer output; the operator reads the file directly.
+        if [[ $line == *"initial password"* ]]; then
+            continue
+        fi
+        lines+=("$line")
+    done <<<"$journal"
+
+    local first=$((${#lines[@]} - 12))
+    if ((first < 0)); then
+        first=0
+    fi
+    local i
+    for ((i = first; i < ${#lines[@]}; i++)); do
+        printf '%s\n' "${lines[i]}" >&2
+    done
+}
+
+abort_panel_startup() {
+    local message=${1:-"tes3mp-panel.service is not active"}
+    local journal retry=""
+    journal=$(panel_journal_tail)
+    if [[ -n $journal ]]; then
+        print_panel_journal_tail "$journal"
+    fi
+    if [[ $journal == *"too many certificates"* ||
+        $journal == *"too many failed authorizations"* ||
+        $journal == *"rateLimited"* ]]; then
+        # The journal can contain several attempts. The last line is the most
+        # recent answer from Let's Encrypt, so report its retry time.
+        local line
+        while IFS= read -r line; do
+            if [[ $line =~ retry\ after\ ([0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}\ UTC) ]]; then
+                retry=${BASH_REMATCH[1]}
+            fi
+        done <<<"$journal"
+        if [[ -n $retry ]]; then
+            abort_install "tes3mp-panel.service cannot obtain a TLS certificate: Let's Encrypt rate limit for this public IP; retry after $retry, then rerun the installer (earlier attempts will fail)"
+        fi
+        abort_install "tes3mp-panel.service cannot obtain a TLS certificate: Let's Encrypt rate limit for this public IP; wait for the retry time in journalctl -u tes3mp-panel.service, then rerun the installer"
+    fi
+    abort_install "$message; inspect journalctl -u tes3mp-panel.service"
+}
+
 wait_for_panel_health() {
     local deadline=$((SECONDS + 300))
     while ((SECONDS < deadline)); do
@@ -1482,11 +1538,11 @@ wait_for_panel_health() {
             return
         fi
         if ! systemctl --no-ask-password is-active --quiet tes3mp-panel.service; then
-            abort_install "tes3mp-panel.service stopped during startup; inspect journalctl -u tes3mp-panel.service"
+            abort_panel_startup "tes3mp-panel.service stopped during startup"
         fi
         sleep 2
     done
-    abort_install "panel did not become healthy in 300s; inspect journalctl -u tes3mp-panel.service"
+    abort_panel_startup "panel did not become healthy in 300s"
 }
 
 start_runtime_services() {
@@ -1517,7 +1573,7 @@ start_runtime_services() {
         # so rerunning bootstrap does not disconnect players.
         run_install systemctl --no-ask-password restart tes3mp-panel.service
         if ! systemctl --no-ask-password is-active --quiet tes3mp-panel.service; then
-            abort_install "tes3mp-panel.service is not active; inspect journalctl -u tes3mp-panel.service"
+            abort_panel_startup "tes3mp-panel.service is not active"
         fi
         wait_for_panel_health
         pass "service: tes3mp-panel.service active"

@@ -303,6 +303,13 @@ if [ "${TES3MP_FAKE_SYSTEMCTL_FAIL:-0}" = "1" ]; then
 fi
 exit 0
 `, 0o755)
+	h.writeFile(filepath.Join(h.bin, "journalctl"), `#!/bin/sh
+printf 'journalctl args=%s\n' "$*" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
+if [ -n "${TES3MP_FAKE_JOURNAL:-}" ] && [ -f "${TES3MP_FAKE_JOURNAL}" ]; then
+    command -p cat "${TES3MP_FAKE_JOURNAL}"
+fi
+exit 0
+`, 0o755)
 	h.writeFile(filepath.Join(h.bin, "systemd-analyze"), `#!/bin/sh
 printf 'systemd-analyze args=%s\n' "$*" >>"${TES3MP_FAKE_COMMAND_LOG:?}"
 if [ "${TES3MP_FAKE_SYSTEMD_ANALYZE_PENDING:-0}" = "1" ]; then
@@ -1111,6 +1118,64 @@ func TestBootstrapClearsFailedPanelBeforeACME(t *testing.T) {
 		"systemctl args=--no-ask-password stop tes3mp-panel.service",
 	} {
 		assertContains(t, logText, want)
+	}
+}
+
+func TestBootstrapReportsPanelACMERateLimit(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	journal := filepath.Join(h.dir, "panel.journal")
+	h.writeFile(journal,
+		"panel: 2026/10/24 23:10:28 auth: initial password SECRET written to /tes3mp-easy/panel-data/initial-password.txt\n"+
+			"tes3mp-easy-panel: previous attempt: acme: error: 429 :: urn:ietf:params:acme:error:rateLimited :: too many certificates (5) already issued for this exact set of identifiers in the last 168h0m0s, retry after 2026-10-26 09:00:00 UTC: see https://letsencrypt.org/docs/rate-limits/\n"+
+			"tes3mp-easy-panel: obtain ACME certificate for 203.0.113.10: acme: error: 429 :: POST :: https://acme-v02.api.letsencrypt.org/acme/new-order :: urn:ietf:params:acme:error:rateLimited :: too many certificates (5) already issued for this exact set of identifiers in the last 168h0m0s, retry after 2026-10-25 20:09:48 UTC: see https://letsencrypt.org/docs/rate-limits/\n"+
+			"tes3mp-panel.service: Main process exited, code=exited, status=1/FAILURE\n",
+		0o644)
+	h.env["TES3MP_FAKE_JOURNAL"] = journal
+	h.env["TES3MP_FAKE_INACTIVE_UNIT"] = "tes3mp-panel.service"
+
+	got := h.run(t)
+
+	assertExit(t, got, 1)
+	for _, want := range []string{
+		"Let's Encrypt rate limit for this public IP; retry after 2026-10-25 20:09:48 UTC, then rerun the installer",
+		"retry after 2026-10-25 20:09:48 UTC: see",
+		"Main process exited",
+		"Installation failed.",
+	} {
+		assertContains(t, got.stderr, want)
+	}
+	if strings.Contains(got.stderr, "SECRET") {
+		t.Fatalf("stderr leaked the initial password:\n%s", got.stderr)
+	}
+
+	logData, err := os.ReadFile(h.commandLog)
+	if err != nil {
+		t.Fatalf("read command log: %v", err)
+	}
+	assertContains(t, string(logData),
+		"journalctl args=--no-pager -u tes3mp-panel.service -n 40 -o cat")
+}
+
+func TestBootstrapReportsPanelJournalOnStartupFailure(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	journal := filepath.Join(h.dir, "panel.journal")
+	h.writeFile(journal,
+		"tes3mp-easy-panel: listen tcp :443: bind: address already in use\n",
+		0o644)
+	h.env["TES3MP_FAKE_JOURNAL"] = journal
+	h.env["TES3MP_FAKE_INACTIVE_UNIT"] = "tes3mp-panel.service"
+
+	got := h.run(t)
+
+	assertExit(t, got, 1)
+	for _, want := range []string{
+		"listen tcp :443: bind: address already in use",
+		"tes3mp-panel.service is not active",
+		"Installation failed.",
+	} {
+		assertContains(t, got.stderr, want)
 	}
 }
 
