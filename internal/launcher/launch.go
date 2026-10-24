@@ -86,11 +86,12 @@ func launchExecutable(ctx context.Context, options LaunchOptions,
 		return Result{}, err
 	}
 	config, err := PrepareConfig(ConfigOptions{
-		ConfigDir:    env.ConfigDir,
-		ProfilePath:  options.ProfilePath,
-		Localization: options.Localization,
-		Fonts:        options.Fonts,
-		Now:          options.Now,
+		ConfigDir:         env.ConfigDir,
+		ProfilePath:       options.ProfilePath,
+		Localization:      options.Localization,
+		MorrowindEncoding: env.Morrowind.Encoding,
+		Fonts:             options.Fonts,
+		Now:               options.Now,
 	})
 	if err != nil {
 		return Result{}, err

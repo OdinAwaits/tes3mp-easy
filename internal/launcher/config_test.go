@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Saagilat/tes3mp-easy/internal/morrowind"
 )
 
 const testProfile = "encoding=win1252\ndata=\"/games/Morrowind/Data Files\"\n" +
@@ -117,6 +119,28 @@ func TestPrepareConfigRemovesEncodingWhenLocalizationDisabled(t *testing.T) {
 	}
 	if string(data) != testProfile {
 		t.Fatalf("disabled localization changed the profile:\n%s", data)
+	}
+}
+
+func TestPrepareConfigAppliesDetectedMorrowindEncoding(t *testing.T) {
+	configDir := t.TempDir()
+	profile := writeProfile(t, testProfile)
+	result, err := PrepareConfig(ConfigOptions{
+		ConfigDir:         configDir,
+		ProfilePath:       profile,
+		MorrowindEncoding: morrowind.EncodingWin1251,
+	})
+	if err != nil {
+		t.Fatalf("PrepareConfig: %v", err)
+	}
+	data, err := os.ReadFile(result.Path)
+	if err != nil {
+		t.Fatalf("read active config: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "encoding=win1251\n") ||
+		strings.Contains(text, "win1252") {
+		t.Fatalf("detected encoding not applied:\n%s", text)
 	}
 }
 

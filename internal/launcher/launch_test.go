@@ -89,6 +89,42 @@ func TestLaunchWindowsStartsTES3MPDirectly(t *testing.T) {
 	}
 }
 
+func TestLaunchUsesEncodingFromMorrowindData(t *testing.T) {
+	workDir, morrowindRoot, profile := fakeInstallation(t)
+	marker := []byte{0xC7, 0xE0, 0xE3, 0xF0, 0xF3, 0xE7, 0xEA, 0xE0}
+	esm := filepath.Join(morrowindRoot, "Data Files", "Morrowind.esm")
+	body := append([]byte("TES3"), marker...)
+	if err := os.WriteFile(esm, body, 0o600); err != nil {
+		t.Fatalf("write Morrowind.esm: %v", err)
+	}
+	configDir := t.TempDir()
+	_, err := Launch(context.Background(), LaunchOptions{
+		Options: Options{
+			GOOS:          "windows",
+			WorkDir:       workDir,
+			MorrowindRoot: morrowindRoot,
+			ConfigDir:     configDir,
+			HomeDir:       t.TempDir(),
+		},
+		ProfilePath: profile,
+		Executor: func(_ context.Context, _ Spec) (Process, error) {
+			return fakeProcess{}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(configDir, "openmw.cfg"))
+	if err != nil {
+		t.Fatalf("active config: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "encoding="+morrowind.EncodingWin1251+"\n") ||
+		strings.Contains(text, "win1252") {
+		t.Fatalf("detected Morrowind encoding not applied:\n%s", text)
+	}
+}
+
 func TestLaunchLinuxUsesProton(t *testing.T) {
 	workDir, morrowindRoot, profile := fakeInstallation(t)
 	protonDir := filepath.Join(t.TempDir(), "Proton 9.0")

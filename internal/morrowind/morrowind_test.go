@@ -39,6 +39,26 @@ func TestInspect(t *testing.T) {
 			t.Fatalf("missing path for %s", name)
 		}
 	}
+	if installation.Encoding != "" {
+		t.Fatalf("ASCII Morrowind encoding = %q, want empty", installation.Encoding)
+	}
+}
+
+func TestInspectDetectsWin1251(t *testing.T) {
+	root := makeMorrowind(t, "Data Files", RequiredFiles...)
+	marker := []byte{0xC7, 0xE0, 0xE3, 0xF0, 0xF3, 0xE7, 0xEA, 0xE0}
+	esm := filepath.Join(root, "Data Files", "Morrowind.esm")
+	body := append([]byte("TES3"), marker...)
+	if err := os.WriteFile(esm, body, 0o600); err != nil {
+		t.Fatalf("write Morrowind.esm: %v", err)
+	}
+	installation, err := Inspect(root)
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if installation.Encoding != EncodingWin1251 {
+		t.Fatalf("Encoding = %q, want %q", installation.Encoding, EncodingWin1251)
+	}
 }
 
 func TestInspectCaseInsensitive(t *testing.T) {

@@ -3,13 +3,28 @@
 package morrowind
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// EncodingWin1251 marks Morrowind ESM files whose Russian text is encoded in
+// CP1251. OpenMW needs encoding=win1251 for such data files.
+const EncodingWin1251 = "win1251"
+
+const encodingProbeSize = 1 << 20
+
+// cp1251Markers are common Russian strings from Morrowind.esm encoded in
+// CP1251. They are absent from English and UTF-8 data files.
+var cp1251Markers = [][]byte{
+	{0xC7, 0xE0, 0xE3, 0xF0, 0xF3, 0xE7, 0xEA, 0xE0},       // Загрузка
+	{0xD1, 0xF2, 0xE0, 0xF0, 0xF2, 0xEE, 0xE2, 0xE0, 0xFF}, // Стартовая
+}
 
 // RequiredFiles are the base game files TES3MP cannot run without.
 var RequiredFiles = []string{
@@ -31,6 +46,9 @@ type Installation struct {
 	Root      string
 	DataFiles string
 	Files     map[string]string
+	// Encoding is EncodingWin1251 when Morrowind.esm contains CP1251 text,
+	// otherwise it is empty.
+	Encoding string
 }
 
 // IncompleteError reports which required files are missing.
@@ -132,7 +150,26 @@ func Inspect(root string) (Installation, error) {
 		Root:      absolute,
 		DataFiles: dataFiles,
 		Files:     files,
+		Encoding:  detectEncoding(files["Morrowind.esm"]),
 	}, nil
+}
+
+func detectEncoding(path string) string {
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, encodingProbeSize))
+	if err != nil {
+		return ""
+	}
+	for _, marker := range cp1251Markers {
+		if bytes.Contains(data, marker) {
+			return EncodingWin1251
+		}
+	}
+	return ""
 }
 
 func childDir(root, name string) (string, error) {

@@ -20,8 +20,10 @@ type ConfigOptions struct {
 	ConfigDir    string
 	ProfilePath  string
 	Localization bool
-	Fonts        bool
-	Now          func() time.Time
+	// MorrowindEncoding is the detected encoding of the original ESM files.
+	MorrowindEncoding string
+	Fonts             bool
+	Now               func() time.Time
 }
 
 // ConfigResult describes the active openmw.cfg replacement.
@@ -85,7 +87,7 @@ func PrepareConfig(options ConfigOptions) (ConfigResult, error) {
 	if options.Fonts {
 		data = fonts.UpdateConfig(data)
 	}
-	if options.Localization {
+	if options.Localization || strings.EqualFold(strings.TrimSpace(options.MorrowindEncoding), locale.Encoding) {
 		data = locale.UpdateEncoding(data, true)
 	} else {
 		data = locale.UpdateEncoding(data, false)
