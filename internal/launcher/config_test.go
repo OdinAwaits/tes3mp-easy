@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Saagilat/tes3mp-easy/internal/locale"
 	"github.com/Saagilat/tes3mp-easy/internal/morrowind"
 )
 
@@ -31,10 +32,10 @@ func TestPrepareConfigCopiesAndBacksUp(t *testing.T) {
 		t.Fatalf("write active config: %v", err)
 	}
 	result, err := PrepareConfig(ConfigOptions{
-		ConfigDir:    configDir,
-		ProfilePath:  profile,
-		Localization: true,
-		Fonts:        true,
+		ConfigDir:   configDir,
+		ProfilePath: profile,
+		Encoding:    locale.Encoding,
+		Fonts:       true,
 		Now: func() time.Time {
 			return time.Date(2026, 10, 23, 12, 34, 56, 0, time.UTC)
 		},
@@ -74,9 +75,9 @@ func TestPrepareConfigIsIdempotent(t *testing.T) {
 	configDir := t.TempDir()
 	profile := writeProfile(t, testProfile)
 	options := ConfigOptions{
-		ConfigDir:    configDir,
-		ProfilePath:  profile,
-		Localization: true,
+		ConfigDir:   configDir,
+		ProfilePath: profile,
+		Encoding:    locale.Encoding,
 	}
 	first, err := PrepareConfig(options)
 	if err != nil {
@@ -141,6 +142,76 @@ func TestPrepareConfigAppliesDetectedMorrowindEncoding(t *testing.T) {
 	if !strings.Contains(text, "encoding=win1251\n") ||
 		strings.Contains(text, "win1252") {
 		t.Fatalf("detected encoding not applied:\n%s", text)
+	}
+}
+
+func TestPrepareConfigRemovesPackEncodingForEnglish(t *testing.T) {
+	configDir := t.TempDir()
+	profile := writeProfile(t, "encoding=win1252\nencoding=win1251\n"+
+		strings.TrimPrefix(testProfile, "encoding=win1252\n"))
+	result, err := PrepareConfig(ConfigOptions{
+		ConfigDir:   configDir,
+		ProfilePath: profile,
+	})
+	if err != nil {
+		t.Fatalf("PrepareConfig: %v", err)
+	}
+	data, err := os.ReadFile(result.Path)
+	if err != nil {
+		t.Fatalf("read active config: %v", err)
+	}
+	text := string(data)
+	if strings.Contains(text, "encoding=win1251") ||
+		!strings.Contains(text, "encoding=win1252\n") {
+		t.Fatalf("English did not remove the pack encoding:\n%s", text)
+	}
+}
+
+func TestPrepareConfigInjectsLocalizationData(t *testing.T) {
+	configDir := t.TempDir()
+	profile := writeProfile(t, testProfile)
+	root := "/work/localization"
+	dataFiles := filepath.Join(root, "main", "Data Files")
+	result, err := PrepareConfig(ConfigOptions{
+		ConfigDir:             configDir,
+		ProfilePath:           profile,
+		Encoding:              locale.Encoding,
+		LocalizationRoot:      root,
+		LocalizationDataFiles: dataFiles,
+	})
+	if err != nil {
+		t.Fatalf("PrepareConfig: %v", err)
+	}
+	data, err := os.ReadFile(result.Path)
+	if err != nil {
+		t.Fatalf("read active config: %v", err)
+	}
+	text := string(data)
+	want := "data=\"/games/Morrowind/Data Files\"\n" +
+		"data=\"/work/localization/main/Data Files\"\n" +
+		"data=\"/work/servers/srv/data/Data Files\"\n"
+	if !strings.Contains(text, want) {
+		t.Fatalf("localization data line is in the wrong order:\n%s", text)
+	}
+	profileData, err := os.ReadFile(profile)
+	if err != nil || string(profileData) != testProfile {
+		t.Fatalf("profile was modified: %q, %v", profileData, err)
+	}
+
+	disabled, err := PrepareConfig(ConfigOptions{
+		ConfigDir:        configDir,
+		ProfilePath:      profile,
+		LocalizationRoot: root,
+	})
+	if err != nil {
+		t.Fatalf("PrepareConfig without localization: %v", err)
+	}
+	data, err = os.ReadFile(disabled.Path)
+	if err != nil {
+		t.Fatalf("read active config: %v", err)
+	}
+	if strings.Contains(string(data), root) {
+		t.Fatalf("stale localization data line survived:\n%s", data)
 	}
 }
 

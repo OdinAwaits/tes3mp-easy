@@ -6,27 +6,33 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
 	"github.com/Saagilat/tes3mp-easy/internal/atomicfile"
 	"github.com/Saagilat/tes3mp-easy/internal/download"
-	"github.com/Saagilat/tes3mp-easy/internal/pathguard"
 )
 
 func (o Options) withDefaults() Options {
+	if strings.TrimSpace(o.Language) == "" {
+		o.Language = LanguageRussian
+	}
+	o.Language, _ = ParseLanguage(o.Language)
+	if o.Language == "" {
+		o.Language = LanguageRussian
+	}
+	pack, _ := PackFor(o.Language)
 	if o.URL == "" {
-		o.URL = ReleaseURL + "/" + ArchiveName
+		o.URL = pack.URL
 	}
 	if o.SHA256 == "" {
-		o.SHA256 = ArchiveSHA256
+		o.SHA256 = pack.SHA256
 	}
 	if o.VoicesURL == "" {
-		o.VoicesURL = ReleaseURL + "/" + VoicesArchiveName
+		o.VoicesURL = pack.VoicesURL
 	}
 	if o.VoicesSHA256 == "" {
-		o.VoicesSHA256 = VoicesSHA256
+		o.VoicesSHA256 = pack.VoicesSHA256
 	}
 	if o.Attempts == 0 {
 		o.Attempts = 3
@@ -35,11 +41,8 @@ func (o Options) withDefaults() Options {
 }
 
 func (o Options) validate() error {
-	if strings.TrimSpace(o.WorkDir) == "" {
-		return errors.New("client work directory is empty")
-	}
-	if !filepath.IsAbs(o.WorkDir) {
-		return fmt.Errorf("client work directory %q is not absolute", o.WorkDir)
+	if _, err := validateWorkDir(o.WorkDir); err != nil {
+		return err
 	}
 	if strings.TrimSpace(o.CacheDir) == "" {
 		return errors.New("client cache directory is empty")
@@ -47,8 +50,12 @@ func (o Options) validate() error {
 	if !filepath.IsAbs(o.CacheDir) {
 		return fmt.Errorf("client cache directory %q is not absolute", o.CacheDir)
 	}
-	if err := pathguard.Base(o.ServerID); err != nil {
-		return fmt.Errorf("server id: %w", err)
+	pack, ok := PackFor(o.Language)
+	if !ok {
+		return fmt.Errorf("unsupported game language %q", o.Language)
+	}
+	if pack.ArchiveName == "" {
+		return fmt.Errorf("game language %q has no downloadable pack", o.Language)
 	}
 	if len(o.SHA256) != 64 {
 		return errors.New("localization SHA256 must be 64 hex characters")
@@ -126,7 +133,7 @@ func mapEntry(name string, directory bool) (string, bool, error) {
 	return "", false, nil
 }
 
-func validateProfile(workDir, serverID string) (string, error) {
+func validateWorkDir(workDir string) (string, error) {
 	workDir = strings.TrimSpace(workDir)
 	if workDir == "" {
 		return "", errors.New("client work directory is empty")
@@ -135,10 +142,7 @@ func validateProfile(workDir, serverID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("client work directory %q: %w", workDir, err)
 	}
-	if err := pathguard.Base(serverID); err != nil {
-		return "", fmt.Errorf("server id: %w", err)
-	}
-	return filepath.Join(absolute, "servers", serverID), nil
+	return filepath.Clean(absolute), nil
 }
 
 func writeMarker(path string, meta marker) error {
@@ -176,16 +180,4 @@ func countFiles(root string) (int, error) {
 		return 0, fmt.Errorf("inspect extracted localization: %w", err)
 	}
 	return count, nil
-}
-
-// pathFromSlash validates a manifest path and returns a local path.
-func pathFromSlash(name string) (string, error) {
-	clean, err := pathguard.Path(name)
-	if err != nil {
-		return "", err
-	}
-	if clean == "" {
-		return "", errors.New("empty localization path")
-	}
-	return filepath.FromSlash(path.Clean(clean)), nil
 }

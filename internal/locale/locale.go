@@ -1,9 +1,10 @@
-// Package locale installs the optional Russian Morrowind localization as an
-// overlay in a server profile.
+// Package locale installs optional Morrowind language packs into one global
+// client overlay.
 //
-// The original Morrowind installation is read-only. The main archive provides
+// The original Morrowind installation is read-only. A pack archive provides
 // Data Files, the optional voice archive adds Sound, and both are assembled in
-// servers/<id>/localization before being copied over the profile Data Files.
+// <workDir>/localization. The launcher adds the pack Data Files directory to
+// every server profile at launch, so all servers share one localization.
 package locale
 
 import (
@@ -21,12 +22,14 @@ import (
 )
 
 const (
-	// Language is the supported localization identifier.
-	Language = "russian"
+	// LanguageRussian is the supported downloadable language pack.
+	LanguageRussian = "russian"
+	// Language is kept as the Russian pack alias for older callers.
+	Language = LanguageRussian
 	// Encoding is required by the Cyrillic Morrowind data files.
 	Encoding = "win1251"
 
-	// ReleaseURL is the pinned GitHub release with both archives.
+	// ReleaseURL is the pinned GitHub release with both Russian archives.
 	ReleaseURL = "https://github.com/Saagilat/tes3mp-easy/releases/download/russian-v1.0"
 
 	// ArchiveName and VoicesArchiveName are the release asset filenames.
@@ -38,14 +41,82 @@ const (
 	// VoicesSHA256 pins the optional Russian voice archive.
 	VoicesSHA256 = "7abc6591fc5507221c732df08fff7fc1ac5d7447e783660d25ed8cc7b885d6c7"
 
-	// DirName is the per-server localization directory.
-	DirName = "localization"
-	// AppliedName records files copied into Data Files.
-	AppliedName = ".locale-applied.json"
-	markerName  = ".locale.json"
-	mainDir     = "main"
-	voicesDir   = "voices"
+	// DirName is the global localization directory below the client work dir.
+	DirName    = "localization"
+	markerName = ".locale.json"
+	mainDir    = "main"
+	voicesDir  = "voices"
 )
+
+// Pack describes one downloadable game language.
+type Pack struct {
+	Language          string
+	ArchiveName       string
+	VoicesArchiveName string
+	URL               string
+	VoicesURL         string
+	SHA256            string
+	VoicesSHA256      string
+	Encoding          string
+}
+
+var packs = map[string]Pack{
+	LanguageRussian: {
+		Language:          LanguageRussian,
+		ArchiveName:       ArchiveName,
+		VoicesArchiveName: VoicesArchiveName,
+		URL:               ReleaseURL + "/" + ArchiveName,
+		VoicesURL:         ReleaseURL + "/" + VoicesArchiveName,
+		SHA256:            ArchiveSHA256,
+		VoicesSHA256:      VoicesSHA256,
+		Encoding:          Encoding,
+	},
+}
+
+// Packages returns every downloadable localization in display order.
+func Packages() []Pack {
+	return []Pack{packs[LanguageRussian]}
+}
+
+// ParseLanguage accepts a persisted game language. An empty value is not a
+// supported identifier.
+func ParseLanguage(value string) (string, bool) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if _, ok := packs[value]; ok {
+		return value, true
+	}
+	return "", false
+}
+
+// PackFor returns the language pack metadata.
+func PackFor(language string) (Pack, bool) {
+	language, ok := ParseLanguage(language)
+	if !ok {
+		return Pack{}, false
+	}
+	return packs[language], true
+}
+
+// EncodingFor returns the OpenMW encoding required by the language, or an
+// empty string when the base game encoding should be kept.
+func EncodingFor(language string) string {
+	pack, ok := PackFor(language)
+	if !ok {
+		return ""
+	}
+	return pack.Encoding
+}
+
+// IsPackEncoding reports whether encoding belongs to one of the language packs.
+func IsPackEncoding(encoding string) bool {
+	encoding = strings.ToLower(strings.TrimSpace(encoding))
+	for _, pack := range packs {
+		if pack.Encoding != "" && pack.Encoding == encoding {
+			return true
+		}
+	}
+	return false
+}
 
 // Stage is the current installation phase.
 type Stage string
@@ -68,7 +139,7 @@ type Progress struct {
 type Options struct {
 	WorkDir   string
 	CacheDir  string
-	ServerID  string
+	Language  string
 	Voiceover bool
 
 	URL          string
@@ -81,9 +152,11 @@ type Options struct {
 	Progress     func(Progress)
 }
 
-// State describes the installed overlay.
+// State describes the installed global overlay.
 type State struct {
 	Dir          string
+	DataFiles    string
+	Language     string
 	Installed    bool
 	Voiceover    bool
 	MainSHA256   string
@@ -106,56 +179,49 @@ type marker struct {
 	Voiceover    bool   `json:"voiceover"`
 }
 
-// DefaultOptions returns production options for a server profile.
-func DefaultOptions(workDir, cacheDir, serverID string, voiceover bool) Options {
+// DefaultOptions returns production options for one language.
+func DefaultOptions(workDir, cacheDir, language string,
+	voiceover bool,
+) Options {
+	language, _ = ParseLanguage(language)
+	if language == "" {
+		language = LanguageRussian
+	}
+	pack, _ := PackFor(language)
 	return Options{
 		WorkDir:      workDir,
 		CacheDir:     cacheDir,
-		ServerID:     serverID,
+		Language:     language,
 		Voiceover:    voiceover,
-		URL:          ReleaseURL + "/" + ArchiveName,
-		SHA256:       ArchiveSHA256,
-		VoicesURL:    ReleaseURL + "/" + VoicesArchiveName,
-		VoicesSHA256: VoicesSHA256,
+		URL:          pack.URL,
+		SHA256:       pack.SHA256,
+		VoicesURL:    pack.VoicesURL,
+		VoicesSHA256: pack.VoicesSHA256,
 		Attempts:     3,
 		RetryWait:    time.Second,
 	}
 }
 
-// ServerDir returns servers/<id> below workDir.
-func ServerDir(workDir, serverID string) string {
-	return filepath.Join(workDir, "servers", serverID)
+// Dir returns the global localization directory below workDir.
+func Dir(workDir string) string {
+	return filepath.Join(workDir, DirName)
 }
 
-// Dir returns the localization directory for a server profile.
-func Dir(workDir, serverID string) string {
-	return filepath.Join(ServerDir(workDir, serverID), DirName)
-}
-
-// OverlayDirs returns the existing Data Files overlay layers in copy order.
-func OverlayDirs(workDir, serverID string) []string {
-	root := Dir(workDir, serverID)
-	candidates := []string{
-		filepath.Join(root, mainDir, "Data Files"),
-		filepath.Join(root, voicesDir, "Data Files"),
-	}
-	var dirs []string
-	for _, candidate := range candidates {
-		if info, err := os.Lstat(candidate); err == nil &&
-			info.Mode()&os.ModeSymlink == 0 && info.IsDir() {
-			dirs = append(dirs, candidate)
-		}
-	}
-	return dirs
+// DataFiles returns the Data Files layer of an installed pack.
+func DataFiles(workDir string) string {
+	return filepath.Join(Dir(workDir), mainDir, "Data Files")
 }
 
 // Inspect reports whether the overlay and its marker are present.
-func Inspect(workDir, serverID string) (State, error) {
-	dir, err := validateProfile(workDir, serverID)
+func Inspect(workDir string) (State, error) {
+	root, err := validateWorkDir(workDir)
 	if err != nil {
 		return State{}, err
 	}
-	state := State{Dir: filepath.Join(dir, DirName)}
+	state := State{
+		Dir:       filepath.Join(root, DirName),
+		DataFiles: filepath.Join(root, DirName, mainDir, "Data Files"),
+	}
 	data, err := os.ReadFile(filepath.Join(state.Dir, markerName))
 	if errors.Is(err, os.ErrNotExist) {
 		return state, nil
@@ -167,17 +233,20 @@ func Inspect(workDir, serverID string) (State, error) {
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return State{}, fmt.Errorf("parse localization marker: %w", err)
 	}
-	if meta.Language != Language || meta.MainSHA256 == "" {
+	if meta.Language == "" {
 		return State{}, errors.New("localization marker is invalid")
 	}
-	mainPath := filepath.Join(state.Dir, mainDir, "Data Files")
-	if info, err := os.Lstat(mainPath); err != nil ||
+	if _, ok := ParseLanguage(meta.Language); !ok || meta.MainSHA256 == "" {
+		return State{}, errors.New("localization marker is invalid")
+	}
+	if info, err := os.Lstat(state.DataFiles); err != nil ||
 		info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return State{}, fmt.Errorf("inspect localization: %w", err)
 		}
 		return state, nil
 	}
+	state.Language = meta.Language
 	state.Installed = true
 	state.Voiceover = meta.Voiceover
 	state.MainSHA256 = meta.MainSHA256
@@ -195,28 +264,30 @@ func Install(ctx context.Context, options Options) (Result, error) {
 	if err := options.validate(); err != nil {
 		return Result{}, err
 	}
-	serverDir, err := validateProfile(options.WorkDir, options.ServerID)
+	root, err := validateWorkDir(options.WorkDir)
 	if err != nil {
 		return Result{}, err
 	}
-	state, err := Inspect(options.WorkDir, options.ServerID)
+	pack, _ := PackFor(options.Language)
+	state, err := Inspect(root)
 	if err != nil {
 		return Result{}, err
 	}
 	voicesMatch := !options.Voiceover ||
 		strings.EqualFold(state.VoicesSHA256, options.VoicesSHA256)
-	if state.Installed && strings.EqualFold(state.MainSHA256, options.SHA256) &&
+	if state.Installed && strings.EqualFold(state.Language, options.Language) &&
+		strings.EqualFold(state.MainSHA256, options.SHA256) &&
 		state.Voiceover == options.Voiceover && voicesMatch {
 		return Result{State: state, Skipped: true}, nil
 	}
 	if err := os.MkdirAll(options.CacheDir, 0o700); err != nil {
 		return Result{}, fmt.Errorf("create cache directory: %w", err)
 	}
-	if err := os.MkdirAll(serverDir, 0o700); err != nil {
-		return Result{}, fmt.Errorf("create server directory: %w", err)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return Result{}, fmt.Errorf("create client work directory: %w", err)
 	}
 
-	staging := filepath.Join(serverDir, DirName+".staging")
+	staging := filepath.Join(root, DirName+".staging")
 	if err := os.RemoveAll(staging); err != nil {
 		return Result{}, fmt.Errorf("remove stale localization staging: %w", err)
 	}
@@ -232,13 +303,13 @@ func Install(ctx context.Context, options Options) (Result, error) {
 
 	result := Result{}
 	mainFetched, err := options.fetch(ctx, options.URL, options.SHA256,
-		filepath.Join(options.CacheDir, ArchiveName), ArchiveName)
+		filepath.Join(options.CacheDir, pack.ArchiveName), pack.ArchiveName)
 	if err != nil {
 		return Result{}, fmt.Errorf("localization archive: %w", err)
 	}
 	result.Downloaded = mainFetched.Downloaded
 	result.Cached = mainFetched.Cached
-	options.report(Progress{Stage: StageExtracting, Name: ArchiveName})
+	options.report(Progress{Stage: StageExtracting, Name: pack.ArchiveName})
 	mainTarget := filepath.Join(staging, mainDir, "Data Files")
 	if err := os.MkdirAll(mainTarget, 0o700); err != nil {
 		return Result{}, fmt.Errorf("create localization layer: %w", err)
@@ -255,25 +326,26 @@ func Install(ctx context.Context, options Options) (Result, error) {
 	}
 
 	meta := marker{
-		Language:   Language,
+		Language:   options.Language,
 		MainSHA256: options.SHA256,
 		Voiceover:  false,
 	}
 	if options.Voiceover {
-		options.report(Progress{Stage: StageDownloading, Name: VoicesArchiveName})
+		options.report(Progress{Stage: StageDownloading, Name: pack.VoicesArchiveName})
 		voicesFetched, voiceErr := options.fetch(ctx, options.VoicesURL,
 			options.VoicesSHA256,
-			filepath.Join(options.CacheDir, VoicesArchiveName), VoicesArchiveName)
+			filepath.Join(options.CacheDir, pack.VoicesArchiveName),
+			pack.VoicesArchiveName)
 		if voiceErr != nil {
 			if ctx.Err() != nil {
 				return Result{}, ctx.Err()
 			}
 			result.Warnings = append(result.Warnings, fmt.Sprintf(
-				"Russian voiceover was not installed: %v", voiceErr))
+				"voiceover was not installed: %v", voiceErr))
 		} else {
 			result.Downloaded = result.Downloaded || voicesFetched.Downloaded
 			result.Cached = result.Cached || voicesFetched.Cached
-			options.report(Progress{Stage: StageExtracting, Name: VoicesArchiveName})
+			options.report(Progress{Stage: StageExtracting, Name: pack.VoicesArchiveName})
 			voiceTarget := filepath.Join(staging, voicesDir, "Data Files")
 			if err := os.MkdirAll(voiceTarget, 0o700); err != nil {
 				return Result{}, fmt.Errorf("create voiceover layer: %w", err)
@@ -288,7 +360,7 @@ func Install(ctx context.Context, options Options) (Result, error) {
 			}
 			if extractErr != nil {
 				result.Warnings = append(result.Warnings, fmt.Sprintf(
-					"Russian voiceover was not installed: %v", extractErr))
+					"voiceover was not installed: %v", extractErr))
 				_ = os.RemoveAll(voiceTarget)
 			} else {
 				meta.Voiceover = true
@@ -297,17 +369,17 @@ func Install(ctx context.Context, options Options) (Result, error) {
 		}
 	}
 
-	options.report(Progress{Stage: StageInstalling, Name: ArchiveName})
+	options.report(Progress{Stage: StageInstalling, Name: pack.ArchiveName})
 	if err := writeMarker(filepath.Join(staging, markerName), meta); err != nil {
 		return Result{}, err
 	}
-	warnings, err := swapInstallation(staging, filepath.Join(serverDir, DirName))
+	warnings, err := swapInstallation(staging, filepath.Join(root, DirName))
 	if err != nil {
 		return Result{}, err
 	}
 	committed = true
 	result.Warnings = append(result.Warnings, warnings...)
-	state, err = Inspect(options.WorkDir, options.ServerID)
+	state, err = Inspect(root)
 	if err != nil {
 		return Result{}, err
 	}
@@ -318,14 +390,13 @@ func Install(ctx context.Context, options Options) (Result, error) {
 	return result, nil
 }
 
-// Remove deletes the localization layers for one server profile. Files already
-// copied into Data Files are handled by RemoveOverlay.
-func Remove(workDir, serverID string) error {
-	serverDir, err := validateProfile(workDir, serverID)
+// Remove deletes the global localization overlay and any stale copies.
+func Remove(workDir string) error {
+	root, err := validateWorkDir(workDir)
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(serverDir, DirName)
+	dir := filepath.Join(root, DirName)
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("remove localization: %w", err)
 	}

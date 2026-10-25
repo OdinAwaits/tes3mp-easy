@@ -59,7 +59,7 @@ func TestLaunchWindowsStartsTES3MPDirectly(t *testing.T) {
 		ServerAddress:  "203.0.113.10",
 		ServerPort:     25565,
 		ServerPassword: "hunter2",
-		Localization:   true,
+		Encoding:       "win1251",
 		Fonts:          true,
 		Executor: func(_ context.Context, spec Spec) (Process, error) {
 			calls++

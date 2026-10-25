@@ -43,13 +43,13 @@ const (
 )
 
 // Settings are the subset of configuration edited from the Settings dialog.
+// Game localization is a separate optional install action, not a setting.
 type Settings struct {
 	Language      string
 	Theme         string
 	MorrowindPath string
 	WorkDir       string
 	ProtonPath    string
-	Localization  bool
 	SkipFonts     bool
 }
 

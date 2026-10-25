@@ -21,7 +21,7 @@ var (
 	ErrStart         = errors.New("TES3MP could not be started")
 )
 
-// LaunchOptions adds the profile, endpoint and font/localization choices to the
+// LaunchOptions adds the profile, endpoint and font/language choices to the
 // paths. ServerPassword is written only to tes3mp-client-default.cfg and must
 // never be logged.
 type LaunchOptions struct {
@@ -30,10 +30,14 @@ type LaunchOptions struct {
 	ServerAddress  string
 	ServerPort     int
 	ServerPassword string
-	Localization   bool
-	Fonts          bool
-	Now            func() time.Time
-	Executor       Executor
+	Encoding       string
+	// LocalizationRoot and LocalizationDataFiles inject the global language
+	// overlay into the active profile at launch.
+	LocalizationRoot      string
+	LocalizationDataFiles string
+	Fonts                 bool
+	Now                   func() time.Time
+	Executor              Executor
 }
 
 // Result describes a prepared and started process.
@@ -107,12 +111,14 @@ func launchExecutable(ctx context.Context, options LaunchOptions,
 		return Result{}, fmt.Errorf("%w: %v", ErrConfig, err)
 	}
 	config, err := PrepareConfig(ConfigOptions{
-		ConfigDir:         env.ConfigDir,
-		ProfilePath:       options.ProfilePath,
-		Localization:      options.Localization,
-		Fonts:             options.Fonts,
-		MorrowindEncoding: env.Morrowind.Encoding,
-		Now:               options.Now,
+		ConfigDir:             env.ConfigDir,
+		ProfilePath:           options.ProfilePath,
+		Encoding:              options.Encoding,
+		Fonts:                 options.Fonts,
+		MorrowindEncoding:     env.Morrowind.Encoding,
+		LocalizationRoot:      options.LocalizationRoot,
+		LocalizationDataFiles: options.LocalizationDataFiles,
+		Now:                   options.Now,
 	})
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: %v", ErrConfig, err)

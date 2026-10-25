@@ -50,26 +50,8 @@ func tarFile(t *testing.T, entries map[string]string) []byte {
 	return buffer.Bytes()
 }
 
-func profile(t *testing.T) (string, string) {
-	t.Helper()
+func TestInstallRemoveLifecycle(t *testing.T) {
 	workDir := t.TempDir()
-	dataFiles := filepath.Join(workDir, "servers", "srv", "data", "Data Files")
-	if err := os.MkdirAll(filepath.Join(dataFiles, "Book"), 0o750); err != nil {
-		t.Fatalf("create profile: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dataFiles, "Morrowind.esm"),
-		[]byte("original morrowind"), 0o640); err != nil {
-		t.Fatalf("write Morrowind.esm: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dataFiles, "Keep.esp"),
-		[]byte("untouched mod"), 0o640); err != nil {
-		t.Fatalf("write Keep.esp: %v", err)
-	}
-	return workDir, dataFiles
-}
-
-func TestInstallApplyRemoveLifecycle(t *testing.T) {
-	workDir, dataFiles := profile(t)
 	mainArchive := tarFile(t, map[string]string{
 		"Data Files/":              "",
 		"Data Files/Morrowind.esm": "localized morrowind",
@@ -100,7 +82,6 @@ func TestInstallApplyRemoveLifecycle(t *testing.T) {
 	options := Options{
 		WorkDir:      workDir,
 		CacheDir:     t.TempDir(),
-		ServerID:     "srv",
 		Voiceover:    true,
 		URL:          server.URL + "/russian.tar",
 		SHA256:       archiveDigest(mainArchive),
@@ -119,92 +100,31 @@ func TestInstallApplyRemoveLifecycle(t *testing.T) {
 	if !result.Downloaded || result.Cached {
 		t.Fatalf("result = %+v", result)
 	}
+	root := filepath.Join(workDir, DirName)
+	if result.State.Dir != root ||
+		result.State.DataFiles != filepath.Join(root, mainDir, "Data Files") {
+		t.Fatalf("state paths = %+v", result.State)
+	}
 	for _, path := range []string{
 		"Data Files/Morrowind.esm",
 		"Data Files/Book/Book.esp",
 		"Data Files/Sound/Step.wav",
 		"Data Files/Video/Intro.bik",
 	} {
-		full := filepath.Join(workDir, "servers", "srv", "localization", "main",
-			filepath.FromSlash(path))
+		full := filepath.Join(root, mainDir, filepath.FromSlash(path))
 		if _, err := os.Stat(full); err != nil {
 			t.Fatalf("main layer missing %s: %v", path, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(workDir, "servers", "srv", "localization",
-		"main", "Data Files", "Documentation")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, mainDir, "Data Files",
+		"Documentation")); !os.IsNotExist(err) {
 		t.Fatalf("top-level filtered directory leaked into the layer: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(workDir, "servers", "srv", "localization",
-		"voices", "Data Files", "Sound", "Voice.mp3")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, voicesDir, "Data Files",
+		"Sound", "Voice.mp3")); err != nil {
 		t.Fatalf("voice layer missing: %v", err)
 	}
 
-	applied, err := Apply(workDir, "srv")
-	if err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-	if applied.Files != 5 {
-		t.Fatalf("applied = %+v, want 5 files", applied)
-	}
-	body, err := os.ReadFile(filepath.Join(dataFiles, "Morrowind.esm"))
-	if err != nil || string(body) != "localized morrowind" {
-		t.Fatalf("localized Morrowind.esm = %q, %v", body, err)
-	}
-	if body, _ := os.ReadFile(filepath.Join(dataFiles, "Keep.esp")); string(body) !=
-		"untouched mod" {
-		t.Fatalf("unrelated profile file = %q", body)
-	}
-
-	warnings, err := RemoveOverlay(workDir, "srv")
-	if err != nil {
-		t.Fatalf("RemoveOverlay: %v", err)
-	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %v", warnings)
-	}
-	body, err = os.ReadFile(filepath.Join(dataFiles, "Morrowind.esm"))
-	if err != nil || string(body) != "original morrowind" {
-		t.Fatalf("restored Morrowind.esm = %q, %v", body, err)
-	}
-	for _, path := range []string{"Book/Book.esp", "Sound/Step.wav",
-		"Video/Intro.bik", "Sound/Voice.mp3"} {
-		if _, err := os.Stat(filepath.Join(dataFiles, filepath.FromSlash(path))); !os.IsNotExist(err) {
-			t.Fatalf("overlay file %s survived removal: %v", path, err)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(workDir, "servers", "srv",
-		AppliedName)); !os.IsNotExist(err) {
-		t.Fatalf("manifest survived removal: %v", err)
-	}
-	if err := Remove(workDir, "srv"); err != nil {
-		t.Fatalf("Remove: %v", err)
-	}
-}
-
-func TestInstallSkipsWhenAlreadyInstalled(t *testing.T) {
-	workDir, _ := profile(t)
-	mainArchive := tarFile(t, map[string]string{
-		"Data Files/Morrowind.esm": "localized",
-	})
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter,
-		request *http.Request,
-	) {
-		_, _ = writer.Write(mainArchive)
-	}))
-	defer server.Close()
-	options := Options{
-		WorkDir:  workDir,
-		CacheDir: t.TempDir(),
-		ServerID: "srv",
-		URL:      server.URL + "/russian.tar",
-		SHA256:   archiveDigest(mainArchive),
-		Client:   server.Client(),
-		Attempts: 1,
-	}
-	if _, err := Install(context.Background(), options); err != nil {
-		t.Fatalf("Install: %v", err)
-	}
 	second, err := Install(context.Background(), options)
 	if err != nil {
 		t.Fatalf("second Install: %v", err)
@@ -212,10 +132,19 @@ func TestInstallSkipsWhenAlreadyInstalled(t *testing.T) {
 	if !second.Skipped || !second.State.Installed {
 		t.Fatalf("second result = %+v", second)
 	}
+	if err := Remove(workDir); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatalf("localization directory survived removal: %v", err)
+	}
+	if _, err := os.Stat(root + ".staging"); !os.IsNotExist(err) {
+		t.Fatalf("staging directory survived removal: %v", err)
+	}
 }
 
 func TestInstallWarnsWhenVoicesFail(t *testing.T) {
-	workDir, _ := profile(t)
+	workDir := t.TempDir()
 	mainArchive := tarFile(t, map[string]string{
 		"Data Files/Morrowind.esm": "localized",
 	})
@@ -232,7 +161,6 @@ func TestInstallWarnsWhenVoicesFail(t *testing.T) {
 	options := Options{
 		WorkDir:      workDir,
 		CacheDir:     t.TempDir(),
-		ServerID:     "srv",
 		Voiceover:    true,
 		URL:          server.URL + "/russian.tar",
 		SHA256:       archiveDigest(mainArchive),
@@ -254,9 +182,36 @@ func TestInstallWarnsWhenVoicesFail(t *testing.T) {
 	}
 }
 
+func TestLanguagePackages(t *testing.T) {
+	packs := Packages()
+	if len(packs) != 1 || packs[0].Language != LanguageRussian {
+		t.Fatalf("Packages() = %+v", packs)
+	}
+	russian, ok := PackFor(LanguageRussian)
+	if !ok || russian.ArchiveName != ArchiveName ||
+		russian.Encoding != Encoding ||
+		russian.URL == "" || russian.SHA256 != ArchiveSHA256 {
+		t.Fatalf("Russian pack = %+v, %v", russian, ok)
+	}
+	if _, ok := PackFor("english"); ok {
+		t.Fatal("English is not a downloadable package")
+	}
+	if _, ok := PackFor("klingon"); ok {
+		t.Fatal("unsupported language accepted")
+	}
+	if got := EncodingFor(LanguageRussian); got != Encoding {
+		t.Fatalf("Russian encoding = %q", got)
+	}
+	options := DefaultOptions("/work", "/cache", "", true)
+	if options.Language != LanguageRussian || options.URL != russian.URL ||
+		!options.Voiceover {
+		t.Fatalf("DefaultOptions() = %+v", options)
+	}
+}
+
 func TestUpdateEncoding(t *testing.T) {
 	input := []byte("encoding=win1252\ncontent=Morrowind.esm\nencoding=win1251\n")
-	enabled := UpdateEncoding(input, true)
+	enabled := UpdateEncoding(input, Encoding)
 	text := string(enabled)
 	if strings.Count(text, "encoding=") != 1 ||
 		!strings.Contains(text, "encoding=win1251\n") {
@@ -265,13 +220,35 @@ func TestUpdateEncoding(t *testing.T) {
 	if !strings.Contains(text, "content=Morrowind.esm\n") {
 		t.Fatalf("enabled config dropped unrelated line:\n%s", text)
 	}
-	disabled := UpdateEncoding(enabled, false)
-	if strings.Contains(string(disabled), "encoding=") {
-		t.Fatalf("disabled config still has encoding:\n%s", disabled)
+	disabled := UpdateEncoding(enabled, "")
+	if strings.Contains(string(disabled), "encoding=win1251") {
+		t.Fatalf("disabled config still has pack encoding:\n%s", disabled)
 	}
-	if got := string(UpdateEncoding(input, false)); got !=
+	if got := string(UpdateEncoding(input, "")); got !=
 		"encoding=win1252\ncontent=Morrowind.esm\n" {
-		t.Fatalf("disable should keep a non-Russian encoding: %q", got)
+		t.Fatalf("disable should keep a non-pack encoding: %q", got)
+	}
+}
+
+func TestUpdateDataFiles(t *testing.T) {
+	root := "/work/localization"
+	overlay := filepath.Join(root, mainDir, "Data Files")
+	input := []byte("data=\"/games/Morrowind/Data Files\"\n" +
+		"data=\"/work/servers/srv/data/Data Files\"\ncontent=Morrowind.esm\n")
+	got := string(UpdateDataFiles(input, overlay, root))
+	want := "data=\"/games/Morrowind/Data Files\"\n" +
+		"data=\"/work/localization/main/Data Files\"\n" +
+		"data=\"/work/servers/srv/data/Data Files\"\ncontent=Morrowind.esm\n"
+	if got != want {
+		t.Fatalf("UpdateDataFiles() =\n%s\nwant:\n%s", got, want)
+	}
+	again := string(UpdateDataFiles([]byte(got), overlay, root))
+	if again != want {
+		t.Fatalf("UpdateDataFiles is not idempotent:\n%s", again)
+	}
+	disabled := string(UpdateDataFiles([]byte(got), "", root))
+	if strings.Contains(disabled, root) {
+		t.Fatalf("managed data line survived disable:\n%s", disabled)
 	}
 }
 

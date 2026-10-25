@@ -211,6 +211,7 @@ func serverEndpoint(profile config.Server) string {
 
 func (s *shell) showServerActions(profile config.Server) {
 	tr := s.service.Translator()
+	var popup *dialog.CustomDialog
 	content := container.NewVBox(
 		style.Subheading(profile.Name),
 		style.MutedLabel(serverEndpoint(profile)),
@@ -219,6 +220,12 @@ func (s *shell) showServerActions(profile config.Server) {
 		}),
 		widget.NewButton(tr.T(i18n.KeyServerUpdateMods), func() {
 			s.showModsUpdate(profile)
+		}),
+		widget.NewButton(tr.T(i18n.KeyLocaleInstallTitle), func() {
+			if popup != nil {
+				popup.Hide()
+			}
+			s.showLanguageWizard()
 		}),
 		widget.NewButton(tr.T(i18n.KeyCommonAdvanced), func() {
 			s.showAdvanced(profile)
@@ -230,9 +237,9 @@ func (s *shell) showServerActions(profile config.Server) {
 			s.confirmDelete(tr, profile)
 		}),
 	)
-	popup := dialog.NewCustom(tr.T(i18n.KeyServerActionsTitle),
+	popup = dialog.NewCustom(tr.T(i18n.KeyServerActionsTitle),
 		tr.T(i18n.KeyCommonClose), content, s.window)
-	popup.Resize(fyne.NewSize(460, 360))
+	popup.Resize(fyne.NewSize(460, 420))
 	popup.Show()
 }
 
@@ -294,7 +301,6 @@ func (s *shell) settings() app.Settings {
 		MorrowindPath: cfg.MorrowindPath,
 		WorkDir:       cfg.WorkDir,
 		ProtonPath:    cfg.ProtonPath,
-		Localization:  cfg.Localization,
 		SkipFonts:     cfg.SkipFonts,
 	}
 }

@@ -70,7 +70,6 @@ func TestUpdateSettings(t *testing.T) {
 		MorrowindPath: " /games/Morrowind ",
 		WorkDir:       " /work ",
 		ProtonPath:    " /proton ",
-		Localization:  true,
 		SkipFonts:     true,
 	}); err != nil {
 		t.Fatalf("UpdateSettings: %v", err)
@@ -78,7 +77,7 @@ func TestUpdateSettings(t *testing.T) {
 	cfg := service.Config()
 	if cfg.Language != "ru" || cfg.MorrowindPath != "/games/Morrowind" ||
 		cfg.WorkDir != "/work" || cfg.ProtonPath != "/proton" ||
-		!cfg.Localization || !cfg.SkipFonts {
+		!cfg.SkipFonts {
 		t.Fatalf("config = %+v", cfg)
 	}
 	if got := service.WorkDir(); got != "/work" {

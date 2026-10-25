@@ -192,7 +192,8 @@ upload. Bind на 443 и временный 80 проверяются на VM с
   клиентского лога.
 - `internal/mods`, `internal/fonts`, `internal/locale` проверяют кеш по
   имени/размеру/SHA256, безопасную распаковку, сборку `Data Files`, профиль
-  `openmw.cfg`, overlay локализации, `openmw_font.xml` и идемпотентность.
+  `openmw.cfg`, глобальный overlay локализации и вставку `data=`,
+  `openmw_font.xml` и идемпотентность.
 - `internal/launcher` проверяет Windows-запуск, поиск Proton, создание prefix и
   symlink `C:\Morrowind`, подготовку активного `openmw.cfg` и формирование
   окружения.

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/Saagilat/tes3mp-easy/internal/config"
-	"github.com/Saagilat/tes3mp-easy/internal/locale"
 	"github.com/Saagilat/tes3mp-easy/internal/mods"
 	"github.com/Saagilat/tes3mp-easy/internal/serverapi"
 )
@@ -94,25 +93,6 @@ func (s *Service) UpdateMods(ctx context.Context, id string,
 	}
 	s.LogInfof("mods for %s are installed (skipped=%t, sha256=%s)",
 		profile.ID, result.Skipped, result.State.SHA256)
-	if result.Skipped {
-		return result, nil
-	}
-	if !s.Config().Localization {
-		return result, nil
-	}
-	state, stateErr := locale.Inspect(workDir, profile.ID)
-	if stateErr != nil {
-		return result, stateErr
-	}
-	if !state.Installed {
-		return result, errors.New(
-			"mods were updated but Russian localization is not installed")
-	}
-	applied, applyErr := locale.Apply(workDir, profile.ID)
-	result.Warnings = append(result.Warnings, applied.Warnings...)
-	if applyErr != nil {
-		return result, fmt.Errorf("reapply localization overlay: %w", applyErr)
-	}
 	return result, nil
 }
 

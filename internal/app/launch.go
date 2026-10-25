@@ -37,21 +37,24 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 	if cfg.MorrowindPath == "" {
 		return launcher.Result{}, ErrMorrowindNotConfigured
 	}
-	if cfg.Localization {
-		state, err := locale.Inspect(workDir, serverID)
-		if err != nil {
-			return launcher.Result{}, err
-		}
-		if !state.Installed {
-			return launcher.Result{}, fmt.Errorf(
-				"%w; open Settings and install it again",
-				ErrLocalizationNotInstalled)
-		}
+	warnings := []string{}
+	localization, inspectErr := locale.Inspect(workDir)
+	if inspectErr != nil {
+		s.LogWarnf("localization is ignored: %v", inspectErr)
+		warnings = append(warnings,
+			fmt.Sprintf("localization is ignored: %v", inspectErr))
+		localization = locale.State{}
+	}
+	localizationRoot := locale.Dir(workDir)
+	localizationDataFiles := ""
+	encoding := ""
+	if localization.Installed {
+		localizationDataFiles = localization.DataFiles
+		encoding = locale.EncodingFor(localization.Language)
 	}
 
 	fontResult := fonts.Result{}
-	warnings := []string{}
-	if !cfg.SkipFonts || cfg.Localization {
+	if !cfg.SkipFonts || localization.Installed {
 		var fontErr error
 		fontResult, fontErr = s.InstallFonts(ctx)
 		warnings = append(warnings, fontResult.Warnings...)
@@ -68,12 +71,14 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 			ProtonPath:    cfg.ProtonPath,
 			HomeDir:       s.homeDir,
 		},
-		ProfilePath:    modsState.Profile,
-		ServerAddress:  profile.Address,
-		ServerPort:     profile.Port,
-		ServerPassword: profile.Password,
-		Localization:   cfg.Localization,
-		Fonts:          fontResult.State.Installed,
+		ProfilePath:           modsState.Profile,
+		ServerAddress:         profile.Address,
+		ServerPort:            profile.Port,
+		ServerPassword:        profile.Password,
+		Encoding:              encoding,
+		LocalizationRoot:      localizationRoot,
+		LocalizationDataFiles: localizationDataFiles,
+		Fonts:                 fontResult.State.Installed,
 	}
 	var result launcher.Result
 	if s.launchClient != nil {
@@ -113,6 +118,16 @@ func (s *Service) OpenMWCS(ctx context.Context,
 			"%w; update mods before launching OpenMW-CS", ErrModsNotInstalled)
 	}
 	cfg := s.Config()
+	localization, err := locale.Inspect(workDir)
+	if err != nil {
+		return launcher.Result{}, err
+	}
+	localizationDataFiles := ""
+	encoding := ""
+	if localization.Installed {
+		localizationDataFiles = localization.DataFiles
+		encoding = locale.EncodingFor(localization.Language)
+	}
 	options := launcher.LaunchOptions{
 		Options: launcher.Options{
 			GOOS:          s.goos,
@@ -121,8 +136,10 @@ func (s *Service) OpenMWCS(ctx context.Context,
 			ProtonPath:    cfg.ProtonPath,
 			HomeDir:       s.homeDir,
 		},
-		ProfilePath:  modsState.Profile,
-		Localization: cfg.Localization,
+		ProfilePath:           modsState.Profile,
+		Encoding:              encoding,
+		LocalizationRoot:      locale.Dir(workDir),
+		LocalizationDataFiles: localizationDataFiles,
 	}
 	return launcher.OpenMWCS(ctx, options)
 }

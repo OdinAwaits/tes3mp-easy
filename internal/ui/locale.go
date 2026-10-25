@@ -1,68 +1,13 @@
 package ui
 
 import (
-	"context"
 	"strings"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/widget"
 
-	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 	"github.com/Saagilat/tes3mp-easy/internal/locale"
 )
-
-func (s *shell) showLocalization(profile config.Server, install, voiceover bool) {
-	tr := s.service.Translator()
-	status := widget.NewLabel(tr.T(i18n.KeyLocaleChecking))
-	status.Wrapping = fyne.TextWrapWord
-	progress := widget.NewProgressBar()
-	progress.Min = 0
-	progress.Max = 1
-	content := container.NewVBox(status, progress)
-	popup := dialog.NewCustom(tr.T(i18n.KeyLocaleTitle),
-		tr.T(i18n.KeyCommonClose), content, s.window)
-	popup.Show()
-
-	go func() {
-		if !install {
-			warnings, err := s.service.RemoveLocalization(profile.ID)
-			fyne.Do(func() {
-				popup.Hide()
-				s.render()
-				if err != nil {
-					s.showError(err)
-					return
-				}
-				s.showNotice(tr.T(i18n.KeyLocaleRemoved),
-					tr.T(i18n.KeyLocaleRemoved), warnings)
-			})
-			return
-		}
-		result, err := s.service.InstallLocalization(context.Background(),
-			profile.ID, voiceover, func(update locale.Progress) {
-				fyne.Do(func() {
-					progress.SetValue(localeProgressFraction(update))
-					status.SetText(localeProgressLabel(tr, update))
-				})
-			})
-		fyne.Do(func() {
-			popup.Hide()
-			s.render()
-			if err != nil {
-				s.showErrorWithRetry(err, func() {
-					s.showLocalization(profile, install, voiceover)
-				})
-				return
-			}
-			progress.SetValue(1)
-			s.showNotice(tr.T(i18n.KeyLocaleDone), tr.T(i18n.KeyLocaleDone),
-				result.Warnings)
-		})
-	}()
-}
 
 func (s *shell) showNotice(title, body string, warnings []string) {
 	if len(warnings) > 0 {

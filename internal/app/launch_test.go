@@ -56,26 +56,6 @@ func installFakeMods(t *testing.T, workDir, serverID string) string {
 	return profile
 }
 
-func writeLocaleLayer(t *testing.T, workDir, serverID string) {
-	t.Helper()
-	layer := filepath.Join(workDir, "servers", serverID, "localization", "main",
-		"Data Files")
-	if err := os.MkdirAll(layer, 0o700); err != nil {
-		t.Fatalf("create locale layer: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(layer, "Morrowind.esm"),
-		[]byte("localized"), 0o600); err != nil {
-		t.Fatalf("write localized Morrowind.esm: %v", err)
-	}
-	marker := filepath.Join(workDir, "servers", serverID, "localization",
-		".locale.json")
-	body := `{"language":"russian","main_sha256":"` + strings.Repeat("b", 64) +
-		`","voiceover":false}`
-	if err := os.WriteFile(marker, []byte(body), 0o600); err != nil {
-		t.Fatalf("write locale marker: %v", err)
-	}
-}
-
 func TestLaunchWiring(t *testing.T) {
 	service, workDir, id := installedService(t)
 	profile := installFakeMods(t, workDir, id)
@@ -101,8 +81,10 @@ func TestLaunchWiring(t *testing.T) {
 	if !fontsInstalled {
 		t.Fatal("InstallFonts was not called")
 	}
-	if captured.ProfilePath != profile || captured.Localization ||
-		!captured.Fonts || captured.WorkDir != workDir {
+	if captured.ProfilePath != profile || captured.Encoding != "" ||
+		!captured.Fonts || captured.WorkDir != workDir ||
+		captured.LocalizationRoot != locale.Dir(workDir) ||
+		captured.LocalizationDataFiles != "" {
 		t.Fatalf("launch options = %+v", captured)
 	}
 	if captured.ServerAddress != testServer().Address ||
@@ -183,15 +165,11 @@ func TestLaunchSkipsFontsWhenDisabled(t *testing.T) {
 func TestLaunchLocalizationForcesFonts(t *testing.T) {
 	service, workDir, id := installedService(t)
 	installFakeMods(t, workDir, id)
-	writeLocaleLayer(t, workDir, id)
-	if _, err := locale.Apply(workDir, id); err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
+	writeLocaleLayer(t, workDir, true)
 	if err := service.UpdateSettings(Settings{
 		MorrowindPath: service.Config().MorrowindPath,
 		WorkDir:       workDir,
 		SkipFonts:     true,
-		Localization:  true,
 	}); err != nil {
 		t.Fatalf("UpdateSettings: %v", err)
 	}
@@ -222,33 +200,13 @@ func TestLaunchRequiresInstalledMods(t *testing.T) {
 	}
 }
 
-func TestLaunchRejectsMissingLocalization(t *testing.T) {
-	service, workDir, id := installedService(t)
-	installFakeMods(t, workDir, id)
-	if err := service.UpdateSettings(Settings{
-		MorrowindPath: service.Config().MorrowindPath,
-		WorkDir:       workDir,
-		Localization:  true,
-	}); err != nil {
-		t.Fatalf("UpdateSettings: %v", err)
-	}
-	_, err := service.Launch(context.Background(), id)
-	if err == nil || !strings.Contains(err.Error(), "localization is enabled") {
-		t.Fatalf("error = %v, want missing localization", err)
-	}
-}
-
 func TestLaunchAllowsInstalledLocalization(t *testing.T) {
 	service, workDir, id := installedService(t)
 	installFakeMods(t, workDir, id)
-	writeLocaleLayer(t, workDir, id)
-	if _, err := locale.Apply(workDir, id); err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
+	writeLocaleLayer(t, workDir, true)
 	if err := service.UpdateSettings(Settings{
 		MorrowindPath: service.Config().MorrowindPath,
 		WorkDir:       workDir,
-		Localization:  true,
 	}); err != nil {
 		t.Fatalf("UpdateSettings: %v", err)
 	}
@@ -265,7 +223,9 @@ func TestLaunchAllowsInstalledLocalization(t *testing.T) {
 	if _, err := service.Launch(context.Background(), id); err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
-	if !captured.Localization {
+	if captured.Encoding != locale.Encoding ||
+		captured.LocalizationDataFiles != locale.DataFiles(workDir) ||
+		captured.LocalizationRoot != locale.Dir(workDir) {
 		t.Fatalf("launch options = %+v", captured)
 	}
 }

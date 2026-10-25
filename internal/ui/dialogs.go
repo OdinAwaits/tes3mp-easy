@@ -174,42 +174,6 @@ func (s *shell) showSettings() {
 	theme.Horizontal = true
 	theme.SetSelected(themeLabel(tr, cfg.Theme))
 
-	profile, hasProfile := activeProfile(cfg)
-	localizationState := locale.State{}
-	if hasProfile {
-		if state, err := s.service.LocalizationState(profile.ID); err == nil {
-			localizationState = state
-		}
-	}
-
-	localization := widget.NewCheck(tr.T(i18n.KeySettingsLocalization), nil)
-	localization.SetChecked(cfg.Localization)
-	voiceover := widget.NewCheck(tr.T(i18n.KeySettingsVoiceover), nil)
-	voiceover.SetChecked(localizationState.Voiceover)
-	fonts := widget.NewCheck(tr.T(i18n.KeySettingsFonts), nil)
-	fonts.SetChecked(!cfg.SkipFonts)
-	localizationStatus := widget.NewLabel("")
-	localizationStatus.Wrapping = fyne.TextWrapWord
-	if !hasProfile {
-		localization.Disable()
-		voiceover.Disable()
-		localizationStatus.SetText(tr.T(i18n.KeySettingsNoServer))
-	} else {
-		localizationStatus.SetText(tr.T(i18n.KeySettingsLocalizationHint))
-	}
-	syncLocalization := func(enabled bool) {
-		if enabled && hasProfile {
-			voiceover.Enable()
-			fonts.SetChecked(true)
-			return
-		}
-		voiceover.Disable()
-	}
-	localization.OnChanged = syncLocalization
-	syncLocalization(localization.Checked)
-
-	fontsHint := widget.NewLabel(tr.T(i18n.KeySettingsFontsHint))
-	fontsHint.Wrapping = fyne.TextWrapWord
 	logHint := widget.NewLabel(tr.T(i18n.KeySettingsLogHint))
 	logHint.Wrapping = fyne.TextWrapWord
 	openLog := widget.NewButton(tr.T(i18n.KeySettingsOpenLog), s.showLogs)
@@ -224,11 +188,6 @@ func (s *shell) showSettings() {
 		items = append(items, widget.NewFormItem(tr.T(i18n.KeySettingsProton), proton))
 	}
 	items = append(items,
-		widget.NewFormItem(tr.T(i18n.KeySettingsLocalization), localization),
-		widget.NewFormItem(tr.T(i18n.KeySettingsVoiceover), voiceover),
-		widget.NewFormItem("", localizationStatus),
-		widget.NewFormItem(tr.T(i18n.KeySettingsFonts), fonts),
-		widget.NewFormItem("", fontsHint),
 		widget.NewFormItem(tr.T(i18n.KeySettingsOpenLog), openLog),
 		widget.NewFormItem("", logHint),
 		widget.NewFormItem("", hint),
@@ -251,30 +210,21 @@ func (s *shell) showSettings() {
 			settings.MorrowindPath = morrowind.Text
 			settings.WorkDir = workDir.Text
 			settings.ProtonPath = protonPath
-			settings.SkipFonts = !fonts.Checked
-			if localization.Checked {
-				settings.SkipFonts = false
-			}
 			if err := s.service.UpdateSettings(settings); err != nil {
 				s.showError(err)
 				return
 			}
 			s.render()
-			if !hasProfile {
-				return
-			}
-			enabled := localization.Checked
-			withVoices := enabled && voiceover.Checked
-			switch {
-			case !enabled && (cfg.Localization || localizationState.Installed):
-				s.showLocalization(profile, false, false)
-			case enabled && (!localizationState.Installed ||
-				localizationState.Voiceover != withVoices || !cfg.Localization):
-				s.showLocalization(profile, true, withVoices)
-			}
 		},
 		s.window,
 	).Show()
+}
+
+func localizationLabel(tr *i18n.Translator, language string) string {
+	if language == locale.LanguageRussian {
+		return tr.T(i18n.KeyLanguageRussian)
+	}
+	return language
 }
 
 func activeProfile(cfg config.Config) (config.Server, bool) {

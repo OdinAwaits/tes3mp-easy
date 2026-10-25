@@ -29,7 +29,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	cfg.MorrowindPath = "/games/Morrowind"
 	cfg.WorkDir = "/home/player/.local/share/tes3mp-easy"
 	cfg.ProtonPath = "/steam/Proton"
-	cfg.Localization = true
 	cfg.SkipFonts = true
 	cfg.Servers = []Server{server}
 	cfg.ActiveServer = server.ID
@@ -60,7 +59,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if loaded.Language != "ru" || loaded.ActiveServer != server.ID ||
-		loaded.ProtonPath != cfg.ProtonPath || loaded.Localization != cfg.Localization ||
+		loaded.ProtonPath != cfg.ProtonPath ||
 		loaded.SkipFonts != cfg.SkipFonts ||
 		loaded.MorrowindPath != cfg.MorrowindPath || loaded.WorkDir != cfg.WorkDir {
 		t.Fatalf("loaded config = %+v", loaded)
@@ -124,6 +123,34 @@ func TestLoadRejectsCorruptConfig(t *testing.T) {
 				t.Fatal("Load accepted corrupt config")
 			}
 		})
+	}
+}
+
+func TestLoadDropsLegacyLocalizationFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	body := `{"version":1,"language":"en","localization":true,"servers":[` +
+		`{"id":"203.0.113.10_25565","name":"Friends","address":"203.0.113.10",` +
+		`"port":25565,"panel_url":"https://203.0.113.10","game_language":"russian"}]}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Servers) != 1 {
+		t.Fatalf("servers = %+v", cfg.Servers)
+	}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(data), "localization") ||
+		strings.Contains(string(data), "game_language") {
+		t.Fatalf("legacy localization fields survived save: %s", data)
 	}
 }
 

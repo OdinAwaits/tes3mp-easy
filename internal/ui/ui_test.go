@@ -92,6 +92,71 @@ func TestThemeMode(t *testing.T) {
 	}
 }
 
+func TestLocalizationLabels(t *testing.T) {
+	translator := i18n.New(i18n.English)
+	for _, pack := range locale.Packages() {
+		label := localizationLabel(translator, pack.Language)
+		if got := localizationValue(translator, label); got != pack.Language {
+			t.Fatalf("localizationValue(%q) = %q, want %q",
+				label, got, pack.Language)
+		}
+	}
+	if got := localizationValue(translator, "unknown"); got != "" {
+		t.Fatalf("localizationValue(unknown) = %q", got)
+	}
+}
+
+func TestLocalizationNeedsInstall(t *testing.T) {
+	tests := []struct {
+		name     string
+		state    locale.State
+		language string
+		want     bool
+	}{
+		{name: "not installed", language: locale.LanguageRussian, want: true},
+		{name: "installed with voiceover", language: locale.LanguageRussian,
+			state: locale.State{Installed: true, Language: locale.LanguageRussian,
+				Voiceover: true}, want: false},
+		{name: "installed without voiceover", language: locale.LanguageRussian,
+			state: locale.State{Installed: true, Language: locale.LanguageRussian},
+			want:  true},
+		{name: "different package", language: locale.LanguageRussian,
+			state: locale.State{Installed: true, Language: "other",
+				Voiceover: true}, want: true},
+	}
+	for _, test := range tests {
+		if got := localizationNeedsInstall(test.state, test.language); got != test.want {
+			t.Errorf("%s: localizationNeedsInstall() = %t, want %t",
+				test.name, got, test.want)
+		}
+	}
+}
+
+func TestLocalizationStateLabel(t *testing.T) {
+	translator := i18n.New(i18n.English)
+	russian := localizationLabel(translator, locale.LanguageRussian)
+	tests := []struct {
+		name  string
+		state locale.State
+		want  string
+	}{
+		{name: "missing", want: "not installed"},
+		{name: "installed",
+			state: locale.State{Installed: true, Language: locale.LanguageRussian},
+			want:  russian + ", installed"},
+		{name: "voiceover",
+			state: locale.State{Installed: true, Language: locale.LanguageRussian,
+				Voiceover: true},
+			want: russian + ", installed with voiceover"},
+	}
+	for _, test := range tests {
+		if got := localizationStateLabel(translator, test.state); got != test.want {
+			t.Errorf("%s: localizationStateLabel() = %q, want %q",
+				test.name, got, test.want)
+		}
+	}
+}
+
 func TestFormatBytes(t *testing.T) {
 	tests := map[int64]string{
 		0:       "0 B",
@@ -198,7 +263,7 @@ func TestLocaleProgress(t *testing.T) {
 		Stage: locale.StageDownloading, Downloaded: 1 << 20, Total: 2 << 20,
 	}
 	if got := localeProgressLabel(translator, update); got !=
-		"Downloading localization: 1.0 MiB of 2.0 MiB" {
+		"Downloading language files: 1.0 MiB of 2.0 MiB" {
 		t.Fatalf("locale progress label = %q", got)
 	}
 	if got := localeProgressFraction(update); got != 0.5 {
@@ -210,12 +275,12 @@ func TestLocaleProgress(t *testing.T) {
 	}
 	if got := localeProgressLabel(translator, locale.Progress{
 		Stage: locale.StageDownloading, Downloaded: 10}); got !=
-		"Downloading localization: 10 B of ?" {
+		"Downloading language files: 10 B of ?" {
 		t.Fatalf("unknown total label = %q", got)
 	}
 	for stage, want := range map[locale.Stage]string{
-		locale.StageExtracting: "Extracting localization...",
-		locale.StageInstalling: "Applying localization...",
+		locale.StageExtracting: "Extracting language files...",
+		locale.StageInstalling: "Applying language files...",
 	} {
 		if got := localeProgressLabel(translator,
 			locale.Progress{Stage: stage}); got != want {

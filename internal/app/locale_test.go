@@ -2,84 +2,156 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/Saagilat/tes3mp-easy/internal/fonts"
 	"github.com/Saagilat/tes3mp-easy/internal/locale"
 )
 
-func TestInstallLocalizationAppliesAndRemovesOverlay(t *testing.T) {
-	service, workDir, id := installedService(t)
-	installFakeMods(t, workDir, id)
-	writeLocaleLayer(t, workDir, id)
+func writeLocaleLayer(t *testing.T, workDir string, voiceover bool) {
+	t.Helper()
+	layer := filepath.Join(workDir, locale.DirName, "main", "Data Files")
+	if err := os.MkdirAll(layer, 0o700); err != nil {
+		t.Fatalf("create locale layer: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(layer, "Morrowind.esm"),
+		[]byte("localized"), 0o600); err != nil {
+		t.Fatalf("write localized Morrowind.esm: %v", err)
+	}
+	marker := filepath.Join(workDir, locale.DirName, ".locale.json")
+	body := `{"language":"russian","main_sha256":"` + strings.Repeat("b", 64) + `"`
+	if voiceover {
+		body += `,"voices_sha256":"` + strings.Repeat("c", 64) + `","voiceover":true`
+	}
+	body += `}`
+	if err := os.WriteFile(marker, []byte(body), 0o600); err != nil {
+		t.Fatalf("write locale marker: %v", err)
+	}
+}
+
+func TestInstallLocalizationWiring(t *testing.T) {
+	service, workDir, _ := installedService(t)
 	var captured locale.Options
 	service.installLocale = func(_ context.Context, options locale.Options,
 	) (locale.Result, error) {
 		captured = options
-		return locale.Result{State: locale.State{Installed: true}}, nil
+		writeLocaleLayer(t, workDir, true)
+		return locale.Result{
+			State: locale.State{Installed: true,
+				Dir: locale.Dir(workDir)},
+		}, nil
 	}
-	result, err := service.InstallLocalization(context.Background(), id, true, nil)
+	fontsCalled := false
+	service.installFonts = func(_ context.Context, _ fonts.Options,
+	) (fonts.Result, error) {
+		fontsCalled = true
+		return fonts.Result{
+			State:    fonts.State{Installed: true},
+			Warnings: []string{"font warning"},
+		}, nil
+	}
+	var progressCalls int
+	result, err := service.InstallLocalization(context.Background(),
+		locale.LanguageRussian, func(locale.Progress) { progressCalls++ })
 	if err != nil {
 		t.Fatalf("InstallLocalization: %v", err)
 	}
-	if !result.State.Installed {
-		t.Fatalf("result = %+v", result)
+	if !result.State.Installed || !fontsCalled {
+		t.Fatalf("result = %+v, fontsCalled = %t", result, fontsCalled)
 	}
-	if captured.WorkDir != workDir || captured.CacheDir != service.Paths().CacheDir ||
-		captured.ServerID != id || !captured.Voiceover {
+	if len(result.Warnings) != 1 || result.Warnings[0] != "font warning" {
+		t.Fatalf("warnings = %v", result.Warnings)
+	}
+	if captured.WorkDir != workDir ||
+		captured.CacheDir != service.Paths().CacheDir ||
+		captured.Language != locale.LanguageRussian || !captured.Voiceover {
 		t.Fatalf("options = %+v", captured)
 	}
-	if !service.Config().Localization {
-		t.Fatal("localization setting was not saved")
+	if captured.Progress == nil {
+		t.Fatal("progress callback is nil")
 	}
-	state, err := service.LocalizationState(id)
-	if err != nil || !state.Installed {
+	captured.Progress(locale.Progress{Stage: locale.StageDownloading})
+	if progressCalls != 1 {
+		t.Fatalf("progress calls = %d", progressCalls)
+	}
+	state, err := service.LocalizationState()
+	if err != nil || !state.Installed || state.Language != locale.LanguageRussian {
 		t.Fatalf("LocalizationState = %+v, %v", state, err)
-	}
-	dataFiles := filepath.Join(workDir, "servers", id, "data", "Data Files")
-	body, err := os.ReadFile(filepath.Join(dataFiles, "Morrowind.esm"))
-	if err != nil || string(body) != "localized" {
-		t.Fatalf("profile Morrowind.esm = %q, %v", body, err)
-	}
-
-	warnings, err := service.RemoveLocalization(id)
-	if err != nil {
-		t.Fatalf("RemoveLocalization: %v", err)
-	}
-	if len(warnings) != 0 {
-		t.Fatalf("warnings = %v", warnings)
-	}
-	body, err = os.ReadFile(filepath.Join(dataFiles, "Morrowind.esm"))
-	if err != nil || string(body) != "vanilla" {
-		t.Fatalf("restored Morrowind.esm = %q, %v", body, err)
-	}
-	if service.Config().Localization {
-		t.Fatal("localization setting was not cleared")
-	}
-	if _, err := os.Stat(filepath.Join(workDir, "servers", id, "localization")); !os.IsNotExist(err) {
-		t.Fatalf("localization directory survived removal: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(workDir, "servers", id, locale.AppliedName)); !os.IsNotExist(err) {
-		t.Fatalf("applied manifest survived removal: %v", err)
 	}
 }
 
-func TestInstallLocalizationWithoutModsOnlySavesSetting(t *testing.T) {
-	service, _, id := installedService(t)
-	service.installLocale = func(_ context.Context, options locale.Options,
+func TestInstallLocalizationReportsFontFailureAsWarning(t *testing.T) {
+	service, workDir, _ := installedService(t)
+	service.installLocale = func(_ context.Context, _ locale.Options,
 	) (locale.Result, error) {
+		writeLocaleLayer(t, workDir, true)
 		return locale.Result{State: locale.State{Installed: true}}, nil
 	}
-	if _, err := service.InstallLocalization(context.Background(), id, false,
-		nil); err != nil {
+	service.installFonts = func(_ context.Context, _ fonts.Options,
+	) (fonts.Result, error) {
+		return fonts.Result{}, os.ErrDeadlineExceeded
+	}
+	result, err := service.InstallLocalization(context.Background(),
+		locale.LanguageRussian, nil)
+	if err != nil {
 		t.Fatalf("InstallLocalization: %v", err)
 	}
-	if !service.Config().Localization {
-		t.Fatal("localization setting was not saved")
+	if len(result.Warnings) != 1 ||
+		!strings.Contains(result.Warnings[0], "Cyrillic fonts") {
+		t.Fatalf("warnings = %v", result.Warnings)
 	}
-	if _, err := service.InstallLocalization(context.Background(), "missing",
-		false, nil); err == nil {
-		t.Fatal("missing profile accepted")
+}
+
+func TestInstallLocalizationFailureKeepsPreviousOverlay(t *testing.T) {
+	service, workDir, _ := installedService(t)
+	writeLocaleLayer(t, workDir, true)
+	failure := errors.New("download failed")
+	service.installLocale = func(_ context.Context, _ locale.Options,
+	) (locale.Result, error) {
+		return locale.Result{}, failure
+	}
+	fontsCalled := false
+	service.installFonts = func(_ context.Context, _ fonts.Options,
+	) (fonts.Result, error) {
+		fontsCalled = true
+		return fonts.Result{}, nil
+	}
+	if _, err := service.InstallLocalization(context.Background(),
+		locale.LanguageRussian, nil); !errors.Is(err, failure) {
+		t.Fatalf("error = %v, want download failure", err)
+	}
+	if fontsCalled {
+		t.Fatal("fonts were installed after a failed localization")
+	}
+	state, err := service.LocalizationState()
+	if err != nil || !state.Installed {
+		t.Fatalf("previous overlay was lost: %+v, %v", state, err)
+	}
+}
+
+func TestInstallLocalizationRejectsUnsupportedPackage(t *testing.T) {
+	service, _, _ := installedService(t)
+	if _, err := service.InstallLocalization(context.Background(),
+		"english", nil); err == nil {
+		t.Fatal("unsupported package accepted")
+	}
+}
+
+func TestRemoveLocalizationDeletesGlobalOverlay(t *testing.T) {
+	service, workDir, _ := installedService(t)
+	writeLocaleLayer(t, workDir, true)
+	if err := service.RemoveLocalization(); err != nil {
+		t.Fatalf("RemoveLocalization: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(workDir, locale.DirName)); !os.IsNotExist(err) {
+		t.Fatalf("localization directory survived removal: %v", err)
+	}
+	state, err := service.LocalizationState()
+	if err != nil || state.Installed {
+		t.Fatalf("LocalizationState = %+v, %v", state, err)
 	}
 }

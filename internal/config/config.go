@@ -62,7 +62,6 @@ type Config struct {
 	MorrowindPath string `json:"morrowind_path,omitempty"`
 	WorkDir       string `json:"work_dir,omitempty"`
 	ProtonPath    string `json:"proton_path,omitempty"`
-	Localization  bool   `json:"localization,omitempty"`
 	SkipFonts     bool   `json:"skip_fonts,omitempty"`
 
 	SetupComplete bool     `json:"setup_complete,omitempty"`
@@ -106,6 +105,8 @@ func (c *Config) Normalize() {
 	c.ProtonPath = strings.TrimSpace(c.ProtonPath)
 	c.ActiveServer = strings.TrimSpace(c.ActiveServer)
 	for index := range c.Servers {
+		// Legacy game_language and localization fields are no longer part of
+		// the schema. They are ignored on load and disappear on the next save.
 		c.Servers[index].Normalize()
 	}
 	if c.ActiveServer != "" && !c.hasServer(c.ActiveServer) {

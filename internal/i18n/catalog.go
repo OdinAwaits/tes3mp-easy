@@ -58,6 +58,8 @@ const (
 	KeyServerEndpointHint    = "server.field.endpoint_hint"
 	KeyServerAdvancedOptions = "server.advanced_options"
 	KeyServerPanelHint       = "server.field.panel_hint"
+	KeyServerGameLanguage    = "server.game_language"
+	KeyServerLanguage        = "server.language"
 
 	KeyModsTitle       = "mods.title"
 	KeyModsChecking    = "mods.checking"
@@ -69,31 +71,53 @@ const (
 	KeyModsDone        = "mods.done"
 	KeyModsFailed      = "mods.failed"
 
-	KeySettingsTitle            = "settings.title"
-	KeySettingsMorrowind        = "settings.morrowind"
-	KeySettingsWorkDir          = "settings.work_dir"
-	KeySettingsProton           = "settings.proton"
-	KeySettingsHint             = "settings.hint"
-	KeySettingsFontsHint        = "settings.fonts_hint"
-	KeySettingsFonts            = "settings.fonts"
-	KeySettingsLocalization     = "settings.localization"
-	KeySettingsVoiceover        = "settings.voiceover"
-	KeySettingsNoServer         = "settings.no_server"
-	KeySettingsLocalizationHint = "settings.localization_hint"
-	KeySettingsTheme            = "settings.theme"
+	KeySettingsTitle     = "settings.title"
+	KeySettingsMorrowind = "settings.morrowind"
+	KeySettingsWorkDir   = "settings.work_dir"
+	KeySettingsProton    = "settings.proton"
+	KeySettingsHint      = "settings.hint"
+	KeySettingsTheme     = "settings.theme"
 
 	KeyThemeSystem = "theme.system"
 	KeyThemeDark   = "theme.dark"
 	KeyThemeLight  = "theme.light"
 
-	KeyLocaleTitle       = "locale.title"
-	KeyLocaleChecking    = "locale.checking"
-	KeyLocaleDownloading = "locale.downloading"
-	KeyLocaleExtracting  = "locale.extracting"
-	KeyLocaleInstalling  = "locale.installing"
-	KeyLocaleDone        = "locale.done"
-	KeyLocaleRemoved     = "locale.removed"
-	KeyLocaleFailed      = "locale.failed"
+	KeyLocaleTitle                       = "locale.title"
+	KeyLocaleInstallTitle                = "locale.install.title"
+	KeyLocaleChecking                    = "locale.checking"
+	KeyLocaleDownloading                 = "locale.downloading"
+	KeyLocaleExtracting                  = "locale.extracting"
+	KeyLocaleInstalling                  = "locale.installing"
+	KeyLocaleDone                        = "locale.done"
+	KeyLocaleRemoved                     = "locale.removed"
+	KeyLocaleFailed                      = "locale.failed"
+	KeyLanguageWizardChooseTitle         = "language.choose.title"
+	KeyLanguageWizardChooseHint          = "language.choose.hint"
+	KeyLanguageWizardEnglishHint         = "language.english.hint"
+	KeyLanguageWizardRussianHint         = "language.russian.hint"
+	KeyLanguageWizardReviewTitle         = "language.review.title"
+	KeyLanguageWizardReviewHint          = "language.review.hint"
+	KeyLanguageWizardRemoveHint          = "language.remove.hint"
+	KeyLanguageWizardRussianText         = "language.russian.review"
+	KeyLanguageWizardInstallTitle        = "language.install.title"
+	KeyLanguageWizardInstallHint         = "language.install.hint"
+	KeyLanguageWizardProfile             = "language.profile"
+	KeyLanguageWizardCurrent             = "language.current"
+	KeyLanguageWizardNew                 = "language.new"
+	KeyLanguageWizardStateEnglish        = "language.state.english"
+	KeyLanguageWizardStateEnglishOverlay = "language.state.english_overlay"
+	KeyLanguageWizardStateRussian        = "language.state.russian"
+	KeyLanguageWizardStateRussianVoice   = "language.state.russian_voice"
+	KeyLanguageWizardStateRussianMissing = "language.state.russian_missing"
+	KeyLanguageWizardStateMissing        = "language.state.missing"
+	KeyLanguageWizardStateInstalled      = "language.state.installed"
+	KeyLanguageWizardStateInstalledVoice = "language.state.installed_voice"
+	KeyLanguageWizardInstall             = "language.install"
+	KeyLanguageWizardRemove              = "language.remove"
+	KeyLanguageWizardApplying            = "language.applying"
+	KeyLanguageWizardFonts               = "language.fonts"
+	KeyLanguageWizardFontsFail           = "language.fonts.failed"
+	KeyLanguageWizardDone                = "language.done"
 
 	KeyAdvancedTitle   = "advanced.title"
 	KeyAdvancedOpenCS  = "advanced.open_cs"
@@ -174,6 +198,9 @@ const (
 	KeyWizardMorrowindHint      = "wizard.morrowind.hint"
 	KeyWizardWorkDirTitle       = "wizard.work_dir.title"
 	KeyWizardWorkDirHint        = "wizard.work_dir.hint"
+	KeyWizardLocalizationTitle  = "wizard.localization.title"
+	KeyWizardLocalizationHint   = "wizard.localization.hint"
+	KeyWizardSkip               = "wizard.skip"
 	KeyWizardServerTitle        = "wizard.server.title"
 	KeyWizardServerHint         = "wizard.server.hint"
 	KeyWizardConnectionTitle    = "wizard.connection.title"
@@ -184,22 +211,10 @@ const (
 	KeyWizardTES3MPNeeded       = "wizard.connection.tes3mp_needed"
 	KeyWizardTES3MPTitle        = "wizard.tes3mp.title"
 	KeyWizardTES3MPHint         = "wizard.tes3mp.hint"
-	KeyWizardFontsTitle         = "wizard.fonts.title"
-	KeyWizardFontsHint          = "wizard.fonts.hint"
 	KeyWizardModsTitle          = "wizard.mods.title"
 	KeyWizardModsHint           = "wizard.mods.hint"
 	KeyWizardModsStarting       = "wizard.mods.starting"
 	KeyWizardModsReady          = "wizard.mods.ready"
-	KeyWizardLocaleTitle        = "wizard.locale.title"
-	KeyWizardLocaleHint         = "wizard.locale.hint"
-	KeyWizardFontsChecking      = "wizard.fonts.checking"
-	KeyWizardFontsReady         = "wizard.fonts.ready"
-	KeyWizardFontsWarning       = "wizard.fonts.warning"
-	KeyWizardFontsSkipped       = "wizard.fonts.skipped"
-	KeyWizardLocaleInstall      = "wizard.locale.install"
-	KeyWizardLocaleInstalled    = "wizard.locale.installed"
-	KeyWizardLocaleSkipped      = "wizard.locale.skipped"
-	KeyWizardLocaleNeeded       = "wizard.locale.needed"
 	KeyWizardReadyTitle         = "wizard.ready.title"
 	KeyWizardReadyHint          = "wizard.ready.hint"
 	KeyWizardSummary            = "wizard.ready.summary"
@@ -223,6 +238,9 @@ const (
 	KeySetupInstalling          = "setup.installing"
 	KeySetupDone                = "setup.done"
 	KeySetupFailed              = "setup.failed"
+	KeySetupLocalizationInstall = "setup.localization.install"
+	KeySetupLocalizationReady   = "setup.localization.ready"
+	KeySetupLocalizationMissing = "setup.localization.missing"
 
 	KeyAboutTitle = "about.title"
 	KeyAboutBody  = "about.body"
@@ -290,6 +308,8 @@ var catalogs = map[Language]map[string]string{
 		KeyServerEndpointHint:    "Paste a host, host:port, or the panel's https:// address.",
 		KeyServerAdvancedOptions: "Advanced options",
 		KeyServerPanelHint:       "Leave empty to use https://<address> for the public panel.",
+		KeyServerGameLanguage:    "Game language…",
+		KeyServerLanguage:        "Language: %s",
 
 		KeyModsTitle:       "Server mods",
 		KeyModsChecking:    "Checking server mods...",
@@ -301,31 +321,53 @@ var catalogs = map[Language]map[string]string{
 		KeyModsDone:        "Mods are installed.",
 		KeyModsFailed:      "Mod update failed: %v",
 
-		KeySettingsTitle:            "Settings",
-		KeySettingsTheme:            "Theme",
-		KeySettingsMorrowind:        "Morrowind folder",
-		KeySettingsWorkDir:          "Work folder",
-		KeySettingsProton:           "Proton (Linux)",
-		KeySettingsHint:             "Leave a path empty to use the default.",
-		KeySettingsFontsHint:        "Cyrillic fonts are installed before launch. Russian localization always enables them.",
-		KeySettingsFonts:            "Cyrillic fonts",
-		KeySettingsLocalization:     "Russian localization",
-		KeySettingsVoiceover:        "Russian voiceover (large download)",
-		KeySettingsNoServer:         "Add a server profile to install the localization.",
-		KeySettingsLocalizationHint: "The localization is copied into the selected server's Data Files; the original Morrowind folder is never modified.",
+		KeySettingsTitle:     "Settings",
+		KeySettingsTheme:     "Theme",
+		KeySettingsMorrowind: "Morrowind folder",
+		KeySettingsWorkDir:   "Work folder",
+		KeySettingsProton:    "Proton (Linux)",
+		KeySettingsHint:      "Leave a path empty to use the default.",
 
 		KeyThemeSystem: "Follow system",
 		KeyThemeDark:   "Amber dark",
 		KeyThemeLight:  "Amber light",
 
-		KeyLocaleTitle:       "Russian localization",
-		KeyLocaleChecking:    "Checking the installed localization...",
-		KeyLocaleDownloading: "Downloading localization: %s of %s",
-		KeyLocaleExtracting:  "Extracting localization...",
-		KeyLocaleInstalling:  "Applying localization...",
-		KeyLocaleDone:        "The Russian localization is installed.",
-		KeyLocaleRemoved:     "The Russian localization overlay was removed.",
-		KeyLocaleFailed:      "Localization failed: %v",
+		KeyLocaleTitle:                       "Localization",
+		KeyLocaleInstallTitle:                "Install localization",
+		KeyLocaleChecking:                    "Checking the installed language files...",
+		KeyLocaleDownloading:                 "Downloading language files: %s of %s",
+		KeyLocaleExtracting:                  "Extracting language files...",
+		KeyLocaleInstalling:                  "Applying language files...",
+		KeyLocaleDone:                        "The localization is installed.",
+		KeyLocaleRemoved:                     "The localization overlay was removed.",
+		KeyLocaleFailed:                      "Localization installation failed: %v",
+		KeyLanguageWizardChooseTitle:         "Localization",
+		KeyLanguageWizardChooseHint:          "Choose a localization package. It is installed once for all server profiles; the original Morrowind folder is never modified.",
+		KeyLanguageWizardEnglishHint:         "Use the installed Morrowind as is. Nothing is downloaded.",
+		KeyLanguageWizardRussianHint:         "Downloads Russian text and voiceover. Cyrillic fonts are installed automatically. Large download.",
+		KeyLanguageWizardReviewTitle:         "Review",
+		KeyLanguageWizardReviewHint:          "Check the changes before applying.",
+		KeyLanguageWizardRemoveHint:          "The localization overlay will be removed; every profile returns to the original Morrowind language.",
+		KeyLanguageWizardRussianText:         "Russian text and voiceover are installed once for all server profiles. Cyrillic fonts are installed automatically. The original Morrowind folder is not modified.",
+		KeyLanguageWizardInstallTitle:        "Installing localization",
+		KeyLanguageWizardInstallHint:         "Do not close the client until the installation finishes.",
+		KeyLanguageWizardProfile:             "Profile: %s",
+		KeyLanguageWizardCurrent:             "Current: %s",
+		KeyLanguageWizardNew:                 "New: %s",
+		KeyLanguageWizardStateEnglish:        "English",
+		KeyLanguageWizardStateEnglishOverlay: "English, old overlay present",
+		KeyLanguageWizardStateRussian:        "Russian, text only",
+		KeyLanguageWizardStateRussianVoice:   "Russian, text + voiceover",
+		KeyLanguageWizardStateRussianMissing: "Russian, not installed",
+		KeyLanguageWizardStateMissing:        "not installed",
+		KeyLanguageWizardStateInstalled:      "%s, installed",
+		KeyLanguageWizardStateInstalledVoice: "%s, installed with voiceover",
+		KeyLanguageWizardInstall:             "Install",
+		KeyLanguageWizardRemove:              "Remove localization",
+		KeyLanguageWizardApplying:            "Installing localization...",
+		KeyLanguageWizardFonts:               "Installing Cyrillic fonts...",
+		KeyLanguageWizardFontsFail:           "Fonts were not installed: %v. The game will retry on launch.",
+		KeyLanguageWizardDone:                "Localization is installed for all server profiles.",
 
 		KeyAdvancedTitle:   "Advanced",
 		KeyAdvancedOpenCS:  "Run OpenMW-CS",
@@ -369,8 +411,8 @@ var catalogs = map[Language]map[string]string{
 		KeyErrorWorkDirAct:             "Choose an existing writable folder with an absolute path in Setup or Settings.",
 		KeyErrorModsMissing:            "Server mods are not installed.",
 		KeyErrorModsMissingAct:         "Run Setup or press Update mods, then retry.",
-		KeyErrorLocaleMissing:          "Russian localization is enabled but not installed.",
-		KeyErrorLocaleMissingAct:       "Open Settings, install the localization again or disable it.",
+		KeyErrorLocaleMissing:          "The installed localization is missing or damaged.",
+		KeyErrorLocaleMissingAct:       "Run More → Install localization to install the package again.",
 		KeyErrorGameMissing:            "TES3MP is not installed.",
 		KeyErrorGameMissingAct:         "Open Setup and install TES3MP, then retry.",
 		KeyErrorGameProton:             "The Proton runtime is not usable.",
@@ -406,6 +448,9 @@ var catalogs = map[Language]map[string]string{
 		KeyWizardMorrowindHint:      "Select the original game folder. The client only reads it.",
 		KeyWizardWorkDirTitle:       "Work folder",
 		KeyWizardWorkDirHint:        "TES3MP, mods and logs are stored here. Leave it empty to use the default folder.",
+		KeyWizardLocalizationTitle:  "Localization (optional)",
+		KeyWizardLocalizationHint:   "Install a language pack once for all servers. You can skip this and install it later from the server menu.",
+		KeyWizardSkip:               "Skip",
 		KeyWizardServerTitle:        "Server",
 		KeyWizardServerHint:         "Enter the address and panel URL you received from the server owner.",
 		KeyWizardConnectionTitle:    "Connection and TES3MP",
@@ -416,22 +461,10 @@ var catalogs = map[Language]map[string]string{
 		KeyWizardTES3MPNeeded:       "TES3MP %s must be installed before continuing.",
 		KeyWizardTES3MPTitle:        "TES3MP",
 		KeyWizardTES3MPHint:         "The client downloads and verifies TES3MP %s. No server details are needed for this step.",
-		KeyWizardFontsTitle:         "Fonts",
-		KeyWizardFontsHint:          "Cyrillic fonts are installed into the OpenMW configuration. The Morrowind folder is not modified.",
 		KeyWizardModsTitle:          "Server mods",
 		KeyWizardModsHint:           "The client downloads and verifies the current mod pack.",
 		KeyWizardModsStarting:       "Installing server mods...",
 		KeyWizardModsReady:          "Server mods are installed.",
-		KeyWizardLocaleTitle:        "Fonts and localization",
-		KeyWizardLocaleHint:         "Cyrillic fonts are installed automatically. Russian localization is optional.",
-		KeyWizardFontsChecking:      "Installing Cyrillic fonts...",
-		KeyWizardFontsReady:         "Cyrillic fonts are ready.",
-		KeyWizardFontsWarning:       "Fonts could not be installed: %s. The game will use the default font.",
-		KeyWizardFontsSkipped:       "Cyrillic fonts are disabled. You can enable them in Settings.",
-		KeyWizardLocaleInstall:      "Install Russian localization",
-		KeyWizardLocaleInstalled:    "Russian localization is installed.",
-		KeyWizardLocaleSkipped:      "Russian localization is not installed.",
-		KeyWizardLocaleNeeded:       "Russian localization is not installed yet.",
 		KeyWizardReadyTitle:         "Ready to play",
 		KeyWizardReadyHint:          "Setup is complete. Add a server from the main window when you are ready to play.",
 		KeyWizardSummary:            "Morrowind: %s\nWork folder: %s\nTES3MP: %s\nLog: %s",
@@ -455,13 +488,16 @@ var catalogs = map[Language]map[string]string{
 		KeySetupInstalling:          "Finishing the TES3MP installation...",
 		KeySetupDone:                "TES3MP is installed and ready.",
 		KeySetupFailed:              "Setup failed: %v",
+		KeySetupLocalizationInstall: "Install localization",
+		KeySetupLocalizationReady:   "Localization is installed: %s",
+		KeySetupLocalizationMissing: "Localization is not installed. You can skip this step.",
 
 		KeyAboutTitle: "About",
 		KeyAboutBody:  "tes3mp-easy client %s\nTES3MP %s\n%s",
 		KeyFooterPath: "Config: %s",
 
 		KeyLanguageEnglish: "English",
-		KeyLanguageRussian: "Русский",
+		KeyLanguageRussian: "Russian",
 	},
 	Russian: {
 		KeyAppTitle:   "tes3mp-easy",
@@ -520,6 +556,8 @@ var catalogs = map[Language]map[string]string{
 		KeyServerEndpointHint:    "Вставьте хост, host:port или адрес панели https://.",
 		KeyServerAdvancedOptions: "Дополнительные настройки",
 		KeyServerPanelHint:       "Оставьте пустым, чтобы использовать https://<адрес> для публичной панели.",
+		KeyServerGameLanguage:    "Язык игры…",
+		KeyServerLanguage:        "Язык: %s",
 
 		KeyModsTitle:       "Моды сервера",
 		KeyModsChecking:    "Проверка модов на сервере...",
@@ -531,31 +569,53 @@ var catalogs = map[Language]map[string]string{
 		KeyModsDone:        "Моды установлены.",
 		KeyModsFailed:      "Ошибка обновления модов: %v",
 
-		KeySettingsTitle:            "Настройки",
-		KeySettingsTheme:            "Тема",
-		KeySettingsMorrowind:        "Папка Morrowind",
-		KeySettingsWorkDir:          "Рабочая папка",
-		KeySettingsProton:           "Proton (Linux)",
-		KeySettingsHint:             "Пустое поле означает путь по умолчанию.",
-		KeySettingsFontsHint:        "Кириллические шрифты ставятся перед запуском. Русская локализация всегда включает их.",
-		KeySettingsFonts:            "Кириллические шрифты",
-		KeySettingsLocalization:     "Русская локализация",
-		KeySettingsVoiceover:        "Русская озвучка (большая загрузка)",
-		KeySettingsNoServer:         "Добавьте сервер, чтобы установить локализацию.",
-		KeySettingsLocalizationHint: "Локализация копируется в Data Files выбранного сервера; папка Morrowind не изменяется.",
+		KeySettingsTitle:     "Настройки",
+		KeySettingsTheme:     "Тема",
+		KeySettingsMorrowind: "Папка Morrowind",
+		KeySettingsWorkDir:   "Рабочая папка",
+		KeySettingsProton:    "Proton (Linux)",
+		KeySettingsHint:      "Пустое поле означает путь по умолчанию.",
 
 		KeyThemeSystem: "Как в системе",
 		KeyThemeDark:   "Янтарная тёмная",
 		KeyThemeLight:  "Янтарная светлая",
 
-		KeyLocaleTitle:       "Русская локализация",
-		KeyLocaleChecking:    "Проверка установленной локализации...",
-		KeyLocaleDownloading: "Загрузка локализации: %s из %s",
-		KeyLocaleExtracting:  "Распаковка локализации...",
-		KeyLocaleInstalling:  "Применение локализации...",
-		KeyLocaleDone:        "Русская локализация установлена.",
-		KeyLocaleRemoved:     "Русская локализация удалена из профиля.",
-		KeyLocaleFailed:      "Ошибка локализации: %v",
+		KeyLocaleTitle:                       "Локализация",
+		KeyLocaleInstallTitle:                "Установить локализацию",
+		KeyLocaleChecking:                    "Проверка установленных языковых файлов...",
+		KeyLocaleDownloading:                 "Загрузка языковых файлов: %s из %s",
+		KeyLocaleExtracting:                  "Распаковка языковых файлов...",
+		KeyLocaleInstalling:                  "Применение языковых файлов...",
+		KeyLocaleDone:                        "Локализация установлена.",
+		KeyLocaleRemoved:                     "Языковой overlay удалён.",
+		KeyLocaleFailed:                      "Ошибка установки локализации: %v",
+		KeyLanguageWizardChooseTitle:         "Локализация",
+		KeyLanguageWizardChooseHint:          "Выберите языковой пакет. Он установится один раз для всех серверов; оригинальная папка Morrowind не изменяется.",
+		KeyLanguageWizardEnglishHint:         "Использовать установленный Morrowind как есть. Ничего не скачивается.",
+		KeyLanguageWizardRussianHint:         "Скачивает русский текст и озвучку. Кириллические шрифты установятся автоматически. Большая загрузка.",
+		KeyLanguageWizardReviewTitle:         "Проверка",
+		KeyLanguageWizardReviewHint:          "Проверьте изменения перед применением.",
+		KeyLanguageWizardRemoveHint:          "Языковой overlay будет удалён; все профили вернутся к оригинальному языку Morrowind.",
+		KeyLanguageWizardRussianText:         "Русский текст и озвучка установятся один раз для всех серверов. Кириллические шрифты установятся автоматически. Оригинальная папка Morrowind не изменяется.",
+		KeyLanguageWizardInstallTitle:        "Установка локализации",
+		KeyLanguageWizardInstallHint:         "Не закрывайте клиент до завершения установки.",
+		KeyLanguageWizardProfile:             "Профиль: %s",
+		KeyLanguageWizardCurrent:             "Сейчас: %s",
+		KeyLanguageWizardNew:                 "Будет: %s",
+		KeyLanguageWizardStateEnglish:        "Английский",
+		KeyLanguageWizardStateEnglishOverlay: "Английский, остался старый overlay",
+		KeyLanguageWizardStateRussian:        "Русский, только текст",
+		KeyLanguageWizardStateRussianVoice:   "Русский, текст + озвучка",
+		KeyLanguageWizardStateRussianMissing: "Русский, не установлен",
+		KeyLanguageWizardStateMissing:        "не установлена",
+		KeyLanguageWizardStateInstalled:      "%s, установлена",
+		KeyLanguageWizardStateInstalledVoice: "%s, установлена с озвучкой",
+		KeyLanguageWizardInstall:             "Установить",
+		KeyLanguageWizardRemove:              "Удалить локализацию",
+		KeyLanguageWizardApplying:            "Установка локализации...",
+		KeyLanguageWizardFonts:               "Установка кириллических шрифтов...",
+		KeyLanguageWizardFontsFail:           "Не удалось установить шрифты: %v. Игра повторит попытку при запуске.",
+		KeyLanguageWizardDone:                "Локализация установлена для всех серверов.",
 
 		KeyAdvancedTitle:   "Дополнительно",
 		KeyAdvancedOpenCS:  "Запустить OpenMW-CS",
@@ -599,8 +659,8 @@ var catalogs = map[Language]map[string]string{
 		KeyErrorWorkDirAct:             "Выберите существующую папку с абсолютным путём, доступную для записи, в мастере или Настройках.",
 		KeyErrorModsMissing:            "Моды сервера не установлены.",
 		KeyErrorModsMissingAct:         "Запустите мастер настройки или нажмите «Обновить моды», затем повторите.",
-		KeyErrorLocaleMissing:          "Русская локализация включена, но не установлена.",
-		KeyErrorLocaleMissingAct:       "Откройте Настройки, установите локализацию заново или отключите её.",
+		KeyErrorLocaleMissing:          "Установленная локализация отсутствует или повреждена.",
+		KeyErrorLocaleMissingAct:       "Откройте More → Install localization и установите пакет заново.",
 		KeyErrorGameMissing:            "TES3MP не установлен.",
 		KeyErrorGameMissingAct:         "Откройте мастер подготовки, установите TES3MP и повторите.",
 		KeyErrorGameProton:             "Proton не удаётся использовать.",
@@ -636,6 +696,9 @@ var catalogs = map[Language]map[string]string{
 		KeyWizardMorrowindHint:      "Выберите папку с оригинальной игрой. Клиент только читает её.",
 		KeyWizardWorkDirTitle:       "Рабочая папка",
 		KeyWizardWorkDirHint:        "Здесь будут TES3MP, моды и логи. Оставьте пустой, чтобы использовать папку по умолчанию.",
+		KeyWizardLocalizationTitle:  "Локализация (необязательно)",
+		KeyWizardLocalizationHint:   "Установите языковой пакет сразу для всех серверов. Шаг можно пропустить и установить позже из меню сервера.",
+		KeyWizardSkip:               "Пропустить",
 		KeyWizardServerTitle:        "Сервер",
 		KeyWizardServerHint:         "Введите адрес и адрес панели, которые вам дал владелец сервера.",
 		KeyWizardConnectionTitle:    "Связь и TES3MP",
@@ -646,22 +709,10 @@ var catalogs = map[Language]map[string]string{
 		KeyWizardTES3MPNeeded:       "Чтобы продолжить, установите TES3MP %s.",
 		KeyWizardTES3MPTitle:        "TES3MP",
 		KeyWizardTES3MPHint:         "Клиент скачает и проверит TES3MP %s. Адрес сервера для этого шага не нужен.",
-		KeyWizardFontsTitle:         "Шрифты",
-		KeyWizardFontsHint:          "Кириллические шрифты ставятся в конфигурацию OpenMW. Папка Morrowind не изменяется.",
 		KeyWizardModsTitle:          "Моды сервера",
 		KeyWizardModsHint:           "Клиент скачает и проверит актуальный набор модов.",
 		KeyWizardModsStarting:       "Установка модов сервера...",
 		KeyWizardModsReady:          "Моды сервера установлены.",
-		KeyWizardLocaleTitle:        "Шрифты и локализация",
-		KeyWizardLocaleHint:         "Кириллические шрифты ставятся автоматически. Русская локализация необязательна.",
-		KeyWizardFontsChecking:      "Установка кириллических шрифтов...",
-		KeyWizardFontsReady:         "Кириллические шрифты готовы.",
-		KeyWizardFontsWarning:       "Не удалось установить шрифты: %s. Игра будет использовать стандартный шрифт.",
-		KeyWizardFontsSkipped:       "Кириллические шрифты отключены. Их можно включить в Настройках.",
-		KeyWizardLocaleInstall:      "Установить русскую локализацию",
-		KeyWizardLocaleInstalled:    "Русская локализация установлена.",
-		KeyWizardLocaleSkipped:      "Русская локализация не установлена.",
-		KeyWizardLocaleNeeded:       "Русская локализация ещё не установлена.",
 		KeyWizardReadyTitle:         "Можно играть",
 		KeyWizardReadyHint:          "Настройка завершена. Добавьте сервер в главном окне, когда захотите играть.",
 		KeyWizardSummary:            "Morrowind: %s\nРабочая папка: %s\nTES3MP: %s\nЛог: %s",
@@ -685,6 +736,9 @@ var catalogs = map[Language]map[string]string{
 		KeySetupInstalling:          "Завершение установки TES3MP...",
 		KeySetupDone:                "TES3MP установлен и готов.",
 		KeySetupFailed:              "Ошибка подготовки: %v",
+		KeySetupLocalizationInstall: "Установить локализацию",
+		KeySetupLocalizationReady:   "Локализация установлена: %s",
+		KeySetupLocalizationMissing: "Локализация не установлена. Этот шаг можно пропустить.",
 
 		KeyAboutTitle: "О клиенте",
 		KeyAboutBody:  "Клиент tes3mp-easy %s\nTES3MP %s\n%s",

@@ -17,13 +17,21 @@ import (
 // ConfigOptions describes the server profile copied into the active OpenMW
 // configuration.
 type ConfigOptions struct {
-	ConfigDir    string
-	ProfilePath  string
-	Localization bool
+	ConfigDir   string
+	ProfilePath string
+	// Encoding is the language-pack encoding. An empty value leaves the
+	// original Morrowind encoding intact and removes only pack encodings.
+	Encoding string
 	// MorrowindEncoding is the detected encoding of the original ESM files.
 	MorrowindEncoding string
-	Fonts             bool
-	Now               func() time.Time
+	// LocalizationRoot is the managed global overlay directory. data= lines
+	// inside it are replaced on every launch.
+	LocalizationRoot string
+	// LocalizationDataFiles is the active language pack Data Files directory,
+	// or empty when no pack is installed.
+	LocalizationDataFiles string
+	Fonts                 bool
+	Now                   func() time.Time
 }
 
 // ConfigResult describes the active openmw.cfg replacement.
@@ -87,11 +95,14 @@ func PrepareConfig(options ConfigOptions) (ConfigResult, error) {
 	if options.Fonts {
 		data = fonts.UpdateConfig(data)
 	}
-	if options.Localization || strings.EqualFold(strings.TrimSpace(options.MorrowindEncoding), locale.Encoding) {
-		data = locale.UpdateEncoding(data, true)
-	} else {
-		data = locale.UpdateEncoding(data, false)
+	data = locale.UpdateDataFiles(data, options.LocalizationDataFiles,
+		options.LocalizationRoot)
+	encoding := strings.ToLower(strings.TrimSpace(options.Encoding))
+	if encoding == "" &&
+		locale.IsPackEncoding(options.MorrowindEncoding) {
+		encoding = strings.ToLower(strings.TrimSpace(options.MorrowindEncoding))
 	}
+	data = locale.UpdateEncoding(data, encoding)
 
 	if existing, err := os.ReadFile(active); err == nil {
 		if bytes.Equal(existing, data) {

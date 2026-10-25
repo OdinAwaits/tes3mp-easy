@@ -20,7 +20,7 @@ import (
 var (
 	ErrMorrowindNotConfigured   = errors.New("Morrowind folder is not configured")
 	ErrModsNotInstalled         = errors.New("server mods are not installed")
-	ErrLocalizationNotInstalled = errors.New("Russian localization is enabled but not installed")
+	ErrLocalizationNotInstalled = errors.New("Russian localization is selected but not installed")
 	ErrWorkDir                  = errors.New("client work directory is invalid")
 	ErrGameExited               = errors.New("TES3MP exited unexpectedly")
 )
