@@ -105,9 +105,11 @@ func (s *shell) headerActions(tr *i18n.Translator) fyne.CanvasObject {
 	})
 	add.Importance = widget.HighImportance
 	logs := widget.NewButtonWithIcon(tr.T(i18n.KeyLogsTitle), theme.ListIcon(), s.showLogs)
+	localization := widget.NewButtonWithIcon(tr.T(i18n.KeyLocaleTitle),
+		theme.DownloadIcon(), s.showLanguageWizard)
 	settings := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonSettings), theme.SettingsIcon(), s.showSettings)
 	about := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonAbout), theme.HelpIcon(), s.showAbout)
-	return container.NewHBox(add, logs, settings, about)
+	return container.NewHBox(add, logs, localization, settings, about)
 }
 
 func (s *shell) serverList(tr *i18n.Translator, cfg config.Config) fyne.CanvasObject {
@@ -211,7 +213,6 @@ func serverEndpoint(profile config.Server) string {
 
 func (s *shell) showServerActions(profile config.Server) {
 	tr := s.service.Translator()
-	var popup *dialog.CustomDialog
 	content := container.NewVBox(
 		style.Subheading(profile.Name),
 		style.MutedLabel(serverEndpoint(profile)),
@@ -220,12 +221,6 @@ func (s *shell) showServerActions(profile config.Server) {
 		}),
 		widget.NewButton(tr.T(i18n.KeyServerUpdateMods), func() {
 			s.showModsUpdate(profile)
-		}),
-		widget.NewButton(tr.T(i18n.KeyLocaleInstallTitle), func() {
-			if popup != nil {
-				popup.Hide()
-			}
-			s.showLanguageWizard()
 		}),
 		widget.NewButton(tr.T(i18n.KeyCommonAdvanced), func() {
 			s.showAdvanced(profile)
@@ -237,7 +232,7 @@ func (s *shell) showServerActions(profile config.Server) {
 			s.confirmDelete(tr, profile)
 		}),
 	)
-	popup = dialog.NewCustom(tr.T(i18n.KeyServerActionsTitle),
+	popup := dialog.NewCustom(tr.T(i18n.KeyServerActionsTitle),
 		tr.T(i18n.KeyCommonClose), content, s.window)
 	popup.Resize(fyne.NewSize(460, 420))
 	popup.Show()
