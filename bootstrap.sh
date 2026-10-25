@@ -716,8 +716,10 @@ install_runtime_packages() {
     fi
 
     local -x DEBIAN_FRONTEND=noninteractive
-    run_install apt-get update
-    run_install apt-get install -y --no-install-recommends \
+    # unattended-upgrades can hold the dpkg frontend lock for several minutes
+    # right after boot. Wait for it instead of failing the installation.
+    run_install apt-get -o DPkg::Lock::Timeout=300 update
+    run_install apt-get -o DPkg::Lock::Timeout=300 install -y --no-install-recommends \
         libluajit-5.1-2 ca-certificates openssl curl tar gzip rsync coreutils iproute2
     pass "packages: TES3MP runtime dependencies installed"
 }
