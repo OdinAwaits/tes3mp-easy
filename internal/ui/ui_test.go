@@ -16,6 +16,29 @@ func TestRunRejectsNilService(t *testing.T) {
 	}
 }
 
+func TestAppMenuHasGlobalActions(t *testing.T) {
+	menu := (&shell{}).appMenu(i18n.New(i18n.English))
+	want := []string{"Setup", "Localization", "Client log", "Settings", "About"}
+	var got []string
+	for _, item := range menu.Items {
+		if item.IsSeparator {
+			continue
+		}
+		if item.Action == nil {
+			t.Errorf("menu item %q has no action", item.Label)
+		}
+		got = append(got, item.Label)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("appMenu labels = %q, want %q", got, want)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("appMenu labels = %q, want %q", got, want)
+		}
+	}
+}
+
 func TestEndpointText(t *testing.T) {
 	tests := []struct {
 		profile config.Server

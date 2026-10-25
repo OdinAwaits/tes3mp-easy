@@ -104,25 +104,37 @@ func (s *shell) headerActions(tr *i18n.Translator) fyne.CanvasObject {
 		s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
 	})
 	add.Importance = widget.HighImportance
-	logs := widget.NewButtonWithIcon(tr.T(i18n.KeyLogsTitle), theme.ListIcon(), s.showLogs)
-	localization := widget.NewButtonWithIcon(tr.T(i18n.KeyLocaleTitle),
-		theme.DownloadIcon(), s.showLanguageWizard)
-	settings := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonSettings), theme.SettingsIcon(), s.showSettings)
-	about := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonAbout), theme.HelpIcon(), s.showAbout)
-	return container.NewHBox(add, logs, localization, settings, about)
+	menu := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonMenu), theme.MenuIcon(), nil)
+	menu.OnTapped = func() {
+		widget.ShowPopUpMenuAtRelativePosition(s.appMenu(tr), s.window.Canvas(),
+			fyne.NewPos(0, menu.Size().Height), menu)
+	}
+	return container.NewHBox(add, menu)
+}
+
+// appMenu contains global actions. None of them belong to a server profile.
+func (s *shell) appMenu(tr *i18n.Translator) *fyne.Menu {
+	return fyne.NewMenu("",
+		fyne.NewMenuItem(tr.T(i18n.KeyCommonSetup), s.showSetup),
+		fyne.NewMenuItem(tr.T(i18n.KeyLocaleTitle), s.showLanguageWizard),
+		fyne.NewMenuItemSeparator(),
+		fyne.NewMenuItem(tr.T(i18n.KeyLogsTitle), s.showLogs),
+		fyne.NewMenuItem(tr.T(i18n.KeyCommonSettings), s.showSettings),
+		fyne.NewMenuItem(tr.T(i18n.KeyCommonAbout), s.showAbout),
+	)
 }
 
 func (s *shell) serverList(tr *i18n.Translator, cfg config.Config) fyne.CanvasObject {
 	if len(cfg.Servers) == 0 {
-		title := style.Heading(tr.T(i18n.KeyServerEmptyTitle))
-		hint := style.MutedLabel(tr.T(i18n.KeyServerEmptyHint))
+		title := style.CenteredHeading(tr.T(i18n.KeyServerEmptyTitle))
+		hint := style.CenteredMutedLabel(tr.T(i18n.KeyServerEmptyHint))
 		add := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonAdd), theme.ContentAddIcon(), func() {
 			s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
 		})
 		add.Importance = widget.HighImportance
 		content := container.NewVBox(
-			container.NewCenter(title),
-			container.NewCenter(hint),
+			title,
+			hint,
 			container.NewCenter(add),
 		)
 		return container.NewCenter(style.Card(content, true))

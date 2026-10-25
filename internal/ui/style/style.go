@@ -165,6 +165,9 @@ func Accent() color.Color {
 // accent flag is used for the active server card.
 func Card(content fyne.CanvasObject, accent bool) fyne.CanvasObject {
 	surface := canvas.NewRectangle(theme.Color(theme.ColorNameInputBackground))
+	// Wrapping text has a zero minimum width. A centered card would otherwise
+	// collapse to the width of its widest button and let labels overflow.
+	surface.SetMinSize(fyne.NewSize(480, 0))
 	surface.CornerRadius = 14
 	surface.StrokeColor = theme.Color(theme.ColorNameSeparator)
 	surface.StrokeWidth = 1
@@ -185,6 +188,13 @@ func Heading(text string) *widget.RichText {
 	return textWidget
 }
 
+// CenteredHeading renders a heading centered within the available width.
+func CenteredHeading(text string) *widget.RichText {
+	textWidget := Heading(text)
+	textWidget.Segments[0].(*widget.TextSegment).Style.Alignment = fyne.TextAlignCenter
+	return textWidget
+}
+
 // Subheading renders a smaller section title.
 func Subheading(text string) *widget.RichText {
 	textWidget := widget.NewRichText(&widget.TextSegment{
@@ -200,5 +210,13 @@ func MutedLabel(text string) *widget.Label {
 	label := widget.NewLabel(text)
 	label.Wrapping = fyne.TextWrapWord
 	label.Importance = widget.LowImportance
+	return label
+}
+
+// CenteredMutedLabel returns a wrapping secondary label centered within the
+// available width.
+func CenteredMutedLabel(text string) *widget.Label {
+	label := MutedLabel(text)
+	label.Alignment = fyne.TextAlignCenter
 	return label
 }

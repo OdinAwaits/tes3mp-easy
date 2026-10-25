@@ -12,6 +12,7 @@ const (
 	KeyCommonCancel   = "common.cancel"
 	KeyCommonClose    = "common.close"
 	KeyCommonSettings = "common.settings"
+	KeyCommonMenu     = "common.menu"
 	KeyCommonAbout    = "common.about"
 	KeyCommonPlay     = "common.play"
 	KeyCommonLanguage = "common.language"
@@ -262,12 +263,13 @@ var catalogs = map[Language]map[string]string{
 		KeyCommonCancel:   "Cancel",
 		KeyCommonClose:    "Close",
 		KeyCommonSettings: "Settings",
+		KeyCommonMenu:     "Menu",
 		KeyCommonAbout:    "About",
 		KeyCommonPlay:     "Play",
 		KeyCommonLanguage: "Language",
 		KeyCommonConfirm:  "Confirm",
 		KeyCommonError:    "Error",
-		KeyCommonSetup:    "Prepare",
+		KeyCommonSetup:    "Setup",
 		KeyCommonAdvanced: "Advanced",
 
 		KeyServerEmptyTitle:  "No servers yet",
@@ -412,7 +414,7 @@ var catalogs = map[Language]map[string]string{
 		KeyErrorModsMissing:            "Server mods are not installed.",
 		KeyErrorModsMissingAct:         "Run Setup or press Update mods, then retry.",
 		KeyErrorLocaleMissing:          "The installed localization is missing or damaged.",
-		KeyErrorLocaleMissingAct:       "Open Localization in the header and install the package again.",
+		KeyErrorLocaleMissingAct:       "Open Menu → Localization and install the package again.",
 		KeyErrorGameMissing:            "TES3MP is not installed.",
 		KeyErrorGameMissingAct:         "Open Setup and install TES3MP, then retry.",
 		KeyErrorGameProton:             "The Proton runtime is not usable.",
@@ -510,12 +512,13 @@ var catalogs = map[Language]map[string]string{
 		KeyCommonCancel:   "Отмена",
 		KeyCommonClose:    "Закрыть",
 		KeyCommonSettings: "Настройки",
+		KeyCommonMenu:     "Меню",
 		KeyCommonAbout:    "О клиенте",
 		KeyCommonPlay:     "Играть",
 		KeyCommonLanguage: "Язык",
 		KeyCommonConfirm:  "Подтвердить",
 		KeyCommonError:    "Ошибка",
-		KeyCommonSetup:    "Подготовка",
+		KeyCommonSetup:    "Настройка",
 		KeyCommonAdvanced: "Дополнительно",
 
 		KeyServerEmptyTitle:  "Серверов пока нет",
@@ -660,7 +663,7 @@ var catalogs = map[Language]map[string]string{
 		KeyErrorModsMissing:            "Моды сервера не установлены.",
 		KeyErrorModsMissingAct:         "Запустите мастер настройки или нажмите «Обновить моды», затем повторите.",
 		KeyErrorLocaleMissing:          "Установленная локализация отсутствует или повреждена.",
-		KeyErrorLocaleMissingAct:       "Откройте «Локализация» в шапке и установите пакет заново.",
+		KeyErrorLocaleMissingAct:       "Откройте «Меню → Локализация» и установите пакет заново.",
 		KeyErrorGameMissing:            "TES3MP не установлен.",
 		KeyErrorGameMissingAct:         "Откройте мастер подготовки, установите TES3MP и повторите.",
 		KeyErrorGameProton:             "Proton не удаётся использовать.",
