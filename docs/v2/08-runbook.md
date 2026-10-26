@@ -52,7 +52,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/in
 Конкретную версию можно закрепить:
 
 ```bash
-TES3MP_EASY_VERSION=0.1.10 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
+TES3MP_EASY_VERSION=0.1.11 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
 ```
 
 Ручной путь, если архив нужно скачать заранее:
@@ -61,7 +61,7 @@ TES3MP_EASY_VERSION=0.1.10 bash <(curl -Ls https://raw.githubusercontent.com/Saa
    собранный `dist/tes3mp-easy-<version>-linux-amd64.tar.gz`):
 
    ```bash
-   VERSION=0.1.10
+   VERSION=0.1.11
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz"
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
    sha256sum -c "tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
@@ -72,7 +72,7 @@ TES3MP_EASY_VERSION=0.1.10 bash <(curl -Ls https://raw.githubusercontent.com/Saa
    Локальная сборка релиза:
 
    ```bash
-   go run ./cmd/tes3mp-easy-pack --version 0.1.10
+   go run ./cmd/tes3mp-easy-pack --version 0.1.11
    ```
 
 2. Проверьте хост без изменений:

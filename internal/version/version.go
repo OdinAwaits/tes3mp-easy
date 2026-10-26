@@ -4,4 +4,4 @@ package version
 
 // Version is the project release version. Keep it in sync with the release tag
 // and the assets produced by cmd/tes3mp-easy-pack.
-var Version = "0.1.10"
+var Version = "0.1.11"
