@@ -358,7 +358,7 @@ func (h *panelHandler) dashboardData(r *http.Request,
 		Health:      "unknown",
 		Timer:       "unknown",
 	}
-	data.ServerName = "TES3MP"
+	data.ServerName = defaultServerName
 	if name, _ := h.serverNamePort(); name != "" {
 		data.ServerName = name
 	}

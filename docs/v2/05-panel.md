@@ -149,7 +149,8 @@ ops-клиент (`ops.go`). Contract-тесты панели живут в `tes
 Публичные скачивания и `/api/v1/mods/current/archive` делят лимит 60 запросов
 в минуту на IP. Имена архивов проверяются как `filepath.Base` + `.tar.gz`,
 symlink и каталоги не отдаются. `/api/v1/server` берёт `hostname`/`port` из
-`configs/tes3mp-server-default.cfg` и `mods_sha256` из `current.txt`; при
+`configs/tes3mp-server-default.cfg` (пустой `hostname` отдаётся как `TES3MP`)
+и `mods_sha256` из `current.txt`; при
 недоступном systemd он отвечает `503 service_unavailable`, а не выдумывает
 `running`. Публичная HTML-страница при этом остаётся `200` и показывает
 предупреждение. Подробности ошибок ops не попадают в публичный HTML: только

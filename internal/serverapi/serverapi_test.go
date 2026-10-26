@@ -170,7 +170,7 @@ func TestServerRejectsMalformedAndRetries(t *testing.T) {
 	defer server.Close()
 	client := newTestClient(t, server.URL, 2)
 	_, err := client.Server(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "empty name") {
+	if err == nil || !strings.Contains(err.Error(), "empty address") {
 		t.Fatalf("Server error = %v", err)
 	}
 	if !errors.Is(err, ErrInvalidResponse) {
@@ -190,6 +190,24 @@ func TestServerRejectsMalformedAndRetries(t *testing.T) {
 	if _, err := newTestClient(t, trailing.URL, 1).Server(
 		context.Background()); err == nil {
 		t.Fatal("trailing JSON accepted")
+	}
+}
+
+func TestServerAcceptsEmptyName(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
+		_ *http.Request,
+	) {
+		fmt.Fprint(w,
+			`{"name":"","address":"203.0.113.10","port":25565,"status":"running"}`)
+	}))
+	defer server.Close()
+
+	info, err := newTestClient(t, server.URL, 1).Server(context.Background())
+	if err != nil {
+		t.Fatalf("Server: %v", err)
+	}
+	if info.Name != "" || info.Address != "203.0.113.10" {
+		t.Fatalf("server = %+v", info)
 	}
 }
 

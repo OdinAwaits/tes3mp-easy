@@ -193,7 +193,7 @@ func TestPublicServerInfoWithoutModsFallsBackToRequestHost(t *testing.T) {
 	if response.Address != "panel.test" {
 		t.Fatalf("address = %q, want request host", response.Address)
 	}
-	if response.Name != "" || response.Port != defaultGamePort {
+	if response.Name != defaultServerName || response.Port != defaultGamePort {
 		t.Fatalf("name/port = %q/%d", response.Name, response.Port)
 	}
 }

@@ -174,9 +174,6 @@ func (c *Client) Server(ctx context.Context) (Server, error) {
 	if err := c.getJSON(ctx, ServerPath, &response); err != nil {
 		return Server{}, err
 	}
-	if strings.TrimSpace(response.Name) == "" {
-		return Server{}, invalidResponse("server response has an empty name")
-	}
 	if strings.TrimSpace(response.Address) == "" {
 		return Server{}, invalidResponse("server response has an empty address")
 	}

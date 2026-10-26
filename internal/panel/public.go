@@ -21,6 +21,7 @@ import (
 
 const (
 	defaultGamePort    = 25565
+	defaultServerName  = "TES3MP"
 	defaultBackupLimit = 200
 	maxBackupLimit     = 500
 	modsCurrentURL     = "/api/v1/mods/current/archive"
@@ -262,14 +263,16 @@ func (h *panelHandler) serverStatus(ctx context.Context) (string, error) {
 }
 
 func (h *panelHandler) serverNamePort() (string, int) {
-	name := ""
+	name := defaultServerName
 	port := defaultGamePort
 	snapshot, err := gameconfig.Read(h.cfg.Root, gameconfig.FileServer)
 	if err != nil {
 		return name, port
 	}
 	if value, ok := snapshot.Values["hostname"].(string); ok {
-		name = value
+		if value = strings.TrimSpace(value); value != "" {
+			name = value
+		}
 	}
 	if value, ok := snapshot.Values["port"].(int); ok {
 		port = value
