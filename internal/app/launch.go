@@ -79,6 +79,7 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 		LocalizationRoot:      localizationRoot,
 		LocalizationDataFiles: localizationDataFiles,
 		Fonts:                 fontResult.State.Installed,
+		FontSet:               s.FontSet(),
 	}
 	var result launcher.Result
 	if s.launchClient != nil {

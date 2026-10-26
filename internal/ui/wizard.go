@@ -11,16 +11,19 @@ import (
 
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 	"github.com/Saagilat/tes3mp-easy/internal/locale"
+	"github.com/Saagilat/tes3mp-easy/internal/openmwcfg"
 	"github.com/Saagilat/tes3mp-easy/internal/tes3mp"
+	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
 )
 
 type wizardStep int
 
 const (
 	wizardMorrowind wizardStep = iota
-	wizardWorkDir
 	wizardTES3MP
+	wizardFonts
 	wizardLocalization
+	wizardUIVideo
 	wizardReady
 	wizardStepCount
 )
@@ -46,26 +49,38 @@ type setupWizard struct {
 	morrowindReady     bool
 	morrowindAttempted bool
 
-	workDir *widget.Entry
-
 	tes3mpStatus   *widget.Label
 	tes3mpProgress *widget.ProgressBar
 	tes3mpInstall  *widget.Button
 	tes3mpReady    bool
 
+	fontsStatus    *widget.Label
+	fontsReady     bool
+	fontsAttempted bool
+	fontSetID      string
+
 	localeStatus   *widget.Label
 	localeProgress *widget.ProgressBar
 	localeChoice   *widget.RadioGroup
+	localeVoice    *widget.Check
 	localeInstall  *widget.Button
+	localeState    locale.State
 	localeReady    bool
-	skip           *widget.Button
+
+	uiVideoForm   *uiVideoForm
+	uiVideoStatus *widget.Label
+	uiVideoState  openmwcfg.State
 }
 
 // showSetup opens the wizard at the folder that most often needs attention.
 // The launcher UI is English by default, so a fresh install does not ask for a
-// language first.
+// language first; a configured Morrowind folder skips straight to TES3MP.
 func (s *shell) showSetup() {
-	s.openWizard(wizardMorrowind)
+	step := wizardMorrowind
+	if strings.TrimSpace(s.service.Config().MorrowindPath) != "" {
+		step = wizardTES3MP
+	}
+	s.openWizard(step)
 }
 
 func (s *shell) openWizard(step wizardStep) {
@@ -76,10 +91,6 @@ func (s *shell) openWizard(step wizardStep) {
 	w.morrowind = widget.NewEntry()
 	w.morrowind.SetText(cfg.MorrowindPath)
 	w.morrowind.SetPlaceHolder(".../Morrowind")
-
-	w.workDir = widget.NewEntry()
-	w.workDir.SetText(cfg.WorkDir)
-	w.workDir.SetPlaceHolder(s.service.Paths().DataDir)
 
 	w.title = widget.NewLabelWithStyle("", fyne.TextAlignLeading,
 		fyne.TextStyle{Bold: true})
@@ -102,12 +113,9 @@ func (s *shell) openWizard(step wizardStep) {
 	w.back = widget.NewButton(tr.T(i18n.KeyWizardBack), w.previous)
 	w.next = widget.NewButton(tr.T(i18n.KeyWizardNext), w.advance)
 	w.next.Importance = widget.HighImportance
-	w.skip = widget.NewButton(tr.T(i18n.KeyWizardSkip), w.skipLocalization)
-	w.skip.Hide()
 
 	problemRow := container.NewBorder(nil, nil, nil, w.retry, w.problem)
-	footer := container.NewBorder(nil, nil, w.back,
-		container.NewHBox(w.skip, w.next))
+	footer := container.NewBorder(nil, nil, w.back, w.next)
 	content := container.NewBorder(
 		container.NewVBox(w.title, w.stepNo),
 		container.NewVBox(problemRow, footer),
@@ -126,12 +134,14 @@ func wizardTitleKey(step wizardStep) string {
 	switch step {
 	case wizardMorrowind:
 		return i18n.KeyWizardMorrowindTitle
-	case wizardWorkDir:
-		return i18n.KeyWizardWorkDirTitle
 	case wizardTES3MP:
 		return i18n.KeyWizardTES3MPTitle
+	case wizardFonts:
+		return i18n.KeyWizardFontsTitle
 	case wizardLocalization:
 		return i18n.KeyWizardLocalizationTitle
+	case wizardUIVideo:
+		return i18n.KeyWizardUIVideoTitle
 	default:
 		return i18n.KeyWizardReadyTitle
 	}
@@ -156,12 +166,14 @@ func (w *setupWizard) stepObjects(tr *i18n.Translator) []fyne.CanvasObject {
 	switch w.step {
 	case wizardMorrowind:
 		return w.morrowindObjects(tr)
-	case wizardWorkDir:
-		return w.workDirObjects(tr)
 	case wizardTES3MP:
 		return w.tes3mpObjects(tr)
+	case wizardFonts:
+		return w.fontsObjects(tr)
 	case wizardLocalization:
 		return w.localizationObjects(tr)
+	case wizardUIVideo:
+		return w.uiVideoObjects(tr)
 	default:
 		return w.readyObjects(tr)
 	}
@@ -193,11 +205,38 @@ func (w *setupWizard) morrowindObjects(tr *i18n.Translator) []fyne.CanvasObject 
 	}
 }
 
-func (w *setupWizard) workDirObjects(tr *i18n.Translator) []fyne.CanvasObject {
+func (w *setupWizard) fontsObjects(tr *i18n.Translator) []fyne.CanvasObject {
+	w.fontsStatus = widget.NewLabel("")
+	w.fontsStatus.Wrapping = fyne.TextWrapWord
+	w.fontSetID = w.shell.service.FontSet()
+	chooser := newFontSetChooser(tr, w.fontSetID, w.selectFontSet)
+	install := widget.NewButton(tr.T(i18n.KeySetupInstall), w.installFonts)
+	install.Importance = widget.HighImportance
+	w.renderFontsState(tr)
 	return []fyne.CanvasObject{
-		wizardHint(tr, i18n.KeyWizardWorkDirHint),
-		w.workDir,
+		wizardHint(tr, i18n.KeyWizardFontsHint),
+		widget.NewLabel(tr.T(i18n.KeyFontsSet)),
+		chooser.group,
+		style.MutedLabel(tr.T(i18n.KeyFontsSetLicense)),
+		w.fontsStatus,
+		container.NewHBox(install),
 	}
+}
+
+// selectFontSet stores the chosen set and installs it. The radio list only
+// fires on a real change, so entering the step does not restart a download.
+func (w *setupWizard) selectFontSet(id string) {
+	if id == "" || id == w.fontSetID {
+		return
+	}
+	if err := w.shell.service.SetFontSet(id); err != nil {
+		w.setProblem(err, func() { w.selectFontSet(id) })
+		return
+	}
+	w.fontSetID = id
+	w.fontsReady = false
+	w.clearProblem()
+	w.checkFonts()
 }
 
 func (w *setupWizard) tes3mpObjects(tr *i18n.Translator) []fyne.CanvasObject {
@@ -230,23 +269,16 @@ func (w *setupWizard) localizationObjects(tr *i18n.Translator) []fyne.CanvasObje
 	w.localeProgress.Max = 1
 	w.localeChoice = widget.NewRadioGroup(localizationLabels(tr), nil)
 	w.localeChoice.Horizontal = false
+	w.localeVoice = widget.NewCheck(tr.T(i18n.KeyInstallLocalizationVoices), nil)
+	w.localeVoice.SetChecked(w.shell.service.Voiceover())
 	state, err := w.shell.service.LocalizationState()
 	if err != nil {
 		w.localeStatus.SetText(err.Error())
-	} else if state.Installed {
-		w.localeReady = state.Voiceover
-		w.localeChoice.SetSelected(localizationLabel(tr, state.Language))
-		if w.localeReady {
-			w.localeChoice.Disable()
-			w.localeProgress.SetValue(1)
-			w.localeStatus.SetText(tr.Tf(i18n.KeySetupLocalizationReady,
-				localizationLabel(tr, state.Language)))
-		} else {
-			w.localeStatus.SetText(localizationStateLabel(tr, state))
-		}
 	} else {
-		w.localeReady = false
-		w.localeStatus.SetText(tr.T(i18n.KeySetupLocalizationMissing))
+		w.localeState = state
+		if state.Installed {
+			w.localeChoice.SetSelected(localizationLabel(tr, state.Language))
+		}
 	}
 	if w.localeChoice.Selected == "" && len(w.localeChoice.Options) > 0 {
 		w.localeChoice.SetSelected(w.localeChoice.Options[0])
@@ -254,16 +286,102 @@ func (w *setupWizard) localizationObjects(tr *i18n.Translator) []fyne.CanvasObje
 	install := widget.NewButton(tr.T(i18n.KeySetupLocalizationInstall),
 		w.installLocalization)
 	install.Importance = widget.HighImportance
-	if w.localeReady {
-		install.Disable()
-	}
 	w.localeInstall = install
+	w.localeVoice.OnChanged = func(bool) {
+		w.syncLocaleButtons()
+		w.updateButtons()
+	}
+	w.syncLocaleButtons()
+	switch {
+	case err != nil:
+	case !state.Installed:
+		w.localeStatus.SetText(tr.T(i18n.KeySetupLocalizationMissing))
+	case w.localeReady:
+		w.localeProgress.SetValue(1)
+		w.localeStatus.SetText(tr.Tf(i18n.KeySetupLocalizationReady,
+			localizationInstallLabel(tr, state)))
+	default:
+		w.localeStatus.SetText(localizationStateLabel(tr, state))
+	}
 	return []fyne.CanvasObject{
 		wizardHint(tr, i18n.KeyWizardLocalizationHint),
 		w.localeStatus,
 		w.localeChoice,
+		w.localeVoice,
+		style.MutedLabel(tr.T(i18n.KeyInstallLocalizationHint)),
 		container.NewBorder(nil, nil, nil, install, w.localeProgress),
 	}
+}
+
+// syncLocaleButtons keeps the localization step in sync with the installed
+// overlay: text-only and voiced installs are both complete on their own, and
+// changing the checkbox re-enables Install to switch between them.
+func (w *setupWizard) syncLocaleButtons() {
+	if w.localeInstall == nil {
+		return
+	}
+	wanted := w.localeVoice != nil && w.localeVoice.Checked
+	w.localeReady = w.localeState.Installed &&
+		w.localeState.Voiceover == wanted
+	if w.localeReady {
+		w.localeInstall.Disable()
+		if w.localeChoice != nil {
+			w.localeChoice.Disable()
+		}
+		return
+	}
+	w.localeInstall.Enable()
+	if w.localeChoice != nil {
+		w.localeChoice.Enable()
+	}
+}
+
+func (w *setupWizard) uiVideoObjects(tr *i18n.Translator) []fyne.CanvasObject {
+	w.uiVideoStatus = widget.NewLabel("")
+	w.uiVideoStatus.Wrapping = fyne.TextWrapWord
+	w.uiVideoStatus.SetText(uiVideoStateLabel(tr, w.uiVideoState))
+	w.uiVideoForm = newUIVideoForm(openmwcfg.Defaults())
+	objects := []fyne.CanvasObject{
+		wizardHint(tr, i18n.KeyWizardUIVideoHint),
+		w.uiVideoStatus,
+	}
+	return append(objects, w.uiVideoForm.objects(tr)...)
+}
+
+// loadUIVideo fills the step from the current settings.cfg. The file appears
+// after the first game launch, so the defaults are shown until then.
+func (w *setupWizard) loadUIVideo() {
+	state, err := w.shell.service.ClientSettings()
+	if err != nil {
+		w.setProblem(err, w.loadUIVideo)
+		return
+	}
+	w.uiVideoState = state
+	if w.uiVideoForm != nil {
+		w.uiVideoForm.set(state.Values)
+	}
+	if w.uiVideoStatus != nil {
+		w.uiVideoStatus.SetText(
+			uiVideoStateLabel(w.shell.service.Translator(), state))
+	}
+	w.updateButtons()
+}
+
+// saveUIVideo writes the step only when the values differ or settings.cfg
+// already exists: the wizard must not create the file just to hold defaults.
+func (w *setupWizard) saveUIVideo() bool {
+	values, err := w.uiVideoForm.values()
+	if err != nil {
+		return false
+	}
+	if !w.uiVideoState.Exists && values == w.uiVideoState.Values {
+		return true
+	}
+	if _, err := w.shell.service.UpdateClientSettings(values); err != nil {
+		w.setProblem(err, w.advance)
+		return false
+	}
+	return true
 }
 
 func (w *setupWizard) readyObjects(tr *i18n.Translator) []fyne.CanvasObject {
@@ -283,15 +401,6 @@ func (w *setupWizard) updateButtons() {
 		return
 	}
 	tr := w.shell.service.Translator()
-	w.skip.Hide()
-	if w.step == wizardLocalization {
-		w.skip.Show()
-		if w.busy {
-			w.skip.Disable()
-		} else {
-			w.skip.Enable()
-		}
-	}
 	if w.step == wizardReady {
 		w.next.SetText(tr.T(i18n.KeyWizardFinish))
 	} else {
@@ -320,7 +429,16 @@ func (w *setupWizard) canAdvance() bool {
 		return w.morrowindReady
 	case wizardTES3MP:
 		return w.tes3mpReady
+	case wizardUIVideo:
+		// A saved step must not carry an out-of-range value to settings.cfg.
+		if w.uiVideoForm == nil {
+			return false
+		}
+		_, err := w.uiVideoForm.values()
+		return err == nil
 	default:
+		// Fonts and localization never block the game: a failed download is a
+		// warning and the next Play retries.
 		return true
 	}
 }
@@ -335,13 +453,17 @@ func (w *setupWizard) advance() {
 	}
 	switch w.step {
 	case wizardMorrowind:
-		w.gotoStep(wizardWorkDir)
-	case wizardWorkDir:
-		w.saveWorkDir()
+		w.gotoStep(wizardTES3MP)
 	case wizardTES3MP:
+		w.gotoStep(wizardFonts)
+	case wizardFonts:
 		w.gotoStep(wizardLocalization)
 	case wizardLocalization:
-		w.gotoStep(wizardReady)
+		w.gotoStep(wizardUIVideo)
+	case wizardUIVideo:
+		if w.saveUIVideo() {
+			w.gotoStep(wizardReady)
+		}
 	default:
 		w.finishWizard()
 	}
@@ -352,12 +474,14 @@ func (w *setupWizard) previous() {
 		return
 	}
 	switch w.step {
-	case wizardWorkDir:
-		w.gotoStep(wizardMorrowind)
 	case wizardTES3MP:
-		w.gotoStep(wizardWorkDir)
-	case wizardLocalization:
+		w.gotoStep(wizardMorrowind)
+	case wizardFonts:
 		w.gotoStep(wizardTES3MP)
+	case wizardLocalization:
+		w.gotoStep(wizardFonts)
+	case wizardUIVideo:
+		w.gotoStep(wizardLocalization)
 	}
 }
 
@@ -431,6 +555,14 @@ func (w *setupWizard) enterStep() {
 		w.checkMorrowind(w.morrowind.Text)
 	case wizardTES3MP:
 		w.checkTES3MP()
+	case wizardFonts:
+		if w.fontsAttempted {
+			return
+		}
+		w.fontsAttempted = true
+		w.checkFonts()
+	case wizardUIVideo:
+		w.loadUIVideo()
 	}
 }
 
@@ -507,19 +639,82 @@ func (w *setupWizard) checkMorrowind(path string) {
 	}()
 }
 
-func (w *setupWizard) saveWorkDir() {
-	value := strings.TrimSpace(w.workDir.Text)
-	if _, err := w.shell.service.CheckWorkDir(value); err != nil {
-		w.setProblem(err, nil)
+// checkFonts reads the installed font set. A missing set starts the download
+// right away, because the step is mandatory; a failed download stays a warning
+// and the next Play tries again.
+func (w *setupWizard) checkFonts() {
+	w.renderFontsState(w.shell.service.Translator())
+	if w.fontsReady {
 		return
 	}
-	settings := w.shell.settings()
-	settings.WorkDir = value
-	if err := w.shell.service.UpdateSettings(settings); err != nil {
-		w.setProblem(err, w.saveWorkDir)
+	w.installFonts()
+}
+
+// renderFontsState prints the current set state into the step.
+func (w *setupWizard) renderFontsState(tr *i18n.Translator) {
+	state, err := w.shell.service.FontsState()
+	if err != nil {
+		w.fontsReady = false
+		if w.fontsStatus != nil {
+			w.fontsStatus.SetText(w.shell.failureBody(err))
+		}
+		w.updateButtons()
 		return
 	}
-	w.gotoStep(wizardTES3MP)
+	w.fontsReady = state.Installed
+	if w.fontsStatus == nil {
+		return
+	}
+	label := fontSetLabel(tr, state.Set)
+	switch {
+	case state.Installed:
+		w.fontsStatus.SetText(tr.Tf(i18n.KeyInstallFontsReadyDetail,
+			label, state.FontsDir))
+	case len(state.Missing) > 0 || len(state.Invalid) > 0:
+		broken := append([]string(nil), state.Missing...)
+		broken = append(broken, state.Invalid...)
+		w.fontsStatus.SetText(tr.Tf(i18n.KeyInstallFontsPartial,
+			strings.Join(broken, ", ")))
+	default:
+		w.fontsStatus.SetText(tr.Tf(i18n.KeyInstallFontsMissingSet, label))
+	}
+	w.updateButtons()
+}
+
+func (w *setupWizard) installFonts() {
+	if !w.beginBusy() {
+		return
+	}
+	tr := w.shell.service.Translator()
+	status := w.fontsStatus
+	if status != nil {
+		status.SetText(tr.T(i18n.KeyWizardFontsDownloading))
+	}
+	go func() {
+		result, err := w.shell.service.InstallFonts(context.Background())
+		fyne.Do(func() {
+			w.endBusy()
+			if err != nil {
+				w.fontsReady = false
+				w.setProblem(err, w.installFonts)
+				return
+			}
+			w.clearProblem()
+			w.fontsReady = result.State.Installed
+			if status == nil {
+				return
+			}
+			if len(result.Warnings) > 0 {
+				status.SetText(tr.Tf(i18n.KeyWizardFontsFailed,
+					strings.Join(result.Warnings, "; ")))
+			} else if w.fontsReady {
+				status.SetText(tr.Tf(i18n.KeyInstallFontsReadyDetail,
+					fontSetLabel(tr, result.State.Set),
+					result.State.FontsDir))
+			}
+			w.updateButtons()
+		})
+	}()
 }
 
 func (w *setupWizard) checkTES3MP() {
@@ -608,14 +803,6 @@ func (w *setupWizard) installTES3MP() {
 	}()
 }
 
-func (w *setupWizard) skipLocalization() {
-	if w.busy {
-		return
-	}
-	w.shell.service.LogInfof("localization setup step skipped")
-	w.gotoStep(wizardReady)
-}
-
 func (w *setupWizard) installLocalization() {
 	if !w.beginBusy() {
 		return
@@ -624,6 +811,12 @@ func (w *setupWizard) installLocalization() {
 	chosen := localizationValue(tr, w.localeChoice.Selected)
 	if chosen == "" {
 		w.endBusy()
+		return
+	}
+	voices := w.localeVoice != nil && w.localeVoice.Checked
+	if err := w.shell.service.SetVoiceover(voices); err != nil {
+		w.endBusy()
+		w.setProblem(err, w.installLocalization)
 		return
 	}
 	status := w.localeStatus
@@ -636,7 +829,7 @@ func (w *setupWizard) installLocalization() {
 	}
 	go func() {
 		result, err := w.shell.service.InstallLocalization(
-			context.Background(), chosen, func(update locale.Progress) {
+			context.Background(), chosen, voices, func(update locale.Progress) {
 				fyne.Do(func() {
 					if progress != nil {
 						progress.SetValue(localeProgressFraction(update))
@@ -653,20 +846,15 @@ func (w *setupWizard) installLocalization() {
 				w.setProblem(err, w.installLocalization)
 				return
 			}
-			w.localeReady = true
 			w.clearProblem()
+			w.localeState = result.State
+			w.syncLocaleButtons()
 			if progress != nil {
 				progress.SetValue(1)
 			}
-			if w.localeInstall != nil {
-				w.localeInstall.Disable()
-			}
-			if w.localeChoice != nil {
-				w.localeChoice.Disable()
-			}
 			if status != nil {
 				text := tr.Tf(i18n.KeySetupLocalizationReady,
-					localizationLabel(tr, chosen))
+					localizationInstallLabel(tr, result.State))
 				if len(result.Warnings) > 0 {
 					text += "\n\n" + strings.Join(result.Warnings, "\n")
 				}

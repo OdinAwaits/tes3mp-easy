@@ -215,9 +215,9 @@ func (s *shell) showErrorWithRetry(err error, retry func()) {
 		}
 	}
 	if failureNeedsSettings(failure.Kind) {
-		buttons = append(buttons, widget.NewButton(tr.T(i18n.KeyCommonSettings), func() {
+		buttons = append(buttons, widget.NewButton(tr.T(i18n.KeyRailInstall), func() {
 			popup.Hide()
-			s.showSettings()
+			s.showScreen(screenInstall)
 		}))
 	}
 	if failure.Kind == app.FailureGameMissing {

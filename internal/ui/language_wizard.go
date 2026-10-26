@@ -11,6 +11,7 @@ import (
 
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 	"github.com/Saagilat/tes3mp-easy/internal/locale"
+	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
 )
 
 type languageWizardStep int
@@ -36,6 +37,7 @@ type languageWizard struct {
 
 	choice     *widget.RadioGroup
 	choiceHint *widget.Label
+	voice      *widget.Check
 	status     *widget.Label
 	progress   *widget.ProgressBar
 
@@ -87,8 +89,13 @@ func (s *shell) showLanguageWizard() {
 	}
 	w.choice.OnChanged = func(string) {
 		w.syncChoiceHint()
+		w.syncVoice()
 		w.updateButtons()
 	}
+	w.voice = widget.NewCheck(tr.T(i18n.KeyInstallLocalizationVoices), nil)
+	w.voice.SetChecked(s.service.Voiceover())
+	w.syncVoice()
+	w.voice.OnChanged = func(bool) { w.updateButtons() }
 
 	w.back = widget.NewButton(tr.T(i18n.KeyWizardBack), w.previous)
 	w.next = widget.NewButton(tr.T(i18n.KeyWizardNext), w.advance)
@@ -145,7 +152,22 @@ func (w *languageWizard) chooseObjects(tr *i18n.Translator) []fyne.CanvasObject 
 			localizationStateLabel(tr, w.current))),
 		w.choice,
 		w.choiceHint,
+		w.voice,
+		style.MutedLabel(tr.T(i18n.KeyInstallLocalizationHint)),
 	}
+}
+
+// syncVoice shows the voiceover checkbox only for packs that ship voices.
+func (w *languageWizard) syncVoice() {
+	if w.voice == nil {
+		return
+	}
+	tr := w.shell.service.Translator()
+	if localizationValue(tr, w.choice.Selected) == locale.LanguageRussian {
+		w.voice.Show()
+		return
+	}
+	w.voice.Hide()
 }
 
 func (w *languageWizard) installObjects(tr *i18n.Translator) []fyne.CanvasObject {
@@ -207,7 +229,8 @@ func (w *languageWizard) advance() {
 	if w.step == languageWizardChoose {
 		tr := w.shell.service.Translator()
 		chosen := localizationValue(tr, w.choice.Selected)
-		if chosen == "" || !localizationNeedsInstall(w.current, chosen) {
+		if chosen == "" ||
+			!localizationNeedsInstall(w.current, chosen, w.voice.Checked) {
 			w.close()
 			return
 		}
@@ -255,6 +278,11 @@ func (w *languageWizard) startInstall() {
 	if chosen == "" {
 		return
 	}
+	voices := w.voice.Checked
+	if err := w.shell.service.SetVoiceover(voices); err != nil {
+		w.setProblem(err, nil)
+		return
+	}
 	status := w.status
 	progress := w.progress
 	w.clearProblem()
@@ -270,7 +298,7 @@ func (w *languageWizard) startInstall() {
 
 	go func() {
 		result, err := w.shell.service.InstallLocalization(
-			context.Background(), chosen, func(update locale.Progress) {
+			context.Background(), chosen, voices, func(update locale.Progress) {
 				fyne.Do(func() {
 					if progress != nil {
 						progress.SetValue(localeProgressFraction(update))
@@ -366,11 +394,25 @@ func localizationValue(tr *i18n.Translator, label string) string {
 	return ""
 }
 
-func localizationNeedsInstall(state locale.State, language string) bool {
+// localizationNeedsInstall reports whether the requested package or voiceover
+// choice differs from the installed overlay.
+func localizationNeedsInstall(state locale.State, language string,
+	voices bool,
+) bool {
 	if !state.Installed || !strings.EqualFold(state.Language, language) {
 		return true
 	}
-	return !state.Voiceover
+	return state.Voiceover != voices
+}
+
+// localizationInstallLabel names an installed overlay the way the Installation
+// row shows it: "Russian + voiceover" when the voices are present.
+func localizationInstallLabel(tr *i18n.Translator, state locale.State) string {
+	label := localizationLabel(tr, state.Language)
+	if state.Voiceover {
+		return tr.Tf(i18n.KeyInstallLocalizationVoice, label)
+	}
+	return label
 }
 
 func localizationStateLabel(tr *i18n.Translator, state locale.State) string {

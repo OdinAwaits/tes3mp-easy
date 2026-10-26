@@ -30,8 +30,11 @@ type ConfigOptions struct {
 	// LocalizationDataFiles is the active language pack Data Files directory,
 	// or empty when no pack is installed.
 	LocalizationDataFiles string
-	Fonts                 bool
-	Now                   func() time.Time
+	// Fonts adds the fallback lines for the font set; FontSet selects which
+	// catalog set the lines point at (empty means the default set).
+	Fonts   bool
+	FontSet string
+	Now     func() time.Time
 }
 
 // ConfigResult describes the active openmw.cfg replacement.
@@ -93,7 +96,7 @@ func PrepareConfig(options ConfigOptions) (ConfigResult, error) {
 
 	data := append([]byte(nil), profile...)
 	if options.Fonts {
-		data = fonts.UpdateConfig(data)
+		data = fonts.UpdateConfigFor(data, options.FontSet)
 	}
 	data = locale.UpdateDataFiles(data, options.LocalizationDataFiles,
 		options.LocalizationRoot)

@@ -2,12 +2,87 @@ package app
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/fonts"
 )
+
+func TestInstallFontsUsesSelectedSet(t *testing.T) {
+	service, _, _ := installedService(t)
+	if got := service.FontSet(); got != fonts.DefaultSet {
+		t.Fatalf("FontSet() = %q, want %q", got, fonts.DefaultSet)
+	}
+	var captured fonts.Options
+	service.installFonts = func(_ context.Context, options fonts.Options,
+	) (fonts.Result, error) {
+		captured = options
+		return fonts.Result{State: fonts.State{Installed: true}}, nil
+	}
+	if _, err := service.InstallFonts(context.Background()); err != nil {
+		t.Fatalf("InstallFonts: %v", err)
+	}
+	if captured.Set != fonts.DefaultSet || len(captured.Assets) != 0 {
+		t.Fatalf("options = %+v", captured)
+	}
+	if err := service.SetFontSet(fonts.SetInter); err != nil {
+		t.Fatalf("SetFontSet: %v", err)
+	}
+	if got := service.Config().FontSet; got != fonts.SetInter {
+		t.Fatalf("config font_set = %q", got)
+	}
+	if got := service.FontSet(); got != fonts.SetInter {
+		t.Fatalf("FontSet() = %q", got)
+	}
+	if _, err := service.InstallFonts(context.Background()); err != nil {
+		t.Fatalf("InstallFonts after switch: %v", err)
+	}
+	if captured.Set != fonts.SetInter {
+		t.Fatalf("options.Set = %q, want %q", captured.Set, fonts.SetInter)
+	}
+	resolved, ok := fonts.LookupSet(captured.Set)
+	if !ok || resolved.Assets[0].Name != "Inter.ttf" {
+		t.Fatalf("set %q does not resolve to Inter.ttf", captured.Set)
+	}
+}
+
+func TestSetFontSetRejectsUnknownAndKeepsDefault(t *testing.T) {
+	service, _, _ := installedService(t)
+	if err := service.SetFontSet("bogus"); !errors.Is(err, ErrUnknownFontSet) {
+		t.Fatalf("SetFontSet error = %v, want ErrUnknownFontSet", err)
+	}
+	if got := service.Config().FontSet; got != "" {
+		t.Fatalf("config font_set = %q, want empty", got)
+	}
+	if got := service.FontSet(); got != fonts.DefaultSet {
+		t.Fatalf("FontSet() = %q", got)
+	}
+}
+
+func TestFontSetIgnoresHandEditedValue(t *testing.T) {
+	service, _, _ := installedService(t)
+	if err := service.store.Update(func(cfg *config.Config) error {
+		cfg.FontSet = "  INTER "
+		return nil
+	}); err != nil {
+		t.Fatalf("store.Update: %v", err)
+	}
+	if got := service.FontSet(); got != fonts.SetInter {
+		t.Fatalf("FontSet() = %q, want the normalized value", got)
+	}
+	if err := service.store.Update(func(cfg *config.Config) error {
+		cfg.FontSet = "removed-set"
+		return nil
+	}); err != nil {
+		t.Fatalf("store.Update: %v", err)
+	}
+	if got := service.FontSet(); got != fonts.DefaultSet {
+		t.Fatalf("FontSet() = %q, want the default for an unknown set", got)
+	}
+}
 
 func TestInstallFontsUsesOpenMWConfigDir(t *testing.T) {
 	service, workDir, _ := installedService(t)

@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"net"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -152,74 +151,6 @@ func (s *shell) showServerDialog(originalID string, profile config.Server) {
 	popup.Resize(fyne.NewSize(560, 430))
 	popup.Show()
 }
-
-func (s *shell) showSettings() {
-	tr := s.service.Translator()
-	cfg := s.service.Config()
-	paths := s.service.Paths()
-
-	morrowind := widget.NewEntry()
-	morrowind.SetText(cfg.MorrowindPath)
-	morrowind.SetPlaceHolder(".../Morrowind")
-
-	workDir := widget.NewEntry()
-	workDir.SetText(cfg.WorkDir)
-	workDir.SetPlaceHolder(paths.DataDir)
-
-	proton := widget.NewEntry()
-	proton.SetText(cfg.ProtonPath)
-	proton.SetPlaceHolder(".../Proton")
-
-	theme := widget.NewRadioGroup(themeLabels(tr), nil)
-	theme.Horizontal = true
-	theme.SetSelected(themeLabel(tr, cfg.Theme))
-
-	logHint := widget.NewLabel(tr.T(i18n.KeySettingsLogHint))
-	logHint.Wrapping = fyne.TextWrapWord
-	openLog := widget.NewButton(tr.T(i18n.KeySettingsOpenLog), s.showLogs)
-	hint := widget.NewLabel(tr.T(i18n.KeySettingsHint))
-	hint.Wrapping = fyne.TextWrapWord
-	items := []*widget.FormItem{
-		widget.NewFormItem(tr.T(i18n.KeySettingsTheme), theme),
-		widget.NewFormItem(tr.T(i18n.KeySettingsMorrowind), morrowind),
-		widget.NewFormItem(tr.T(i18n.KeySettingsWorkDir), workDir),
-	}
-	if runtime.GOOS == "linux" {
-		items = append(items, widget.NewFormItem(tr.T(i18n.KeySettingsProton), proton))
-	}
-	items = append(items,
-		widget.NewFormItem(tr.T(i18n.KeySettingsOpenLog), openLog),
-		widget.NewFormItem("", logHint),
-		widget.NewFormItem("", hint),
-	)
-	dialog.NewForm(
-		tr.T(i18n.KeySettingsTitle),
-		tr.T(i18n.KeyCommonSave),
-		tr.T(i18n.KeyCommonCancel),
-		items,
-		func(ok bool) {
-			if !ok {
-				return
-			}
-			protonPath := cfg.ProtonPath
-			if runtime.GOOS == "linux" {
-				protonPath = proton.Text
-			}
-			settings := s.settings()
-			settings.Theme = themeMode(tr, theme.Selected)
-			settings.MorrowindPath = morrowind.Text
-			settings.WorkDir = workDir.Text
-			settings.ProtonPath = protonPath
-			if err := s.service.UpdateSettings(settings); err != nil {
-				s.showError(err)
-				return
-			}
-			s.render()
-		},
-		s.window,
-	).Show()
-}
-
 func localizationLabel(tr *i18n.Translator, language string) string {
 	if language == locale.LanguageRussian {
 		return tr.T(i18n.KeyLanguageRussian)
@@ -237,34 +168,4 @@ func activeProfile(cfg config.Config) (config.Server, bool) {
 		return config.Server{}, false
 	}
 	return cfg.Servers[0], true
-}
-
-func themeLabels(tr *i18n.Translator) []string {
-	return []string{
-		tr.T(i18n.KeyThemeSystem),
-		tr.T(i18n.KeyThemeDark),
-		tr.T(i18n.KeyThemeLight),
-	}
-}
-
-func themeLabel(tr *i18n.Translator, mode string) string {
-	switch style.ParseMode(mode) {
-	case style.ModeDark:
-		return tr.T(i18n.KeyThemeDark)
-	case style.ModeLight:
-		return tr.T(i18n.KeyThemeLight)
-	default:
-		return tr.T(i18n.KeyThemeSystem)
-	}
-}
-
-func themeMode(tr *i18n.Translator, label string) string {
-	labels := themeLabels(tr)
-	modes := []string{config.ThemeSystem, config.ThemeDark, config.ThemeLight}
-	for index, candidate := range labels {
-		if candidate == label {
-			return modes[index]
-		}
-	}
-	return config.ThemeSystem
 }

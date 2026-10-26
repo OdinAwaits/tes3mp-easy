@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -266,6 +267,40 @@ func TestServerValidationDoesNotLeakPassword(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), server.Password) {
 		t.Fatalf("error leaks password: %v", err)
+	}
+}
+
+func TestVoiceoverPreference(t *testing.T) {
+	cfg := Default()
+	if !cfg.VoiceoverEnabled() {
+		t.Fatal("voiceover must default to enabled")
+	}
+	cfg.SetVoiceover(false)
+	if cfg.VoiceoverEnabled() {
+		t.Fatal("explicitly disabled voiceover is reported as enabled")
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if !strings.Contains(string(data), `"voiceover":false`) {
+		t.Fatalf("disabled voiceover is not persisted: %s", data)
+	}
+
+	cfg.Voiceover = nil
+	data, err = json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	if strings.Contains(string(data), "voiceover") {
+		t.Fatalf("unset voiceover must be omitted: %s", data)
+	}
+
+	cfg.SetVoiceover(true)
+	clone := cfg.Clone()
+	clone.SetVoiceover(false)
+	if !cfg.VoiceoverEnabled() {
+		t.Fatal("Clone shares the voiceover value with the original")
 	}
 }
 

@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	"github.com/Saagilat/tes3mp-easy/internal/config"
+	"github.com/Saagilat/tes3mp-easy/internal/fonts"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 	"github.com/Saagilat/tes3mp-easy/internal/locale"
 	"github.com/Saagilat/tes3mp-easy/internal/mods"
+	"github.com/Saagilat/tes3mp-easy/internal/openmwcfg"
 	"github.com/Saagilat/tes3mp-easy/internal/tes3mp"
 )
 
@@ -18,14 +20,14 @@ func TestRunRejectsNilService(t *testing.T) {
 
 func TestAppMenuHasGlobalActions(t *testing.T) {
 	menu := (&shell{}).appMenu(i18n.New(i18n.English))
-	want := []string{"Setup", "Localization", "Client log", "Settings", "About"}
+	want := []string{"Language", "Theme", "Client log", "Copy report", "About"}
 	var got []string
 	for _, item := range menu.Items {
 		if item.IsSeparator {
 			continue
 		}
-		if item.Action == nil {
-			t.Errorf("menu item %q has no action", item.Label)
+		if item.Action == nil && item.ChildMenu == nil {
+			t.Errorf("menu item %q has no action and no submenu", item.Label)
 		}
 		got = append(got, item.Label)
 	}
@@ -36,6 +38,10 @@ func TestAppMenuHasGlobalActions(t *testing.T) {
 		if got[index] != want[index] {
 			t.Fatalf("appMenu labels = %q, want %q", got, want)
 		}
+	}
+	theme := menu.Items[1]
+	if theme.ChildMenu == nil || len(theme.ChildMenu.Items) != 3 {
+		t.Fatalf("theme submenu has %v items, want 3", theme.ChildMenu)
 	}
 }
 
@@ -103,15 +109,58 @@ func TestPlayButtonLabel(t *testing.T) {
 	}
 }
 
-func TestThemeMode(t *testing.T) {
+func TestThemeMenuItems(t *testing.T) {
 	translator := i18n.New(i18n.English)
-	for _, mode := range []string{config.ThemeSystem, config.ThemeDark, config.ThemeLight} {
-		if got := themeMode(translator, themeLabel(translator, mode)); got != mode {
-			t.Errorf("themeMode(%q) = %q", mode, got)
-		}
+	applied := ""
+	dark := newThemeMenuItem(translator, i18n.KeyThemeDark, config.ThemeDark,
+		config.ThemeLight, func(mode string) { applied = mode })
+	if dark.Label != "Amber dark" {
+		t.Fatalf("dark label = %q", dark.Label)
 	}
-	if got := themeMode(translator, "unknown"); got != config.ThemeSystem {
-		t.Errorf("themeMode(unknown) = %q", got)
+	if dark.Checked {
+		t.Fatal("dark item is checked while the current theme is light")
+	}
+	if dark.Action == nil {
+		t.Fatal("dark item has no action")
+	}
+	dark.Action()
+	if applied != config.ThemeDark {
+		t.Fatalf("dark action applied %q", applied)
+	}
+
+	system := newThemeMenuItem(translator, i18n.KeyThemeSystem,
+		config.ThemeSystem, config.ThemeSystem, func(string) {})
+	if !system.Checked {
+		t.Fatal("system item is not checked while the current theme is system")
+	}
+}
+
+func TestRailInstallLabel(t *testing.T) {
+	translator := i18n.New(i18n.English)
+	if got := railInstallLabel(translator, 0); got != "Installation" {
+		t.Fatalf("railInstallLabel(0) = %q", got)
+	}
+	if got := railInstallLabel(translator, 2); got != "Installation · 2" {
+		t.Fatalf("railInstallLabel(2) = %q", got)
+	}
+}
+
+func TestCountIssues(t *testing.T) {
+	ready := installStatus{ready: true}
+	pending := installStatus{}
+	tests := []struct {
+		name     string
+		statuses []installStatus
+		want     int
+	}{
+		{name: "empty", want: 0},
+		{name: "all ready", statuses: []installStatus{ready, ready}, want: 0},
+		{name: "mixed", statuses: []installStatus{ready, pending, pending}, want: 2},
+	}
+	for _, test := range tests {
+		if got := countIssues(test.statuses...); got != test.want {
+			t.Errorf("%s: countIssues() = %d, want %d", test.name, got, test.want)
+		}
 	}
 }
 
@@ -134,22 +183,58 @@ func TestLocalizationNeedsInstall(t *testing.T) {
 		name     string
 		state    locale.State
 		language string
+		voices   bool
 		want     bool
 	}{
-		{name: "not installed", language: locale.LanguageRussian, want: true},
+		{name: "not installed", language: locale.LanguageRussian, voices: true,
+			want: true},
 		{name: "installed with voiceover", language: locale.LanguageRussian,
+			voices: true,
 			state: locale.State{Installed: true, Language: locale.LanguageRussian,
 				Voiceover: true}, want: false},
 		{name: "installed without voiceover", language: locale.LanguageRussian,
+			voices: true,
+			state:  locale.State{Installed: true, Language: locale.LanguageRussian},
+			want:   true},
+		{name: "text only matches request", language: locale.LanguageRussian,
 			state: locale.State{Installed: true, Language: locale.LanguageRussian},
-			want:  true},
+			want:  false},
+		{name: "voiceover must be removed", language: locale.LanguageRussian,
+			state: locale.State{Installed: true, Language: locale.LanguageRussian,
+				Voiceover: true}, want: true},
 		{name: "different package", language: locale.LanguageRussian,
+			voices: true,
 			state: locale.State{Installed: true, Language: "other",
 				Voiceover: true}, want: true},
 	}
 	for _, test := range tests {
-		if got := localizationNeedsInstall(test.state, test.language); got != test.want {
+		if got := localizationNeedsInstall(test.state, test.language,
+			test.voices); got != test.want {
 			t.Errorf("%s: localizationNeedsInstall() = %t, want %t",
+				test.name, got, test.want)
+		}
+	}
+}
+
+func TestLocalizationInstallLabel(t *testing.T) {
+	translator := i18n.New(i18n.English)
+	russian := localizationLabel(translator, locale.LanguageRussian)
+	tests := []struct {
+		name  string
+		state locale.State
+		want  string
+	}{
+		{name: "text",
+			state: locale.State{Installed: true, Language: locale.LanguageRussian},
+			want:  russian},
+		{name: "voiceover",
+			state: locale.State{Installed: true, Language: locale.LanguageRussian,
+				Voiceover: true},
+			want: russian + " + voiceover"},
+	}
+	for _, test := range tests {
+		if got := localizationInstallLabel(translator, test.state); got != test.want {
+			t.Errorf("%s: localizationInstallLabel() = %q, want %q",
 				test.name, got, test.want)
 		}
 	}
@@ -309,5 +394,93 @@ func TestLocaleProgress(t *testing.T) {
 			locale.Progress{Stage: stage}); got != want {
 			t.Fatalf("localeProgressLabel(%q) = %q, want %q", stage, got, want)
 		}
+	}
+}
+
+func TestWizardStepsAreTranslatedAndOrdered(t *testing.T) {
+	translator := i18n.New(i18n.English)
+	want := []wizardStep{
+		wizardMorrowind, wizardTES3MP, wizardFonts, wizardLocalization,
+		wizardUIVideo, wizardReady,
+	}
+	if int(wizardStepCount) != len(want) {
+		t.Fatalf("wizard has %d steps, want %d", wizardStepCount, len(want))
+	}
+	seen := make(map[string]wizardStep, len(want))
+	for _, step := range want {
+		key := wizardTitleKey(step)
+		if key == "" {
+			t.Fatalf("step %d has no title key", step)
+		}
+		if got := translator.T(key); got == key {
+			t.Fatalf("step %d title %q is not translated", step, key)
+		}
+		if other, ok := seen[key]; ok {
+			t.Fatalf("steps %d and %d share title %q", other, step, key)
+		}
+		seen[key] = step
+	}
+}
+
+func TestFontSetChooserMapsLabelsToIDs(t *testing.T) {
+	tr := i18n.New(i18n.English)
+	var changed []string
+	chooser := newFontSetChooser(tr, fonts.SetPlex, func(id string) {
+		changed = append(changed, id)
+	})
+	if got := chooser.selected(); got != fonts.SetPlex {
+		t.Fatalf("selected() = %q, want %q", got, fonts.SetPlex)
+	}
+	if len(changed) != 0 {
+		t.Fatalf("preselect fired the callback: %q", changed)
+	}
+	chooser.group.SetSelected(fontSetLabel(tr, fonts.SetInter))
+	if got := chooser.selected(); got != fonts.SetInter {
+		t.Fatalf("selected() = %q, want %q", got, fonts.SetInter)
+	}
+	if len(changed) != 1 || changed[0] != fonts.SetInter {
+		t.Fatalf("callback = %q, want [%s]", changed, fonts.SetInter)
+	}
+	for _, id := range fonts.SetIDs() {
+		if _, ok := fontSetLabelKeys[id]; !ok {
+			t.Fatalf("set %s has no translation", id)
+		}
+		if label := fontSetLabel(tr, id); label == "" || label == id {
+			t.Fatalf("fontSetLabel(%s) = %q", id, label)
+		}
+	}
+	if got := fontSetLabel(tr, "bogus"); got != fonts.DefaultSet {
+		t.Fatalf("fontSetLabel(bogus) = %q, want the default id", got)
+	}
+}
+
+func TestUIVideoFormParsesAndValidates(t *testing.T) {
+	form := newUIVideoForm(openmwcfg.Settings{
+		TTFResolution:  20,
+		FontSize:       18,
+		ScalingFactor:  1.25,
+		FramerateLimit: 120,
+	})
+	values, err := form.values()
+	if err != nil {
+		t.Fatalf("values: %v", err)
+	}
+	if values.TTFResolution != 20 || values.FontSize != 18 ||
+		values.ScalingFactor != 1.25 || values.FramerateLimit != 120 {
+		t.Fatalf("values = %+v", values)
+	}
+
+	form.framerate.SetText("unlimited")
+	if _, err := form.values(); err == nil {
+		t.Fatal("a non-numeric framerate was accepted")
+	}
+	form.framerate.SetText("1000")
+	if _, err := form.values(); err == nil {
+		t.Fatal("a framerate above the limit was accepted")
+	}
+	form.framerate.SetText("60")
+	form.fontSize.SetText("16")
+	if _, err := form.values(); err != nil {
+		t.Fatalf("values: %v", err)
 	}
 }

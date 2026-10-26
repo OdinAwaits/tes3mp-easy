@@ -13,6 +13,7 @@ import (
 
 	"github.com/Saagilat/tes3mp-easy/internal/launcher"
 	"github.com/Saagilat/tes3mp-easy/internal/morrowind"
+	"github.com/Saagilat/tes3mp-easy/internal/openmwcfg"
 	"github.com/Saagilat/tes3mp-easy/internal/serverapi"
 )
 
@@ -21,6 +22,7 @@ var (
 	ErrMorrowindNotConfigured   = errors.New("Morrowind folder is not configured")
 	ErrModsNotInstalled         = errors.New("server mods are not installed")
 	ErrLocalizationNotInstalled = errors.New("Russian localization is selected but not installed")
+	ErrUnknownFontSet           = errors.New("unknown font set")
 	ErrWorkDir                  = errors.New("client work directory is invalid")
 	ErrGameExited               = errors.New("TES3MP exited unexpectedly")
 )
@@ -126,6 +128,8 @@ func Explain(err error) Failure {
 		failure.Kind, failure.Code = FailureCertificate, CodeCertificate
 	case errors.Is(err, context.DeadlineExceeded):
 		failure.Kind, failure.Code = FailureTimeout, CodeTimeout
+	case errors.Is(err, openmwcfg.ErrInvalid):
+		failure.Kind, failure.Code = FailureGameConfig, CodeGameConfig
 	case isFilesystemError(err):
 		failure.Kind, failure.Code = FailureFileSystem, CodeFileSystem
 	case isNetworkError(err):

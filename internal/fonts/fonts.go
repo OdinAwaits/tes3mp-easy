@@ -31,8 +31,8 @@ type Asset struct {
 	SHA256 string
 }
 
-// Assets is the fixed Noto Sans / Noto Serif / Roboto Mono set used by the
-// legacy client. All three are OFL-licensed Google Fonts.
+// Assets is the default set (SetNoto): Noto Sans, Noto Serif and Roboto Mono.
+// All three are OFL-licensed Google Fonts; the other sets live in sets.go.
 var Assets = []Asset{
 	{
 		Name:   "NotoSans.ttf",
@@ -73,6 +73,9 @@ type Progress struct {
 type Options struct {
 	ConfigDir string
 	CacheDir  string
+	// Set selects the catalog entry. An empty value means DefaultSet; Assets
+	// overrides it for a custom set (tests).
+	Set       string
 	Assets    []Asset
 	Client    *http.Client
 	Attempts  int
@@ -83,6 +86,8 @@ type Options struct {
 
 // State describes the installed font set.
 type State struct {
+	// Set is the resolved catalog identifier the state was checked against.
+	Set       string
 	FontsDir  string
 	XMLPath   string
 	Installed bool
@@ -98,12 +103,13 @@ type Result struct {
 	Warnings   []string
 }
 
-// DefaultOptions returns production options for an OpenMW config directory.
+// DefaultOptions returns production options for an OpenMW config directory. The
+// asset list is resolved from Set by Install, so the caller only chooses the
+// catalog entry.
 func DefaultOptions(configDir, cacheDir string) Options {
 	return Options{
 		ConfigDir: configDir,
 		CacheDir:  cacheDir,
-		Assets:    append([]Asset(nil), Assets...),
 		Attempts:  3,
 		RetryWait: time.Second,
 	}
@@ -170,6 +176,7 @@ func Install(ctx context.Context, options Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	state.Set = options.Set
 	if state.Installed {
 		options.report(Progress{Stage: StageVerifying})
 		xmlPath := filepath.Join(fontsDir, XMLName)
@@ -177,6 +184,7 @@ func Install(ctx context.Context, options Options) (Result, error) {
 			return Result{}, fmt.Errorf("write %s: %w", XMLName, err)
 		}
 		state.XMLPath = xmlPath
+		removeStaleFonts(fontsDir, options.Assets)
 	} else {
 		for _, asset := range options.Assets {
 			path := filepath.Join(fontsDir, asset.Name)
@@ -190,9 +198,16 @@ func Install(ctx context.Context, options Options) (Result, error) {
 	return result, nil
 }
 
-// Inspect verifies the three pinned font files in fontsDir.
-func Inspect(fontsDir string) (State, error) {
-	return inspect(fontsDir, Assets)
+// InspectSet verifies the files of one catalog set. Files of another set count
+// as missing, which is what the Installation row reports after a set switch.
+func InspectSet(fontsDir, setID string) (State, error) {
+	set := ResolveSet(setID)
+	state, err := inspect(fontsDir, set.Assets)
+	if err != nil {
+		return State{}, err
+	}
+	state.Set = set.ID
+	return state, nil
 }
 
 func inspect(fontsDir string, assets []Asset) (State, error) {
@@ -230,8 +245,12 @@ func inspect(fontsDir string, assets []Asset) (State, error) {
 }
 
 func (o Options) withDefaults() Options {
+	o.Set = strings.ToLower(strings.TrimSpace(o.Set))
+	if o.Set == "" {
+		o.Set = DefaultSet
+	}
 	if len(o.Assets) == 0 {
-		o.Assets = append([]Asset(nil), Assets...)
+		o.Assets = append([]Asset(nil), ResolveSet(o.Set).Assets...)
 	}
 	if o.Attempts == 0 {
 		o.Attempts = 3
@@ -240,6 +259,9 @@ func (o Options) withDefaults() Options {
 }
 
 func (o Options) validate() error {
+	if !KnownSet(o.Set) {
+		return fmt.Errorf("unknown font set %q", o.Set)
+	}
 	if strings.TrimSpace(o.ConfigDir) == "" {
 		return errors.New("OpenMW config directory is empty")
 	}
@@ -289,6 +311,29 @@ func (o Options) validate() error {
 func (o Options) report(progress Progress) {
 	if o.Progress != nil {
 		o.Progress(progress)
+	}
+}
+
+// removeStaleFonts deletes the files of a previous set after a successful
+// install. Only names the launcher itself writes are considered, so a font the
+// user dropped into Fonts/ is never touched. A failed removal is ignored: the
+// generated openmw_font.xml already stopped referencing the file.
+func removeStaleFonts(fontsDir string, assets []Asset) {
+	keep := make(map[string]struct{}, len(assets))
+	for _, asset := range assets {
+		keep[strings.ToLower(asset.Name)] = struct{}{}
+	}
+	for _, name := range ManagedAssetNames() {
+		if _, ok := keep[strings.ToLower(name)]; ok {
+			continue
+		}
+		path := filepath.Join(fontsDir, name)
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 ||
+			!info.Mode().IsRegular() {
+			continue
+		}
+		_ = os.Remove(path)
 	}
 }
 

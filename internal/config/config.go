@@ -62,7 +62,13 @@ type Config struct {
 	MorrowindPath string `json:"morrowind_path,omitempty"`
 	WorkDir       string `json:"work_dir,omitempty"`
 	ProtonPath    string `json:"proton_path,omitempty"`
-	SkipFonts     bool   `json:"skip_fonts,omitempty"`
+	// FontSet selects one of the fixed font packs; empty means the default.
+	FontSet   string `json:"font_set,omitempty"`
+	SkipFonts bool   `json:"skip_fonts,omitempty"`
+	// Voiceover remembers whether the next localization install fetches the
+	// optional Russian voice archive. Nil means the client default (enabled);
+	// an explicit false is stored so the choice survives a restart.
+	Voiceover *bool `json:"voiceover,omitempty"`
 
 	SetupComplete bool     `json:"setup_complete,omitempty"`
 	ActiveServer  string   `json:"active_server,omitempty"`
@@ -103,6 +109,7 @@ func (c *Config) Normalize() {
 	c.MorrowindPath = strings.TrimSpace(c.MorrowindPath)
 	c.WorkDir = strings.TrimSpace(c.WorkDir)
 	c.ProtonPath = strings.TrimSpace(c.ProtonPath)
+	c.FontSet = strings.ToLower(strings.TrimSpace(c.FontSet))
 	c.ActiveServer = strings.TrimSpace(c.ActiveServer)
 	for index := range c.Servers {
 		// Legacy game_language and localization fields are no longer part of
@@ -153,7 +160,24 @@ func (c Config) Validate() error {
 func (c Config) Clone() Config {
 	clone := c
 	clone.Servers = append([]Server(nil), c.Servers...)
+	if c.Voiceover != nil {
+		voiceover := *c.Voiceover
+		clone.Voiceover = &voiceover
+	}
 	return clone
+}
+
+// VoiceoverEnabled reports whether a localization install should fetch the
+// optional voice archive. A configuration without the field predates the
+// option, when every install included the voices, so enabled is the default.
+func (c Config) VoiceoverEnabled() bool {
+	return c.Voiceover == nil || *c.Voiceover
+}
+
+// SetVoiceover stores an explicit voiceover preference.
+func (c *Config) SetVoiceover(enabled bool) {
+	value := enabled
+	c.Voiceover = &value
 }
 
 func (c Config) hasServer(id string) bool {

@@ -9,21 +9,35 @@ import (
 // XMLName is the generated MyGUI resource file in the OpenMW config directory.
 const XMLName = "openmw_font.xml"
 
-// ConfigLines returns the fallback mappings added to openmw.cfg. The resource
-// names match openmw_font.xml and the values are the font family names.
+// ConfigLines returns the fallback mappings of the default set, added to
+// openmw.cfg. The resource names match openmw_font.xml and the values are the
+// font family names.
 func ConfigLines() []string {
-	return []string{
-		"fallback=Fonts_Font_0," + strings.TrimSuffix(Assets[0].Name, ".ttf"),
-		"fallback=Fonts_Font_1," + strings.TrimSuffix(Assets[1].Name, ".ttf"),
-		"fallback=Fonts_Font_2," + strings.TrimSuffix(Assets[2].Name, ".ttf"),
-	}
+	return ConfigLinesFor(DefaultSet)
 }
 
-// FontXML renders openmw_font.xml. The ranges are the legacy Latin + Cyrillic
-// set: the main font covers text, the serif font the Daedric slots and the
-// monospace font the console.
+// ConfigLinesFor returns the fallback mappings of one catalog set. An unknown
+// identifier falls back to the default set, like ResolveSet.
+func ConfigLinesFor(setID string) []string {
+	assets := ResolveSet(setID).Assets
+	lines := make([]string, 0, len(assets))
+	for index, asset := range assets {
+		lines = append(lines, fmt.Sprintf("fallback=Fonts_Font_%d,%s", index,
+			strings.TrimSuffix(asset.Name, ".ttf")))
+	}
+	return lines
+}
+
+// FontXML renders openmw_font.xml for the default set. The ranges are the
+// legacy Latin + Cyrillic set: the main font covers text, the serif font the
+// Daedric slots and the monospace font the console.
 func FontXML() []byte {
 	return fontXML(Assets)
+}
+
+// FontXMLFor renders openmw_font.xml for one catalog set.
+func FontXMLFor(setID string) []byte {
+	return fontXML(ResolveSet(setID).Assets)
 }
 
 func fontXML(assets []Asset) []byte {
@@ -62,25 +76,35 @@ func fontXML(assets []Asset) []byte {
 	return []byte(builder.String())
 }
 
-// UpdateConfig replaces the three Fonts_Font_* fallback lines and leaves every
-// other openmw.cfg line untouched. It is idempotent.
+// UpdateConfig replaces the three Fonts_Font_* fallback lines of the default
+// set and leaves every other openmw.cfg line untouched. It is idempotent.
 func UpdateConfig(data []byte) []byte {
+	return UpdateConfigFor(data, DefaultSet)
+}
+
+// UpdateConfigFor is UpdateConfig for one catalog set: a set switch replaces the
+// family names instead of appending a second mapping.
+func UpdateConfigFor(data []byte, setID string) []byte {
 	lines := splitConfig(data)
-	kept := make([]string, 0, len(lines)+len(ConfigLines()))
+	fallbacks := ConfigLinesFor(setID)
+	kept := make([]string, 0, len(lines)+len(fallbacks))
 	for _, line := range lines {
 		key := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(key, "fallback=Fonts_Font_0,"),
-			key == "fallback=Fonts_Font_0",
-			strings.HasPrefix(key, "fallback=Fonts_Font_1,"),
-			key == "fallback=Fonts_Font_1",
-			strings.HasPrefix(key, "fallback=Fonts_Font_2,"),
-			key == "fallback=Fonts_Font_2":
+		managed := false
+		for index := range fallbacks {
+			prefix := fmt.Sprintf("fallback=Fonts_Font_%d,", index)
+			if strings.HasPrefix(key, prefix) ||
+				key == strings.TrimSuffix(prefix, ",") {
+				managed = true
+				break
+			}
+		}
+		if managed {
 			continue
 		}
 		kept = append(kept, line)
 	}
-	kept = append(kept, ConfigLines()...)
+	kept = append(kept, fallbacks...)
 	return joinConfig(kept)
 }
 

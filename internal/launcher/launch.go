@@ -36,8 +36,10 @@ type LaunchOptions struct {
 	LocalizationRoot      string
 	LocalizationDataFiles string
 	Fonts                 bool
-	Now                   func() time.Time
-	Executor              Executor
+	// FontSet selects the font pack the fallback lines point at.
+	FontSet  string
+	Now      func() time.Time
+	Executor Executor
 }
 
 // Result describes a prepared and started process.
@@ -115,6 +117,7 @@ func launchExecutable(ctx context.Context, options LaunchOptions,
 		ProfilePath:           options.ProfilePath,
 		Encoding:              options.Encoding,
 		Fonts:                 options.Fonts,
+		FontSet:               options.FontSet,
 		MorrowindEncoding:     env.Morrowind.Encoding,
 		LocalizationRoot:      options.LocalizationRoot,
 		LocalizationDataFiles: options.LocalizationDataFiles,

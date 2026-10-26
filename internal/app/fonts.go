@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/fonts"
 	"github.com/Saagilat/tes3mp-easy/internal/launcher"
 )
@@ -29,8 +30,8 @@ func (s *Service) OpenMWConfigDir() (string, error) {
 	})
 }
 
-// InstallFonts downloads the fixed font set into the OpenMW config directory.
-// A failed download is returned as warnings, not as a launch error.
+// InstallFonts downloads the selected font set into the OpenMW config
+// directory. A failed download is returned as warnings, not as a launch error.
 func (s *Service) InstallFonts(ctx context.Context) (fonts.Result, error) {
 	if s == nil {
 		return fonts.Result{}, errors.New("app service is nil")
@@ -44,6 +45,7 @@ func (s *Service) InstallFonts(ctx context.Context) (fonts.Result, error) {
 		return fonts.Result{}, err
 	}
 	options := fonts.DefaultOptions(configDir, cacheDir)
+	options.Set = s.FontSet()
 	if s.httpClient != nil {
 		options.Client = s.httpClient
 	}
@@ -65,13 +67,43 @@ func (s *Service) InstallFonts(ctx context.Context) (fonts.Result, error) {
 	return result, nil
 }
 
-// FontsState verifies the files in the active OpenMW Fonts directory.
+// FontsState verifies the files of the selected set in the active OpenMW Fonts
+// directory. Files of another set count as missing.
 func (s *Service) FontsState() (fonts.State, error) {
 	configDir, err := s.OpenMWConfigDir()
 	if err != nil {
 		return fonts.State{}, err
 	}
-	return fonts.Inspect(filepath.Join(configDir, "Fonts"))
+	return fonts.InspectSet(filepath.Join(configDir, "Fonts"), s.FontSet())
+}
+
+// FontSet returns the configured font set. An empty or unknown font_set in
+// config.json resolves to fonts.DefaultSet, so old configs keep working.
+func (s *Service) FontSet() string {
+	if s == nil {
+		return fonts.DefaultSet
+	}
+	return fonts.ResolveSet(s.Config().FontSet).ID
+}
+
+// SetFontSet stores the chosen set. The files are installed by InstallFonts;
+// until then FontsState reports the new set as missing.
+func (s *Service) SetFontSet(id string) error {
+	if s == nil {
+		return errors.New("app service is nil")
+	}
+	set, ok := fonts.LookupSet(id)
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownFontSet, strings.TrimSpace(id))
+	}
+	if err := s.store.Update(func(cfg *config.Config) error {
+		cfg.FontSet = set.ID
+		return nil
+	}); err != nil {
+		return err
+	}
+	s.LogInfof("font set: %s", set.ID)
+	return nil
 }
 
 func (s *Service) absoluteCacheDir() (string, error) {

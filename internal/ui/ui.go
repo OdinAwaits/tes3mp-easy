@@ -7,16 +7,12 @@ package ui
 
 import (
 	"fmt"
-	"net"
-	"net/url"
-	"strconv"
 	"sync"
 
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -53,6 +49,15 @@ func Run(service *app.Service) error {
 	return nil
 }
 
+// screenID names one section of the navigation rail.
+type screenID string
+
+const (
+	screenPlay    screenID = "play"
+	screenInstall screenID = "installation"
+	screenCS      screenID = "openmw-cs"
+)
+
 type shell struct {
 	service *app.Service
 	window  fyne.Window
@@ -60,6 +65,17 @@ type shell struct {
 	statusMu sync.Mutex
 	statuses map[string]serverStatus
 	checking map[string]bool
+
+	// screen is the section shown in the body; the rail switches it.
+	screen screenID
+	// body holds the current screen; render replaces its only child.
+	body *fyne.Container
+	// rail maps a section to its button so the active state can be synced.
+	rail map[screenID]*widget.Button
+	// addButton is only relevant on the Play screen.
+	addButton *widget.Button
+	// issues counts installation rows that still need an action.
+	issues int
 }
 
 func (s *shell) render() {
@@ -68,8 +84,8 @@ func (s *shell) render() {
 	s.window.SetTitle(tr.T(i18n.KeyAppTitle))
 	s.applyTheme(cfg.Theme)
 
+	s.body = container.NewStack()
 	header := container.NewBorder(nil, nil, s.brand(tr), s.headerActions(tr), nil)
-	body := s.serverList(tr, cfg)
 	footer := widget.NewLabelWithStyle(
 		tr.Tf(i18n.KeyFooterPath, s.service.ConfigPath()),
 		fyne.TextAlignLeading,
@@ -79,11 +95,94 @@ func (s *shell) render() {
 	content := container.NewBorder(
 		container.NewPadded(header),
 		container.NewPadded(footer),
+		container.NewPadded(s.railContent(tr)),
 		nil,
-		nil,
-		container.NewStack(container.NewVScroll(container.NewPadded(body))),
+		s.body,
 	)
 	s.window.SetContent(content)
+	s.showScreen(s.screen)
+	s.refreshInstallationIssues()
+}
+
+// showScreen swaps the body and keeps the rail in sync with the selection.
+func (s *shell) showScreen(id screenID) {
+	if id != screenInstall && id != screenCS {
+		id = screenPlay
+	}
+	s.screen = id
+	tr := s.service.Translator()
+	var screen fyne.CanvasObject
+	switch id {
+	case screenInstall:
+		screen = s.installScreen(tr)
+	case screenCS:
+		screen = s.editorScreen(tr)
+	default:
+		screen = s.playScreen(tr)
+	}
+	if s.body != nil {
+		s.body.Objects = []fyne.CanvasObject{
+			container.NewVScroll(container.NewPadded(screen)),
+		}
+		s.body.Refresh()
+	}
+	if s.addButton != nil {
+		if id == screenPlay {
+			s.addButton.Show()
+		} else {
+			s.addButton.Hide()
+		}
+	}
+	s.syncRail()
+}
+
+func (s *shell) railContent(tr *i18n.Translator) fyne.CanvasObject {
+	s.rail = map[screenID]*widget.Button{
+		screenPlay: s.railButton(tr.T(i18n.KeyRailPlay),
+			theme.MediaPlayIcon(), screenPlay),
+		screenInstall: s.railButton(railInstallLabel(tr, s.issues),
+			theme.DownloadIcon(), screenInstall),
+		screenCS: s.railButton(tr.T(i18n.KeyRailOpenMWCS),
+			theme.DocumentCreateIcon(), screenCS),
+	}
+	buttons := container.NewVBox(s.rail[screenPlay], s.rail[screenInstall],
+		s.rail[screenCS])
+	note := style.MutedLabel(tr.T(i18n.KeyRailMenuNote))
+	return container.NewBorder(nil, note, nil, nil, buttons)
+}
+
+func (s *shell) railButton(label string, icon fyne.Resource,
+	id screenID,
+) *widget.Button {
+	button := widget.NewButtonWithIcon(label, icon, func() {
+		s.showScreen(id)
+	})
+	button.Alignment = widget.ButtonAlignLeading
+	return button
+}
+
+func (s *shell) syncRail() {
+	tr := s.service.Translator()
+	for id, button := range s.rail {
+		if id == screenInstall {
+			button.SetText(railInstallLabel(tr, s.issues))
+		}
+		if id == s.screen {
+			button.Importance = widget.HighImportance
+		} else {
+			button.Importance = widget.MediumImportance
+		}
+		button.Refresh()
+	}
+}
+
+// railInstallLabel shows how many installation rows still need attention.
+func railInstallLabel(tr *i18n.Translator, issues int) string {
+	label := tr.T(i18n.KeyRailInstall)
+	if issues <= 0 {
+		return label
+	}
+	return tr.Tf(i18n.KeyRailInstallBadge, label, issues)
 }
 
 func (s *shell) applyTheme(mode string) {
@@ -104,6 +203,7 @@ func (s *shell) headerActions(tr *i18n.Translator) fyne.CanvasObject {
 		s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
 	})
 	add.Importance = widget.HighImportance
+	s.addButton = add
 	menu := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonMenu), theme.MenuIcon(), nil)
 	menu.OnTapped = func() {
 		widget.ShowPopUpMenuAtRelativePosition(s.appMenu(tr), s.window.Canvas(),
@@ -114,181 +214,60 @@ func (s *shell) headerActions(tr *i18n.Translator) fyne.CanvasObject {
 
 // appMenu contains global actions. None of them belong to a server profile.
 func (s *shell) appMenu(tr *i18n.Translator) *fyne.Menu {
+	themeItem := fyne.NewMenuItem(tr.T(i18n.KeySettingsTheme), nil)
+	themeItem.ChildMenu = fyne.NewMenu("",
+		s.themeMenuItem(tr, i18n.KeyThemeSystem, config.ThemeSystem),
+		s.themeMenuItem(tr, i18n.KeyThemeDark, config.ThemeDark),
+		s.themeMenuItem(tr, i18n.KeyThemeLight, config.ThemeLight),
+	)
 	return fyne.NewMenu("",
-		fyne.NewMenuItem(tr.T(i18n.KeyCommonSetup), s.showSetup),
-		fyne.NewMenuItem(tr.T(i18n.KeyLocaleTitle), s.showLanguageWizard),
+		fyne.NewMenuItem(tr.T(i18n.KeyCommonLanguage), s.showLanguageWizard),
+		themeItem,
 		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem(tr.T(i18n.KeyLogsTitle), s.showLogs),
-		fyne.NewMenuItem(tr.T(i18n.KeyCommonSettings), s.showSettings),
+		fyne.NewMenuItem(tr.T(i18n.KeyMenuCopyReport), s.copyReport),
+		fyne.NewMenuItemSeparator(),
 		fyne.NewMenuItem(tr.T(i18n.KeyCommonAbout), s.showAbout),
 	)
 }
 
-func (s *shell) serverList(tr *i18n.Translator, cfg config.Config) fyne.CanvasObject {
-	if len(cfg.Servers) == 0 {
-		title := style.CenteredHeading(tr.T(i18n.KeyServerEmptyTitle))
-		hint := style.CenteredMutedLabel(tr.T(i18n.KeyServerEmptyHint))
-		add := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonAdd), theme.ContentAddIcon(), func() {
-			s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
-		})
-		add.Importance = widget.HighImportance
-		content := container.NewVBox(
-			title,
-			hint,
-			container.NewCenter(add),
-		)
-		return container.NewCenter(style.Card(content, true))
-	}
-
-	rows := make([]fyne.CanvasObject, 0, len(cfg.Servers)+1)
-	activeID := cfg.ActiveServer
-	if activeID == "" && len(cfg.Servers) == 1 {
-		activeID = cfg.Servers[0].ID
-	}
-	for _, profile := range cfg.Servers {
-		rows = append(rows, s.serverCard(tr, activeID, profile))
-	}
-	rows = append(rows, container.NewCenter(widget.NewButtonWithIcon(
-		tr.T(i18n.KeyCommonAdd), theme.ContentAddIcon(), func() {
-			s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
-		})))
-	return container.NewVBox(rows...)
+func (s *shell) themeMenuItem(tr *i18n.Translator, labelKey, mode string) *fyne.MenuItem {
+	return newThemeMenuItem(tr, labelKey, mode, s.service.Config().Theme,
+		s.setTheme)
 }
 
-func (s *shell) serverCard(tr *i18n.Translator, activeID string,
-	profile config.Server,
-) fyne.CanvasObject {
-	active := profile.ID == activeID
-	titleText := profile.Name
-	if active {
-		titleText += "  ·  " + tr.T(i18n.KeyServerActive)
-	}
-	title := style.Heading(titleText)
-	address := widget.NewLabelWithStyle(
-		serverEndpoint(profile),
-		fyne.TextAlignLeading,
-		fyne.TextStyle{Monospace: true},
-	)
-	address.Importance = widget.LowImportance
-
-	statusLabel := widget.NewLabel(s.statusText(profile.ID))
-	statusLabel.Wrapping = fyne.TextWrapWord
-	statusLabel.Importance = s.statusImportance(profile.ID)
-
-	modsInstalled := false
-	if state, err := s.service.ModsState(profile.ID); err == nil {
-		modsInstalled = state.Installed
-	}
-	play := widget.NewButtonWithIcon(
-		playButtonLabel(tr, modsInstalled, s.statusFor(profile.ID).NeedsUpdate),
-		theme.MediaPlayIcon(),
-		func() { s.playServer(profile) },
-	)
-	play.Importance = widget.HighImportance
-	more := widget.NewButton(tr.T(i18n.KeyServerMore), func() {
-		s.showServerActions(profile)
+// newThemeMenuItem keeps the theme menu and its checked state testable without
+// a running service.
+func newThemeMenuItem(tr *i18n.Translator, labelKey, mode, current string,
+	apply func(string),
+) *fyne.MenuItem {
+	item := fyne.NewMenuItem(tr.T(labelKey), func() {
+		apply(mode)
 	})
-
-	var panel fyne.CanvasObject = layout.NewSpacer()
-	if effective := profile.EffectivePanelURL(); effective != "" {
-		if parsed, err := url.Parse(effective); err == nil {
-			link := widget.NewHyperlink(tr.T(i18n.KeyServerPanel)+" · "+parsed.Host, parsed)
-			panel = link
-		}
-	}
-
-	details := container.NewBorder(nil, nil, nil, container.NewHBox(panel, play, more),
-		container.NewVBox(address, statusLabel))
-	content := container.NewVBox(title, details)
-	s.checkServer(profile, statusLabel, play, modsInstalled)
-	return style.Card(content, active)
+	item.Checked = style.ParseMode(current) == style.ParseMode(mode)
+	return item
 }
 
-func playButtonLabel(tr *i18n.Translator, modsInstalled, needsUpdate bool) string {
-	switch {
-	case !modsInstalled:
-		return tr.T(i18n.KeyServerPlayDownload)
-	case needsUpdate:
-		return tr.T(i18n.KeyServerPlayUpdate)
-	default:
-		return tr.T(i18n.KeyCommonPlay)
+// setTheme persists the theme and re-renders the window with it.
+func (s *shell) setTheme(mode string) {
+	settings := s.settings()
+	settings.Theme = mode
+	if err := s.service.UpdateSettings(settings); err != nil {
+		s.showError(err)
+		return
 	}
+	s.applyTheme(mode)
+	s.render()
 }
 
-func serverEndpoint(profile config.Server) string {
-	address := config.NormalizeAddress(profile.Address)
-	if address == "" || profile.Port <= 0 {
-		return address
-	}
-	return net.JoinHostPort(address, strconv.Itoa(profile.Port))
-}
-
-func (s *shell) showServerActions(profile config.Server) {
+// copyReport copies the diagnostic report with the latest log lines.
+func (s *shell) copyReport() {
 	tr := s.service.Translator()
-	content := container.NewVBox(
-		style.Subheading(profile.Name),
-		style.MutedLabel(serverEndpoint(profile)),
-		widget.NewButton(tr.T(i18n.KeyServerOpenPanel), func() {
-			s.openPanel(profile)
-		}),
-		widget.NewButton(tr.T(i18n.KeyServerUpdateMods), func() {
-			s.showModsUpdate(profile)
-		}),
-		widget.NewButton(tr.T(i18n.KeyCommonAdvanced), func() {
-			s.showAdvanced(profile)
-		}),
-		widget.NewButton(tr.T(i18n.KeyCommonEdit), func() {
-			s.showServerDialog(profile.ID, profile)
-		}),
-		widget.NewButton(tr.T(i18n.KeyCommonDelete), func() {
-			s.confirmDelete(tr, profile)
-		}),
-	)
-	popup := dialog.NewCustom(tr.T(i18n.KeyServerActionsTitle),
-		tr.T(i18n.KeyCommonClose), content, s.window)
-	popup.Resize(fyne.NewSize(460, 420))
-	popup.Show()
-}
-
-func (s *shell) openPanel(profile config.Server) {
-	parsed, err := url.Parse(profile.EffectivePanelURL())
-	if err != nil {
-		s.showError(err)
-		return
-	}
-	if fyne.CurrentApp() == nil {
-		return
-	}
-	if err := fyne.CurrentApp().OpenURL(parsed); err != nil {
-		s.showError(err)
-	}
-}
-
-func (s *shell) confirmDelete(tr *i18n.Translator, profile config.Server) {
-	content := widget.NewLabel(tr.Tf(i18n.KeyServerDeleteBody, profile.Name))
-	content.Wrapping = fyne.TextWrapWord
-	confirm := dialog.NewCustomConfirm(
-		tr.T(i18n.KeyServerDeleteTitle),
-		tr.T(i18n.KeyCommonDelete),
-		tr.T(i18n.KeyCommonCancel),
-		content,
-		func(ok bool) {
-			if !ok {
-				return
-			}
-			if err := s.service.DeleteServer(profile.ID); err != nil {
-				s.showError(err)
-				return
-			}
-			s.statusMu.Lock()
-			delete(s.statuses, profile.ID)
-			delete(s.checking, profile.ID)
-			s.statusMu.Unlock()
-			s.render()
-		},
-		s.window,
-	)
-	confirm.Show()
+	lines, _ := s.service.ReadLogTail(app.TailLines)
+	report := s.service.DiagnosticReport(nil, lines)
+	s.window.Clipboard().SetContent(report)
+	dialog.ShowInformation(tr.T(i18n.KeyMenuCopyReport),
+		tr.T(i18n.KeyMenuReportCopied), s.window)
 }
 
 func (s *shell) showAbout() {

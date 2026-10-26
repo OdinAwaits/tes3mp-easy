@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/fonts"
 	"github.com/Saagilat/tes3mp-easy/internal/locale"
 )
@@ -56,7 +57,7 @@ func TestInstallLocalizationWiring(t *testing.T) {
 	}
 	var progressCalls int
 	result, err := service.InstallLocalization(context.Background(),
-		locale.LanguageRussian, func(locale.Progress) { progressCalls++ })
+		locale.LanguageRussian, true, func(locale.Progress) { progressCalls++ })
 	if err != nil {
 		t.Fatalf("InstallLocalization: %v", err)
 	}
@@ -96,7 +97,7 @@ func TestInstallLocalizationReportsFontFailureAsWarning(t *testing.T) {
 		return fonts.Result{}, os.ErrDeadlineExceeded
 	}
 	result, err := service.InstallLocalization(context.Background(),
-		locale.LanguageRussian, nil)
+		locale.LanguageRussian, true, nil)
 	if err != nil {
 		t.Fatalf("InstallLocalization: %v", err)
 	}
@@ -121,7 +122,7 @@ func TestInstallLocalizationFailureKeepsPreviousOverlay(t *testing.T) {
 		return fonts.Result{}, nil
 	}
 	if _, err := service.InstallLocalization(context.Background(),
-		locale.LanguageRussian, nil); !errors.Is(err, failure) {
+		locale.LanguageRussian, true, nil); !errors.Is(err, failure) {
 		t.Fatalf("error = %v, want download failure", err)
 	}
 	if fontsCalled {
@@ -136,7 +137,7 @@ func TestInstallLocalizationFailureKeepsPreviousOverlay(t *testing.T) {
 func TestInstallLocalizationRejectsUnsupportedPackage(t *testing.T) {
 	service, _, _ := installedService(t)
 	if _, err := service.InstallLocalization(context.Background(),
-		"english", nil); err == nil {
+		"english", true, nil); err == nil {
 		t.Fatal("unsupported package accepted")
 	}
 }
@@ -153,5 +154,53 @@ func TestRemoveLocalizationDeletesGlobalOverlay(t *testing.T) {
 	state, err := service.LocalizationState()
 	if err != nil || state.Installed {
 		t.Fatalf("LocalizationState = %+v, %v", state, err)
+	}
+}
+
+func TestInstallLocalizationWithoutVoiceover(t *testing.T) {
+	service, workDir, _ := installedService(t)
+	var captured locale.Options
+	service.installLocale = func(_ context.Context, options locale.Options,
+	) (locale.Result, error) {
+		captured = options
+		return locale.Result{State: locale.State{Installed: true,
+			Language: locale.LanguageRussian, Dir: locale.Dir(workDir)}}, nil
+	}
+	service.installFonts = func(_ context.Context, _ fonts.Options,
+	) (fonts.Result, error) {
+		return fonts.Result{}, nil
+	}
+	if _, err := service.InstallLocalization(context.Background(),
+		locale.LanguageRussian, false, nil); err != nil {
+		t.Fatalf("InstallLocalization: %v", err)
+	}
+	if captured.Voiceover {
+		t.Fatal("voice archive was requested for a text-only install")
+	}
+}
+
+func TestVoiceoverPreference(t *testing.T) {
+	service, _, _ := installedService(t)
+	if !service.Voiceover() {
+		t.Fatal("voiceover is disabled by default")
+	}
+	if err := service.SetVoiceover(false); err != nil {
+		t.Fatalf("SetVoiceover: %v", err)
+	}
+	if service.Voiceover() {
+		t.Fatal("voiceover preference was not updated")
+	}
+	stored, err := config.Load(service.ConfigPath())
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if stored.Voiceover == nil || stored.VoiceoverEnabled() {
+		t.Fatalf("stored voiceover = %v", stored.Voiceover)
+	}
+	if err := service.SetVoiceover(true); err != nil {
+		t.Fatalf("SetVoiceover: %v", err)
+	}
+	if !service.Voiceover() {
+		t.Fatal("voiceover preference was not restored")
 	}
 }

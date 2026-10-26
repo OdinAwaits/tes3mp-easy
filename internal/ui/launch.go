@@ -112,29 +112,3 @@ func (s *shell) showGameExited() {
 	dialog.NewCustom(tr.T(i18n.KeyCommonPlay), tr.T(i18n.KeyCommonClose),
 		content, s.window).Show()
 }
-
-func (s *shell) showAdvanced(profile config.Server) {
-	tr := s.service.Translator()
-	hint := widget.NewLabel(tr.T(i18n.KeyAdvancedCSHint))
-	hint.Wrapping = fyne.TextWrapWord
-	var openCS *widget.Button
-	openCS = widget.NewButton(tr.T(i18n.KeyAdvancedOpenCS), func() {
-		openCS.Disable()
-		go func() {
-			result, err := s.service.OpenMWCS(context.Background(), profile.ID)
-			fyne.Do(func() {
-				openCS.Enable()
-				if err != nil {
-					s.showError(fmt.Errorf("%s: %w",
-						tr.T(i18n.KeyAdvancedFailed), err))
-					return
-				}
-				s.showNotice(tr.T(i18n.KeyAdvancedTitle),
-					tr.T(i18n.KeyAdvancedStarted), result.Warnings)
-			})
-		}()
-	})
-	content := container.NewVBox(hint, openCS)
-	dialog.NewCustom(tr.T(i18n.KeyAdvancedTitle), tr.T(i18n.KeyCommonClose),
-		content, s.window).Show()
-}
