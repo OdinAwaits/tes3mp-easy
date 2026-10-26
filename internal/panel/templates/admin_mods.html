@@ -37,6 +37,30 @@
       <section class="card">
         <h2>Загрузить архив</h2>
         <p class="muted">Архив до 512 MiB. После импорта его нужно задеплоить отдельно.</p>
+        <details class="format-hint" open>
+          <summary>Формат архива</summary>
+          <pre><code>mods.tar.gz
+├── plugins/
+│   ├── mod.esp
+│   ├── another.omwaddon
+│   └── requiredDataFiles.json
+└── scripts/
+    └── test.lua</code></pre>
+          <ul>
+            <li>В корне только <code>plugins/</code> и <code>scripts/</code>; <code>requiredDataFiles.json</code> лежит внутри <code>plugins/</code>, не в корне.</li>
+            <li>Плагины: <code>.esp</code>, <code>.esm</code>, <code>.omwaddon</code>, <code>.omwscripts</code>, <code>.omwgame</code>. Каждый модовый плагин из JSON должен быть в <code>plugins/</code>, и наоборот (кроме трёх базовых ESM).</li>
+            <li>CRC32 в JSON — <code>0x1A2B3C4D</code>: 8 hex-цифр в верхнем регистре; пустой массив <code>[]</code> означает проверку только наличия файла.</li>
+            <li><code>Morrowind.esm</code>, <code>Tribunal.esm</code>, <code>Bloodmoon.esm</code> в архив не включать.</li>
+            <li>В <code>scripts/</code> только <code>.lua</code> верхнего уровня; имена — буквы, цифры, <code>_</code>, <code>-</code>.</li>
+          </ul>
+          <p class="muted">Пример <code>plugins/requiredDataFiles.json</code>:</p>
+          <pre><code>[
+  {"Morrowind.esm": []},
+  {"Tribunal.esm": []},
+  {"Bloodmoon.esm": []},
+  {"mod.esp": ["0x1A2B3C4D"]}
+]</code></pre>
+        </details>
         <form method="post" action="/admin/mods/upload" enctype="multipart/form-data">
           <input type="hidden" name="_csrf" value="{{.CSRF}}">
           <div class="field">

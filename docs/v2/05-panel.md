@@ -354,7 +354,9 @@ JSON-объект или мусор после envelope считаются `inte
 Страница `/admin/mods`:
 
 - таблица архивов: имя, размер, дата, `current`;
-- кнопка «Загрузить архив»;
+- кнопка «Загрузить архив» и раскрытая подсказка «Формат архива»: дерево
+  `plugins/` + `scripts/`, обязательный `plugins/requiredDataFiles.json`, CRC32,
+  пример JSON и запрет на базовые ESM;
 - кнопка «Deploy» у выбранного;
 - кнопка «Rollback» — деплой предыдущего архива;
 - текущий мод-пак и его `sha256`;
@@ -365,6 +367,7 @@ JSON-объект или мусор после envelope считаются `inte
 ```text
 POST /admin/mods/upload (multipart, max 512 MiB)
   panel стримит в panel-data/uploads/<uuid>.tar.gz
+  файл создаётся 0600, после записи получает 0640 (группа tes3mp)
   panel ──sudo -u tes3mp──► ops mods import --file ... --json
   при успехе: удалить upload, если он ещё существует
               (ops переименовал его в backups/mods/)

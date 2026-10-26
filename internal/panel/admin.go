@@ -904,6 +904,13 @@ func (h *panelHandler) receiveUpload(part io.Reader) (string, int64, error) {
 		_ = os.Remove(target)
 		return "", 0, errUploadTooLarge
 	}
+	// ops runs as the tes3mp user and must be able to read the upload. The
+	// setgid uploads directory supplies the shared group; chmod is explicit so
+	// a restrictive umask cannot strip the group-read bit.
+	if err := os.Chmod(target, 0o640); err != nil {
+		_ = os.Remove(target)
+		return "", 0, fmt.Errorf("make upload readable by ops: %w", err)
+	}
 	return target, written, nil
 }
 

@@ -51,6 +51,7 @@ type fakeAdminOps struct {
 	importErr    error
 	importPath   string
 	importData   []byte
+	importMode   os.FileMode
 
 	deploys   []adminDeployCall
 	deployErr error
@@ -125,6 +126,9 @@ func (f *fakeAdminOps) BackupCreate(_ context.Context, _ string, manual bool) (B
 func (f *fakeAdminOps) ModsImport(_ context.Context, path string) (ImportResult, error) {
 	f.importPath = path
 	f.importData, _ = os.ReadFile(path)
+	if info, err := os.Stat(path); err == nil {
+		f.importMode = info.Mode().Perm()
+	}
 	return f.importResult, f.importErr
 }
 
@@ -433,7 +437,8 @@ func TestAdminModsPageDeployAndRollback(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		"mods-2026-10-23_12-00-00.tar.gz", "mods-2026-10-22_12-00-00.tar.gz",
-		"Rollback", "multipart/form-data",
+		"Rollback", "multipart/form-data", "Формат архива",
+		"requiredDataFiles.json", "Morrowind.esm", "scripts/",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("mods page does not contain %q:\n%s", want, body)
@@ -521,6 +526,9 @@ func TestAdminModsUploadStreamsToUploadsAndCleansUp(t *testing.T) {
 	}
 	if bytes.Equal(env.ops.importData, nil) || !bytes.Equal(env.ops.importData, body) {
 		t.Fatal("ops did not receive the uploaded bytes")
+	}
+	if env.ops.importMode != 0o640 {
+		t.Fatalf("upload mode = %04o, want 0640 (ops runs as tes3mp)", env.ops.importMode)
 	}
 	if _, err := os.Stat(env.ops.importPath); !os.IsNotExist(err) {
 		t.Fatalf("upload was not removed after import: %v", err)

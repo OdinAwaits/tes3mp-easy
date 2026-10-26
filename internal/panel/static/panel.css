@@ -176,6 +176,53 @@ pre code {
   background: transparent;
 }
 
+.format-hint {
+  margin: 0 0 1rem;
+  padding: .7rem .85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+
+.format-hint summary {
+  color: var(--accent-strong);
+  font-size: .88rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.format-hint[open] summary {
+  margin-bottom: .7rem;
+}
+
+.format-hint pre {
+  max-width: 100%;
+  margin: 0 0 .75rem;
+  padding: .65rem .75rem;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: .8rem;
+  line-height: 1.45;
+}
+
+.format-hint pre code {
+  font-size: 1em;
+}
+
+.format-hint ul {
+  margin: 0 0 .75rem;
+  font-size: .86rem;
+}
+
+.format-hint p:last-child,
+.format-hint pre:last-child {
+  margin-bottom: 0;
+}
+
 ::selection {
   background: var(--accent);
   color: var(--accent-ink);
