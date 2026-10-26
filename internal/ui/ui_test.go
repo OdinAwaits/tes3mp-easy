@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"strings"
 	"testing"
+
+	"fyne.io/fyne/v2/widget"
 
 	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/fonts"
@@ -10,6 +13,7 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/mods"
 	"github.com/Saagilat/tes3mp-easy/internal/openmwcfg"
 	"github.com/Saagilat/tes3mp-easy/internal/tes3mp"
+	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
 )
 
 func TestRunRejectsNilService(t *testing.T) {
@@ -18,30 +22,12 @@ func TestRunRejectsNilService(t *testing.T) {
 	}
 }
 
-func TestAppMenuHasGlobalActions(t *testing.T) {
-	menu := (&shell{}).appMenu(i18n.New(i18n.English))
-	want := []string{"Language", "Theme", "Client log", "Copy report", "About"}
-	var got []string
-	for _, item := range menu.Items {
-		if item.IsSeparator {
-			continue
-		}
-		if item.Action == nil && item.ChildMenu == nil {
-			t.Errorf("menu item %q has no action and no submenu", item.Label)
-		}
-		got = append(got, item.Label)
+func TestThemeOptionImportance(t *testing.T) {
+	if got := themeOptionImportance(style.ModeLight, style.ModeLight); got != widget.HighImportance {
+		t.Fatalf("active theme importance = %v, want high", got)
 	}
-	if len(got) != len(want) {
-		t.Fatalf("appMenu labels = %q, want %q", got, want)
-	}
-	for index := range want {
-		if got[index] != want[index] {
-			t.Fatalf("appMenu labels = %q, want %q", got, want)
-		}
-	}
-	theme := menu.Items[1]
-	if theme.ChildMenu == nil || len(theme.ChildMenu.Items) != 3 {
-		t.Fatalf("theme submenu has %v items, want 3", theme.ChildMenu)
+	if got := themeOptionImportance(style.ModeLight, style.ModeDark); got != widget.MediumImportance {
+		t.Fatalf("inactive theme importance = %v, want medium", got)
 	}
 }
 
@@ -109,57 +95,15 @@ func TestPlayButtonLabel(t *testing.T) {
 	}
 }
 
-func TestThemeMenuItems(t *testing.T) {
+func TestThemeLabels(t *testing.T) {
 	translator := i18n.New(i18n.English)
-	applied := ""
-	dark := newThemeMenuItem(translator, i18n.KeyThemeDark, config.ThemeDark,
-		config.ThemeLight, func(mode string) { applied = mode })
-	if dark.Label != "Amber dark" {
-		t.Fatalf("dark label = %q", dark.Label)
-	}
-	if dark.Checked {
-		t.Fatal("dark item is checked while the current theme is light")
-	}
-	if dark.Action == nil {
-		t.Fatal("dark item has no action")
-	}
-	dark.Action()
-	if applied != config.ThemeDark {
-		t.Fatalf("dark action applied %q", applied)
-	}
-
-	system := newThemeMenuItem(translator, i18n.KeyThemeSystem,
-		config.ThemeSystem, config.ThemeSystem, func(string) {})
-	if !system.Checked {
-		t.Fatal("system item is not checked while the current theme is system")
-	}
-}
-
-func TestRailInstallLabel(t *testing.T) {
-	translator := i18n.New(i18n.English)
-	if got := railInstallLabel(translator, 0); got != "Installation" {
-		t.Fatalf("railInstallLabel(0) = %q", got)
-	}
-	if got := railInstallLabel(translator, 2); got != "Installation · 2" {
-		t.Fatalf("railInstallLabel(2) = %q", got)
-	}
-}
-
-func TestCountIssues(t *testing.T) {
-	ready := installStatus{ready: true}
-	pending := installStatus{}
-	tests := []struct {
-		name     string
-		statuses []installStatus
-		want     int
-	}{
-		{name: "empty", want: 0},
-		{name: "all ready", statuses: []installStatus{ready, ready}, want: 0},
-		{name: "mixed", statuses: []installStatus{ready, pending, pending}, want: 2},
-	}
-	for _, test := range tests {
-		if got := countIssues(test.statuses...); got != test.want {
-			t.Errorf("%s: countIssues() = %d, want %d", test.name, got, test.want)
+	for key, want := range map[string]string{
+		i18n.KeyThemeSystem: "System",
+		i18n.KeyThemeDark:   "Dark",
+		i18n.KeyThemeLight:  "Light",
+	} {
+		if got := translator.T(key); got != want {
+			t.Fatalf("%q = %q, want %q", key, got, want)
 		}
 	}
 }
@@ -168,13 +112,14 @@ func TestLocalizationLabels(t *testing.T) {
 	translator := i18n.New(i18n.English)
 	for _, pack := range locale.Packages() {
 		label := localizationLabel(translator, pack.Language)
-		if got := localizationValue(translator, label); got != pack.Language {
-			t.Fatalf("localizationValue(%q) = %q, want %q",
-				label, got, pack.Language)
+		got, ok := localizationPack(translator, label)
+		if !ok || got.Language != pack.Language {
+			t.Fatalf("localizationPack(%q) = %q, %t; want %q",
+				label, got.Language, ok, pack.Language)
 		}
 	}
-	if got := localizationValue(translator, "unknown"); got != "" {
-		t.Fatalf("localizationValue(unknown) = %q", got)
+	if _, ok := localizationPack(translator, "unknown"); ok {
+		t.Fatal("localizationPack(unknown) matched a pack")
 	}
 }
 
@@ -226,11 +171,11 @@ func TestLocalizationInstallLabel(t *testing.T) {
 	}{
 		{name: "text",
 			state: locale.State{Installed: true, Language: locale.LanguageRussian},
-			want:  russian},
+			want:  russian + " · text"},
 		{name: "voiceover",
 			state: locale.State{Installed: true, Language: locale.LanguageRussian,
 				Voiceover: true},
-			want: russian + " + voiceover"},
+			want: russian + " · text + voice"},
 	}
 	for _, test := range tests {
 		if got := localizationInstallLabel(translator, test.state); got != test.want {
@@ -240,7 +185,7 @@ func TestLocalizationInstallLabel(t *testing.T) {
 	}
 }
 
-func TestLocalizationStateLabel(t *testing.T) {
+func TestLocalizationStatusText(t *testing.T) {
 	translator := i18n.New(i18n.English)
 	russian := localizationLabel(translator, locale.LanguageRussian)
 	tests := []struct {
@@ -248,19 +193,66 @@ func TestLocalizationStateLabel(t *testing.T) {
 		state locale.State
 		want  string
 	}{
-		{name: "missing", want: "not installed"},
+		{name: "missing",
+			want: "No pack installed — the game keeps the original Morrowind language."},
 		{name: "installed",
 			state: locale.State{Installed: true, Language: locale.LanguageRussian},
-			want:  russian + ", installed"},
+			want:  "Installed: " + russian + " · text"},
 		{name: "voiceover",
 			state: locale.State{Installed: true, Language: locale.LanguageRussian,
 				Voiceover: true},
-			want: russian + ", installed with voiceover"},
+			want: "Installed: " + russian + " · text + voice"},
 	}
 	for _, test := range tests {
-		if got := localizationStateLabel(translator, test.state); got != test.want {
-			t.Errorf("%s: localizationStateLabel() = %q, want %q",
+		if got := localizationStatusText(translator, test.state); got != test.want {
+			t.Errorf("%s: localizationStatusText() = %q, want %q",
 				test.name, got, test.want)
+		}
+	}
+}
+
+func TestLocaleVariantHintUsesPackSizes(t *testing.T) {
+	translator := i18n.New(i18n.English)
+	pack, ok := locale.PackFor(locale.LanguageRussian)
+	if !ok {
+		t.Fatal("the Russian pack is missing")
+	}
+	text := localeVariantHint(translator, pack, false)
+	if !strings.Contains(text, formatBytes(pack.TextSize)) ||
+		!strings.Contains(text, pack.Encoding) {
+		t.Fatalf("text hint = %q", text)
+	}
+	voices := localeVariantHint(translator, pack, true)
+	if !strings.Contains(voices, formatBytes(pack.TextSize+pack.VoicesSize)) {
+		t.Fatalf("voices hint = %q", voices)
+	}
+	quiet := locale.Pack{TextSize: 1 << 20, Encoding: "utf-8"}
+	if got := localeVariantHint(translator, quiet, true); !strings.Contains(
+		got, "utf-8") {
+		t.Fatalf("pack without voices hint = %q", got)
+	}
+}
+
+func TestUIVideoFieldsUseOpenMWRanges(t *testing.T) {
+	form := newUIVideoForm(openmwcfg.Defaults())
+	fields := form.fields()
+	if len(fields) != 4 {
+		t.Fatalf("fields() returned %d entries, want 4", len(fields))
+	}
+	want := []string{
+		"16–48", "8–32", "0.5–4", "0–360",
+	}
+	translator := i18n.New(i18n.English)
+	for index, field := range fields {
+		if field.rangeText != want[index] {
+			t.Errorf("field %d range = %q, want %q",
+				index, field.rangeText, want[index])
+		}
+		if got := translator.T(field.hintKey); got == field.hintKey {
+			t.Errorf("field %d hint %q is not translated", index, field.hintKey)
+		}
+		if field.entry == nil {
+			t.Errorf("field %d has no entry", index)
 		}
 	}
 }
@@ -356,6 +348,100 @@ func TestModsProgress(t *testing.T) {
 	}
 }
 
+func TestFontProgress(t *testing.T) {
+	translator := i18n.New(i18n.English)
+	update := fonts.Progress{
+		Stage: fonts.StageDownloading, Asset: "NotoSans-Regular.ttf",
+		Downloaded: 1 << 20, Total: 2 << 20,
+	}
+	if got := fontProgressLabel(translator, update); got !=
+		"Downloading NotoSans-Regular.ttf… 1.0 MiB of 2.0 MiB" {
+		t.Fatalf("font progress label = %q", got)
+	}
+	if got := fontProgressFraction(update); got != 0.5 {
+		t.Fatalf("font progress fraction = %v", got)
+	}
+	if got := fontProgressFraction(fonts.Progress{
+		Stage: fonts.StageVerifying}); got != 1 {
+		t.Fatalf("verifying fraction = %v", got)
+	}
+	if got := fontProgressLabel(translator, fonts.Progress{
+		Stage: fonts.StageDownloading, Asset: "NotoSans-Regular.ttf",
+		Downloaded: 10}); got != "Downloading NotoSans-Regular.ttf…" {
+		t.Fatalf("unknown total label = %q", got)
+	}
+	if got := fontProgressLabel(translator, fonts.Progress{
+		Stage: fonts.StageInstalling, Asset: "NotoSans-Regular.ttf"}); got !=
+		"Installing NotoSans-Regular.ttf…" {
+		t.Fatalf("installing label = %q", got)
+	}
+	if got := fontProgressLabel(translator, fonts.Progress{
+		Stage: fonts.StageVerifying}); got != "Verifying the font set…" {
+		t.Fatalf("verifying label = %q", got)
+	}
+}
+
+func TestFontProgressRefreshDue(t *testing.T) {
+	base := fonts.Progress{
+		Stage: fonts.StageDownloading, Asset: "NotoSans-Regular.ttf",
+		Downloaded: 1 << 20, Total: 20 << 20,
+	}
+	if !fontProgressRefreshDue(fonts.Progress{}, base) {
+		t.Fatal("first update must redraw")
+	}
+	small := base
+	small.Downloaded = base.Downloaded + base.Total/100
+	if fontProgressRefreshDue(base, small) {
+		t.Fatal("1% update must be throttled")
+	}
+	five := base
+	five.Downloaded = base.Downloaded + base.Total/20
+	if !fontProgressRefreshDue(base, five) {
+		t.Fatal("5% update must redraw")
+	}
+	if !fontProgressRefreshDue(base, fonts.Progress{
+		Stage: fonts.StageDownloading, Asset: "NotoSerif-Regular.ttf",
+		Downloaded: 1 << 20, Total: 20 << 20}) {
+		t.Fatal("next file must redraw")
+	}
+	if fontProgressRefreshDue(fonts.Progress{Stage: fonts.StageVerifying},
+		fonts.Progress{Stage: fonts.StageVerifying}) {
+		t.Fatal("repeated verifying update must be throttled")
+	}
+}
+
+func TestCancelFontDownloadClearsProgress(t *testing.T) {
+	s := &shell{}
+	var canceled bool
+	s.fonts.downloading = true
+	s.fonts.cancel = func() { canceled = true }
+	s.fonts.progress = fonts.Progress{
+		Stage: fonts.StageDownloading, Asset: "NotoSans-Regular.ttf",
+		Downloaded: 1 << 20, Total: 2 << 20,
+	}
+	s.fonts.shown = s.fonts.progress
+	s.fonts.warnings = []string{"font NotoSerif.ttf: timeout"}
+
+	s.cancelFontDownload()
+
+	snapshot := s.fontState()
+	if !canceled {
+		t.Fatal("cancel function was not called")
+	}
+	if snapshot.downloading {
+		t.Fatal("download is still marked as running")
+	}
+	if !snapshot.canceled {
+		t.Fatal("canceled run is not marked as canceled")
+	}
+	if snapshot.hasProgress {
+		t.Fatal("progress was not cleared")
+	}
+	if len(snapshot.warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", snapshot.warnings)
+	}
+}
+
 func TestShortSHA(t *testing.T) {
 	if got := shortSHA("abcdef"); got != "abcdef" {
 		t.Fatalf("shortSHA = %q", got)
@@ -400,8 +486,7 @@ func TestLocaleProgress(t *testing.T) {
 func TestWizardStepsAreTranslatedAndOrdered(t *testing.T) {
 	translator := i18n.New(i18n.English)
 	want := []wizardStep{
-		wizardMorrowind, wizardTES3MP, wizardFonts, wizardLocalization,
-		wizardUIVideo, wizardReady,
+		wizardMorrowind, wizardTES3MP, wizardFonts, wizardUIVideo,
 	}
 	if int(wizardStepCount) != len(want) {
 		t.Fatalf("wizard has %d steps, want %d", wizardStepCount, len(want))
@@ -482,5 +567,12 @@ func TestUIVideoFormParsesAndValidates(t *testing.T) {
 	form.fontSize.SetText("16")
 	if _, err := form.values(); err != nil {
 		t.Fatalf("values: %v", err)
+	}
+	for value, want := range map[float64]string{
+		1: "1.00", 1.25: "1.25", 0.5: "0.5",
+	} {
+		if got := formatScaling(value); got != want {
+			t.Errorf("formatScaling(%v) = %q, want %q", value, got, want)
+		}
 	}
 }

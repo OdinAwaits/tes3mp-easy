@@ -278,3 +278,25 @@ func TestMapEntryKeepsTopLevelDataDirectories(t *testing.T) {
 		}
 	}
 }
+
+func TestPackMetadataDescribesBothVariants(t *testing.T) {
+	pack, ok := PackFor(LanguageRussian)
+	if !ok {
+		t.Fatal("the Russian pack is missing")
+	}
+	if !pack.HasVoices || pack.VoicesSize <= 0 || pack.TextSize <= 0 {
+		t.Fatalf("pack metadata = %+v", pack)
+	}
+	if got := pack.DownloadSize(false); got != pack.TextSize {
+		t.Fatalf("text download size = %d, want %d", got, pack.TextSize)
+	}
+	if got := pack.DownloadSize(true); got != pack.TextSize+pack.VoicesSize {
+		t.Fatalf("voice download size = %d, want %d",
+			got, pack.TextSize+pack.VoicesSize)
+	}
+	quiet := Pack{TextSize: pack.TextSize}
+	if got := quiet.DownloadSize(true); got != quiet.TextSize {
+		t.Fatalf("pack without voices reported %d, want %d",
+			got, quiet.TextSize)
+	}
+}

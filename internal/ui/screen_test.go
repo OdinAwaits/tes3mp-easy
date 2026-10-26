@@ -6,9 +6,11 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 
 	"github.com/Saagilat/tes3mp-easy/internal/app"
 	"github.com/Saagilat/tes3mp-easy/internal/config"
+	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 )
 
 // testShell builds a shell on a throw-away configuration so screens can be
@@ -62,17 +64,22 @@ func TestScreensBuild(t *testing.T) {
 	}
 }
 
-func TestInstallScreenCountsIssues(t *testing.T) {
+func TestMissingLanguagePackIsNeutral(t *testing.T) {
 	s := testShell(t)
 	defer s.window.Close()
 
 	tr := s.service.Translator()
-	s.installScreen(tr)
-	if s.issues != 4 {
-		t.Fatalf("fresh installation has %d issues, want 4", s.issues)
+	status := s.localizationStatus(tr)
+	if status.importance != widget.LowImportance {
+		t.Fatalf("missing language pack importance = %v, want low",
+			status.importance)
 	}
-	if got := railInstallLabel(tr, s.issues); got != "Installation · 4" {
-		t.Fatalf("rail label = %q, want %q", got, "Installation · 4")
+	if want := tr.T(i18n.KeyInstallLanguageOriginal); status.summary != want {
+		t.Fatalf("missing language pack summary = %q, want %q",
+			status.summary, want)
+	}
+	if s.localizationInstalled() {
+		t.Fatal("a fresh work directory reports an installed language pack")
 	}
 }
 

@@ -49,6 +49,36 @@ func TestInstallFontsUsesSelectedSet(t *testing.T) {
 	}
 }
 
+func TestInstallFontsForwardsProgress(t *testing.T) {
+	service, _, _ := installedService(t)
+	var captured fonts.Options
+	service.installFonts = func(_ context.Context, options fonts.Options,
+	) (fonts.Result, error) {
+		captured = options
+		if options.Progress != nil {
+			options.Progress(fonts.Progress{
+				Stage: fonts.StageDownloading, Asset: "NotoSans-Regular.ttf",
+				Downloaded: 1 << 20, Total: 2 << 20,
+			})
+		}
+		return fonts.Result{State: fonts.State{Installed: true}}, nil
+	}
+	var updates []fonts.Progress
+	if _, err := service.InstallFontsWithProgress(context.Background(),
+		func(update fonts.Progress) {
+			updates = append(updates, update)
+		}); err != nil {
+		t.Fatalf("InstallFontsWithProgress: %v", err)
+	}
+	if captured.Progress == nil {
+		t.Fatal("progress callback was not passed to the font installer")
+	}
+	if len(updates) != 1 || updates[0].Asset != "NotoSans-Regular.ttf" ||
+		updates[0].Downloaded != 1<<20 {
+		t.Fatalf("updates = %+v", updates)
+	}
+}
+
 func TestSetFontSetRejectsUnknownAndKeepsDefault(t *testing.T) {
 	service, _, _ := installedService(t)
 	if err := service.SetFontSet("bogus"); !errors.Is(err, ErrUnknownFontSet) {

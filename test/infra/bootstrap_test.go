@@ -122,6 +122,9 @@ func newFakeHost(t *testing.T) *fakeHost {
 	h.writeRuntimeFixture()
 	h.writeCommands()
 	h.env["TES3MP_EASY_INSTALL_ROOT"] = h.installRoot
+	// Keep the source-install case independent from a developer's local bin/:
+	// release tests opt in through writeServerBinaries.
+	h.env["TES3MP_EASY_BIN_SOURCE"] = filepath.Join(base, "release-bin-absent")
 	h.env["TES3MP_EASY_ROOTCTL_SOURCE"] = projectPath(t, "rootctl", "tes3mp-easy-rootctl")
 	h.env["TES3MP_EASY_SUDOERS_SOURCE"] = projectPath(t, "sudoers.d", "tes3mp-easy")
 	h.env["TES3MP_EASY_VERSION_FILE"] = h.versionFile

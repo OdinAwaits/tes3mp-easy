@@ -33,6 +33,15 @@ func (s *Service) OpenMWConfigDir() (string, error) {
 // InstallFonts downloads the selected font set into the OpenMW config
 // directory. A failed download is returned as warnings, not as a launch error.
 func (s *Service) InstallFonts(ctx context.Context) (fonts.Result, error) {
+	return s.InstallFontsWithProgress(ctx, nil)
+}
+
+// InstallFontsWithProgress is InstallFonts with per-file download updates for
+// the Installation screen. The callback runs on the calling goroutine during
+// the download, so the UI must marshal it onto the Fyne thread.
+func (s *Service) InstallFontsWithProgress(ctx context.Context,
+	progress func(fonts.Progress),
+) (fonts.Result, error) {
 	if s == nil {
 		return fonts.Result{}, errors.New("app service is nil")
 	}
@@ -46,6 +55,7 @@ func (s *Service) InstallFonts(ctx context.Context) (fonts.Result, error) {
 	}
 	options := fonts.DefaultOptions(configDir, cacheDir)
 	options.Set = s.FontSet()
+	options.Progress = progress
 	if s.httpClient != nil {
 		options.Client = s.httpClient
 	}

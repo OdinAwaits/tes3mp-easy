@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>TES3MP Easy — клиент v3, макет передизайна</title>
+<style>
+  :root {
+    --bg: #14110e;
+    --surface: #1d1813;
+    --surface-2: #241d16;
+    --border: #3a2e20;
+    --border-strong: #4a3a26;
+    --fg: #f2e7d5;
+    --muted: #9b8b77;
+    --accent: #d8a548;
+    --accent-soft: rgba(216,165,72,.16);
+    --ok: #9dc46a;
+    --warn: #e0b25c;
+    --err: #e08a74;
+    --mono: ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #3a2e20; border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #4a3a26; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  * { scrollbar-width: thin; scrollbar-color: #3a2e20 transparent; }
+  html, body { margin: 0; }
+  body {
+    background: #0b0908;
+    color: var(--fg);
+    font: 14px/1.45 "Inter", "Segoe UI", system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 26px 20px 40px;
+  }
+  .caption { max-width: 1120px; color: var(--muted); font-size: 13px; }
+  .caption b { color: var(--fg); font-weight: 600; }
+  .caption code { font-family: var(--mono); font-size: 12px; color: #cbbba3; }
+
+  /* окно */
+  .window {
+    position: relative;
+    width: 1120px;
+    max-width: 100%;
+    height: 740px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 26px 70px #000b;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    background: #1a1510;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .mark {
+    width: 34px; height: 34px; border-radius: 9px;
+    background: var(--accent-soft);
+    border: 1px solid rgba(216,165,72,.55);
+    color: var(--accent);
+    display: grid; place-items: center;
+    font-size: 17px;
+  }
+  .brand h1 { margin: 0; font-size: 16px; letter-spacing: .2px; }
+  .brand p { margin: 1px 0 0; font-size: 12px; color: var(--muted); }
+  .top-actions { display: flex; align-items: center; gap: 8px; position: relative; }
+
+  /* кнопки */
+  .btn {
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    color: var(--fg);
+    padding: 7px 13px;
+    border-radius: 8px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn:hover { background: #2e251b; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #1a140e; font-weight: 600; }
+  .btn.primary:hover { background: #e6b45a; }
+  .btn.ghost { background: transparent; border-color: var(--border); color: #cbbba3; }
+  .btn.danger { border-color: #8a3a2d; color: var(--err); }
+  .btn.small { padding: 4px 10px; font-size: 12px; }
+  .btn.icon { padding: 7px 10px; }
+
+  /* переключатель темы в шапке */
+  .seg {
+    display: flex; gap: 2px; padding: 3px;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: 9px;
+  }
+  .seg button {
+    border: 0; border-radius: 7px; background: transparent;
+    color: var(--muted); font: inherit; font-size: 12.5px;
+    padding: 5px 10px; cursor: pointer;
+  }
+  .seg button:hover { color: var(--fg); }
+  .seg button.active { background: var(--accent-soft); color: #f3d08a; font-weight: 600; }
+
+  /* каркас */
+  .body { flex: 1; display: flex; min-height: 0; }
+  .rail {
+    width: 212px;
+    padding: 14px 10px;
+    border-right: 1px solid var(--border);
+    background: #171310;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .rail button {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%;
+    background: transparent;
+    border: 1px solid transparent;
+    color: #cbbba3;
+    padding: 9px 11px;
+    border-radius: 9px;
+    font: inherit;
+    font-size: 13.5px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .rail button:hover { background: #221b14; }
+  .rail button.active {
+    background: var(--accent-soft);
+    border-color: rgba(216,165,72,.55);
+    color: #f3d08a;
+    font-weight: 600;
+  }
+  .rail .ico { width: 18px; text-align: center; opacity: .9; }
+  .rail .spacer { flex: 1; }
+
+  .content { flex: 1; overflow: auto; padding: 20px 24px 28px; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  .screen-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+  .screen-head h2 { margin: 0; font-size: 19px; }
+  .screen-head p { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
+
+  .statusbar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 18px;
+    border-top: 1px solid #2a2118;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .statusbar .mono { color: #8d8171; }
+
+  .mono { font-family: var(--mono); font-size: 12px; color: #cbbba3; }
+  .muted { color: var(--muted); }
+  .hint { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; }
+
+  /* карточки */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 16px;
+  }
+  .card.accent { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(216,165,72,.22) inset; }
+  .card.danger { border-color: #6e3327; }
+  .card + .card { margin-top: 12px; }
+  .card-title { margin: 0; font-size: 15.5px; font-weight: 600; }
+  .card-title .tag { color: var(--accent); font-weight: 600; font-size: 12px; margin-left: 8px; }
+  .card-addr { margin-top: 2px; }
+  .card-status { display: flex; align-items: center; gap: 7px; margin-top: 8px; font-size: 12.5px; color: #cbbba3; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(157,196,106,.16); }
+  .dot.warn { background: var(--warn); box-shadow: 0 0 0 3px rgba(224,178,92,.16); }
+  .dot.err { background: var(--err); box-shadow: 0 0 0 3px rgba(224,138,116,.16); }
+  .card-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .card-foot .grow { flex: 1; }
+
+  /* хвост лога на вкладке Diagnostics */
+  .logtail {
+    margin: 10px 0 0; padding: 10px;
+    background: #0f0c0a; border: 1px solid var(--border); border-radius: 10px;
+    font-family: var(--mono); font-size: 11px; line-height: 1.55;
+    color: #b7a78f; max-height: 230px; overflow: auto; white-space: pre-wrap;
+  }
+
+  /* чек-лист установки */
+  .checklist { display: flex; flex-direction: column; gap: 8px; }
+  .check-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 14px;
+    align-items: center;
+    padding: 11px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .check-row.attention { border-color: #6e5a26; }
+  .check-name { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; }
+  .check-detail { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+  .check-actions { display: flex; align-items: center; gap: 8px; }
+  .badge {
+    font-size: 11px; font-weight: 600; letter-spacing: .2px;
+    padding: 2px 8px; border-radius: 999px; border: 1px solid;
+  }
+  .badge.ok { color: var(--ok); border-color: #4d6b2a; background: rgba(157,196,106,.08); }
+  .badge.warn { color: var(--warn); border-color: #7a5a1c; background: rgba(224,178,92,.08); }
+  .badge.err { color: var(--err); border-color: #7a3a2b; background: rgba(224,138,116,.08); }
+  .badge.muted { color: var(--muted); border-color: var(--border); }
+
+  /* сетка обслуживания */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid2 .card + .card { margin-top: 0; }
+  .list-line {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px dashed #2a2118;
+  }
+  .list-line:last-child { border-bottom: 0; padding-bottom: 0; }
+  .list-line .name { font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+  .list-line .name small { display: block; color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; }
+
+  /* свёрнутый блок Advanced */
+  .adv {
+    margin-top: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .adv > summary {
+    display: flex; align-items: center; gap: 8px;
+    padding: 11px 14px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    list-style: none;
+  }
+  .adv > summary::-webkit-details-marker { display: none; }
+  .adv > summary::before { content: "▸"; color: var(--muted); font-size: 11px; }
+  .adv[open] > summary::before { content: "▾"; }
+  .adv[open] > summary { border-bottom: 1px dashed #2a2118; }
+  .adv .advbody { padding: 4px 14px 8px; }
+
+  /* форма */
+  .field { display: grid; grid-template-columns: 210px 1fr; gap: 12px; align-items: center; margin-bottom: 12px; }
+  .field > label { font-size: 13px; color: #cbbba3; }
+  .input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    color: var(--fg);
+    padding: 8px 10px;
+    font: inherit;
+    font-size: 13px;
+  }
+  .input.mono { font-family: var(--mono); font-size: 12.5px; }
+  .input-row { display: flex; gap: 8px; }
+  .radios { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; }
+  .radios label, .checks label { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+  .checks { display: flex; flex-direction: column; gap: 9px; font-size: 13px; }
+  .checks small { color: var(--muted); font-size: 11.5px; margin-left: 4px; }
+  .form-foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+
+  /* поле с пояснением: что это, зачем и какой диапазон */
+  .field-block { margin-bottom: 14px; }
+  .field-block:last-of-type { margin-bottom: 0; }
+  .field-label {
+    display: flex; align-items: baseline; gap: 8px;
+    font-size: 13px; color: #cbbba3; margin-bottom: 5px;
+  }
+  .field-label .range {
+    font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+  }
+  .field-block .hint { margin: 4px 0 0; }
+
+  /* строка языкового пакета */
+  .pack-line {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 9px 12px; margin-bottom: 10px;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface); font-size: 13px;
+  }
+  .pack-line small { color: var(--muted); font-size: 11.5px; }
+  .state-line {
+    display: flex; align-items: center; gap: 8px;
+    margin: 12px 0 2px; font-size: 12.5px; color: #cbbba3;
+  }
+
+  /* шаги мастера */
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  .step {
+    font-size: 11.5px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .step.done { color: var(--ok); border-color: #4d6b2a; }
+  .step.current { color: #1a140e; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+
+  /* диалоги */
+  .overlay {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,.58);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 30px;
+    z-index: 10;
+  }
+  .overlay.show { display: flex; }
+  .dialog {
+    width: 620px;
+    max-width: 100%;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: #1b1611;
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    box-shadow: 0 24px 70px #000c;
+  }
+  .dialog > header { padding: 13px 18px; border-bottom: 1px solid #2a2118; font-weight: 600; font-size: 14.5px; }
+  .dialog .dbody { padding: 16px 18px; overflow: auto; }
+  .dialog > footer {
+    display: flex; gap: 8px; justify-content: flex-end;
+    padding: 12px 18px;
+    border-top: 1px solid #2a2118;
+  }
+  .dialog .dbody .card { background: #171310; }
+  .choice {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .choice.selected { border-color: var(--accent); background: rgba(216,165,72,.10); }
+  .choice .grid { display: flex; flex-direction: column; }
+  .choice small { color: var(--muted); font-size: 11.5px; }
+  .warnbox {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #6e5a26;
+    background: rgba(224,178,92,.07);
+    font-size: 12.5px;
+    color: #e6cf9e;
+  }
+</style>
+</head>
+<body>
+<p class="caption"><b>Макет клиента v3 (Fyne)</b> — статичный HTML, разделы и диалоги кликабельны. Пять разделов рельса: <b>Play · Installation · OpenMW-CS · Diagnostics · About</b>. Глобального меню «⋯» больше нет: тема — переключатель в шапке, язык интерфейса — в About, язык игры — в Installation. Мастер: <b>4 шага</b>; на шаге Fonts набор только запоминается и скачивается фоном после <b>Finish</b>, отдельного шага Ready нет. Диалоги: <b>Run wizard…</b> (шаг 4 открывается кликом по «4 UI and video»), <b>Fonts</b>, <b>Configure…</b>, <b>Game language</b>, <b>Uninstall…</b>.</p>
+
+<div class="window">
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark">◆</div>
+      <div>
+        <h1>TES3MP Easy</h1>
+        <p>Play on your server in one window</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="seg" role="group" aria-label="Theme">
+        <button data-theme="system" title="Follow the system theme">System</button>
+        <button class="active" data-theme="dark">Dark</button>
+        <button data-theme="light">Light</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="body">
+    <nav class="rail">
+      <button class="active" data-screen="play"><span class="ico">▶</span> Play</button>
+      <button data-screen="install"><span class="ico">⤓</span> Installation</button>
+      <button data-screen="cs"><span class="ico">✎</span> OpenMW-CS</button>
+      <button data-screen="diagnostics"><span class="ico">▤</span> Diagnostics</button>
+      <button data-screen="about"><span class="ico">ⓘ</span> About</button>
+      <div class="spacer"></div>
+    </nav>
+
+    <main class="content">
+
+      <!-- ── PLAY ─────────────────────────────────────── -->
+      <section class="screen active" id="screen-play">
+        <div class="screen-head">
+          <div>
+            <h2>Servers</h2>
+            <p>One card per server. Play downloads missing mods and writes the endpoint.</p>
+          </div>
+          <button class="btn primary">＋ Add server</button>
+        </div>
+
+        <div class="card accent">
+          <div class="card-title">Saagilat Keep <span class="tag">· ACTIVE</span></div>
+          <div class="card-addr mono">play.tes3mp.example:25565</div>
+          <div class="card-status"><span class="dot"></span> Panel online · mods up to date</div>
+          <div class="card-foot">
+            <span class="mono grow" style="color:#e3b866">Panel · play.tes3mp.example</span>
+            <button class="btn primary">▶ Play</button>
+            <button class="btn">More</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Test sandbox</div>
+          <div class="card-addr mono">localhost:25565</div>
+          <div class="card-status"><span class="dot warn"></span> Mods are out of date · mods_sha256 changed</div>
+          <div class="card-foot">
+            <span class="mono grow" style="color:#6f6558">No panel URL</span>
+            <button class="btn primary">⬇ Update and play</button>
+            <button class="btn">More</button>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ── INSTALLATION ─────────────────────────────── -->
+      <section class="screen" id="screen-install">
+        <div class="screen-head">
+          <div>
+            <h2>Installation</h2>
+            <p>Everything local in one place: paths, components and game setup. Morrowind itself is never modified.</p>
+          </div>
+          <button class="btn primary" data-open="wizard">Run wizard…</button>
+        </div>
+
+        <div class="checklist">
+          <div class="check-row">
+            <div>
+              <div class="check-name">Morrowind <span class="badge ok">FOUND</span></div>
+              <div class="check-detail mono">/home/user/Games/Morrowind · Data Files/Morrowind.esm</div>
+            </div>
+            <div class="check-actions">
+              <button class="btn small">Change folder…</button>
+            </div>
+          </div>
+
+          <div class="check-row">
+            <div>
+              <div class="check-name">TES3MP 0.8.1 <span class="badge ok">INSTALLED</span></div>
+              <div class="check-detail">SHA256 verified · Proton prefix is prepared on the first launch</div>
+            </div>
+            <div class="check-actions">
+              <button class="btn small">Reinstall…</button>
+            </div>
+          </div>
+
+          <div class="check-row">
+            <div>
+              <div class="check-name">Fonts <span class="badge ok">INSTALLED</span></div>
+              <div class="check-detail">Noto Sans · Noto Serif · Roboto Mono — verified before every launch</div>
+            </div>
+            <div class="check-actions"><button class="btn small" data-open="fonts">Change set…</button></div>
+          </div>
+
+          <div class="check-row">
+            <div>
+              <div class="check-name">Game language <span class="badge muted">ORIGINAL LANGUAGE</span></div>
+              <div class="check-detail">No pack installed — the game keeps the original Morrowind language. After install this row shows the language and the text/voice variant.</div>
+            </div>
+            <div class="check-actions">
+              <button class="btn small" data-open="locale">Install language pack…</button>
+            </div>
+          </div>
+
+          <div class="check-row">
+            <div>
+              <div class="check-name">UI and video <span class="badge ok">CONFIGURED</span></div>
+              <div class="check-detail mono">ttf 18 · font 16 · scale 1.00 · fps 60</div>
+            </div>
+            <div class="check-actions"><button class="btn small" data-open="uivideo">Configure…</button></div>
+          </div>
+        </div>
+
+        <details class="adv">
+          <summary>Advanced</summary>
+          <div class="advbody">
+            <div class="list-line">
+              <span class="name">Work directory <small class="mono">/home/user/.local/share/tes3mp-easy</small></span>
+              <button class="btn ghost small">Change…</button>
+            </div>
+            <div class="list-line">
+              <span class="name">Proton (Linux) <small class="mono">/home/user/.steam/steam/steamapps/common/Proton 8.0</small></span>
+              <button class="btn ghost small">Browse…</button>
+            </div>
+            <div class="list-line">
+              <span class="name">Client profile <small>openmw.cfg and the endpoint come from the active server and are rewritten on every Play</small></span>
+              <span class="badge muted">AUTOMATIC</span>
+            </div>
+          </div>
+        </details>
+
+        <div class="card danger" style="margin-top:14px">
+          <div class="card-title">Uninstall</div>
+          <p class="hint">Removes the local installation. Server world and backups stay on the server and in the panel. Morrowind is never touched.</p>
+          <div class="card-foot"><button class="btn danger" data-open="uninstall">Uninstall…</button></div>
+        </div>
+      </section>
+
+      <!-- ── OPENMW-CS ────────────────────────────────── -->
+      <section class="screen" id="screen-cs">
+        <div class="screen-head">
+          <div>
+            <h2>OpenMW-CS</h2>
+            <p>The Construction Set from the same OpenMW build that runs the game — no separate install.</p>
+          </div>
+          <button class="btn primary">▶ Launch editor</button>
+        </div>
+
+        <div class="check-row">
+          <div>
+            <div class="check-name">Editor <span class="badge ok">FOUND</span></div>
+            <div class="check-detail mono">/home/user/.local/share/tes3mp-easy/tes3mp/openmw-cs.exe · from the installed TES3MP build</div>
+            <div class="hint" style="margin-top:6px">If the file is absent, this row shows the expected path, the OpenMW release page and the TES3MP folder instead of failing silently.</div>
+          </div>
+          <div class="check-actions">
+            <button class="btn ghost small">Check again</button>
+            <button class="btn ghost small">Open CS folder</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Linux and the Proton prefix</div>
+          <p class="hint">On Linux the editor runs through the same Proton prefix as the game, so it reads the same <span class="mono">Documents/My Games/OpenMW</span> config. If the prefix does not exist yet, the client prepares it the same way it does before Play.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-title">What the editor sees</div>
+          <p class="hint">Morrowind plus the active server's <span class="mono">data/Data Files</span>. Play rebuilds <span class="mono">openmw.cfg</span> but never touches the files themselves.</p>
+          <div class="list-line">
+            <span class="name">Active profile <small>Saagilat Keep · play.tes3mp.example:25565</small></span>
+            <button class="btn ghost small">Open Data Files</button>
+          </div>
+          <div class="list-line">
+            <span class="name">Server mods <small>Required by the same check Play uses</small></span>
+            <span class="badge ok">INSTALLED</span>
+          </div>
+          <div class="warnbox">Mod files under <span class="mono">data/</span> stay local: the panel does not receive them, and the next mod update replaces them.</div>
+        </div>
+      </section>
+
+      <!-- ── DIAGNOSTICS ──────────────────────────────── -->
+      <section class="screen" id="screen-diagnostics">
+        <div class="screen-head">
+          <div>
+            <h2>Diagnostics</h2>
+            <p>The log tail, the report and every path in one place — everything a bug report needs.</p>
+          </div>
+          <button class="btn primary">Copy report</button>
+        </div>
+
+        <div class="grid2">
+          <div class="card">
+            <div class="card-title">Client log</div>
+            <p class="hint">Last 200 lines. The file is appended by the client and never rotated behind your back.</p>
+            <pre class="logtail">2026-10-27 00:58:12 info app: starting client 0.1.8
+2026-10-27 00:58:12 info config: loaded config.json
+2026-10-27 00:58:12 info morrowind: Data Files/Morrowind.esm
+2026-10-27 00:58:13 info fonts: set noto, 3 files verified
+2026-10-27 00:58:13 info tes3mp: 0.8.1 installed, SHA256 ok
+2026-10-27 00:58:14 info profile: active Saagilat Keep
+2026-10-27 00:58:14 info play: mods up to date, launching
+2026-10-27 00:58:19 info play: game exited with code 0</pre>
+            <div class="card-foot">
+              <button class="btn ghost">Refresh</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Report</div>
+            <p class="hint">One click copies the same report the error dialog shows: code, platform, client paths, servers without passwords and the log tail. Nothing is uploaded.</p>
+            <div class="list-line">
+              <span class="name">Last error <small>none since this launch</small></span>
+              <span class="badge ok">CLEAN</span>
+            </div>
+            <div class="list-line">
+              <span class="name">Report size <small>≈ 18 KB · 200 log lines, no passwords, no mod files</small></span>
+              <span class="badge muted">READY</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div class="card-title">Folders</div>
+          <p class="hint">Read-only shortcuts: changing the work directory is in Installation → Advanced.</p>
+          <div class="list-line">
+            <span class="name">TES3MP <small class="mono">/home/user/.local/share/tes3mp-easy/tes3mp</small></span>
+            <button class="btn ghost small">Open</button>
+          </div>
+          <div class="list-line">
+            <span class="name">OpenMW config <small class="mono">/home/user/.local/share/tes3mp-easy/prefix/pfx/drive_c/users/steamuser/Documents/My Games/OpenMW</small></span>
+            <button class="btn ghost small">Open</button>
+          </div>
+          <div class="list-line">
+            <span class="name">Work directory <small class="mono">/home/user/.local/share/tes3mp-easy</small></span>
+            <button class="btn ghost small">Open</button>
+          </div>
+          <div class="list-line">
+            <span class="name">Client config <small class="mono">/home/user/.config/tes3mp-easy</small></span>
+            <button class="btn ghost small">Open</button>
+          </div>
+          <div class="list-line">
+            <span class="name">Client log <small class="mono">/home/user/.local/share/tes3mp-easy/logs/client.log</small></span>
+            <button class="btn ghost small">Open</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── ABOUT ────────────────────────────────────── -->
+      <section class="screen" id="screen-about">
+        <div class="screen-head">
+          <div>
+            <h2>About</h2>
+            <p>Application info, the interface language and the components bundled with this build.</p>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="card">
+            <div class="card-title">TES3MP Easy <span class="tag">· 0.1.8</span></div>
+            <p class="hint">Morrowind with friends, in one window. The client owns only its work directory and never modifies the Morrowind installation.</p>
+            <div class="list-line">
+              <span class="name">Interface language <small>Applies immediately, no restart</small></span>
+              <select class="input" style="width:auto;padding:5px 8px">
+                <option>English</option>
+                <option>Русский</option>
+              </select>
+            </div>
+            <div class="list-line">
+              <span class="name">License <small>MIT · third-party notices in the release archive</small></span>
+              <span class="badge muted">OPEN SOURCE</span>
+            </div>
+            <div class="list-line">
+              <span class="name">Project <small class="mono">github.com/Saagilat/tes3mp-easy</small></span>
+              <button class="btn ghost small">Open page</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Components</div>
+            <div class="list-line">
+              <span class="name">TES3MP <small>multiplayer engine · bundled 0.8.1</small></span>
+              <span class="badge ok">READY</span>
+            </div>
+            <div class="list-line">
+              <span class="name">OpenMW <small>engine build that ships openmw-cs</small></span>
+              <span class="badge ok">READY</span>
+            </div>
+            <div class="list-line">
+              <span class="name">Fyne <small>UI toolkit · theme follows the switch in the header</small></span>
+              <span class="badge muted">SYSTEM</span>
+            </div>
+            <p class="hint">Morrowind, its data files and the Construction Set belong to Bethesda. TES3MP Easy only points them at each other.</p>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <footer class="statusbar">
+    <span>config.json · saved</span>
+    <span>Linux · Proton 8.0</span>
+  </footer>
+
+  <!-- ── ДИАЛОГ: мастер ─────────────────────────────── -->
+  <div class="overlay" id="dlg-wizard">
+    <div class="dialog">
+      <header>Setup wizard — step 3 of 4</header>
+      <div class="dbody">
+        <div class="steps">
+          <span class="step done">1 Morrowind</span>
+          <span class="step done">2 TES3MP</span>
+          <span class="step current">3 Fonts</span>
+          <span class="step" data-open="wizard-video" style="cursor:pointer" title="Открыть макет шага 4">4 UI and video</span>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Fonts <span class="tag">· REQUIRED</span></div>
+          <p class="hint">Pick one set for this computer. The files replace the low-resolution stock fonts in <span class="mono">My Games/OpenMW/Fonts</span> and openmw.cfg gets the matching <span class="mono">fallback=</span> lines — text stops looking blurry at high resolution and Cyrillic stops showing as boxes. Nothing is downloaded on this step: the choice is saved and the download starts in the background after <b>Finish</b>.</p>
+
+          <div class="choice selected">
+            <input type="radio" name="fontset" checked>
+            <span class="grid"><b>Noto Sans · Noto Serif · Roboto Mono</b><small>Recommended · 3 files · 4.6 MiB</small></span>
+          </div>
+          <div class="choice">
+            <input type="radio" name="fontset">
+            <span class="grid"><b>IBM Plex Sans · IBM Plex Serif · IBM Plex Mono</b><small>3 files · 4.1 MiB</small></span>
+          </div>
+          <div class="choice">
+            <input type="radio" name="fontset">
+            <span class="grid"><b>Roboto · Lora · Cousine</b><small>3 files · 3.8 MiB</small></span>
+          </div>
+        </div>
+
+        <div class="warnbox">The set is downloaded in the background after <b>Finish</b>. The game keeps the current fonts until the download is verified, and Installation → Fonts shows the progress with Cancel and Retry. You can change the set later in Installation → Fonts.</div>
+      </div>
+      <footer>
+        <button class="btn ghost">Back</button>
+        <button class="btn primary" data-open="wizard-video">Next</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ── ДИАЛОГ: UI и видео ─────────────────────────── -->
+  <div class="overlay" id="dlg-uivideo">
+    <div class="dialog">
+      <header>UI and video</header>
+      <div class="dbody">
+        <p class="hint" style="margin-top:0">Only these four values are changed; comments, other keys and line endings in <span class="mono">settings.cfg</span> stay as they are.</p>
+
+        <div class="field-block">
+          <div class="field-label"><b>TTF resolution</b> <span class="range">16–48</span></div>
+          <div class="input-row"><input class="input" value="18"><button class="btn ghost small">Reset 18</button></div>
+          <p class="hint">Glyph atlas resolution: higher makes letters crisper at a large font size and costs video memory — this is what removes the blurry stock text.</p>
+        </div>
+        <div class="field-block">
+          <div class="field-label"><b>Font size</b> <span class="range">8–32</span></div>
+          <div class="input-row"><input class="input" value="16"><button class="btn ghost small">Reset 16</button></div>
+          <p class="hint">Base interface text size — the in-game «text size». Keep it in step with TTF resolution: a large font on a small atlas looks rough.</p>
+        </div>
+        <div class="field-block">
+          <div class="field-label"><b>Scaling factor</b> <span class="range">0.5–4</span></div>
+          <div class="input-row"><input class="input" value="1.00"><button class="btn ghost small">Reset 1.00</button></div>
+          <p class="hint">Scale of menus and HUD: 1.00 is the original size, 1.50–2.00 is comfortable on 1440p and 4K.</p>
+        </div>
+        <div class="field-block">
+          <div class="field-label"><b>Framerate limit</b> <span class="range">0–360</span></div>
+          <div class="input-row"><input class="input" value="60"><button class="btn ghost small">Reset 60</button></div>
+          <p class="hint">0 means no limit. 60 is enough for Morrowind; on a 120–144 Hz display use 120 or 144 to avoid a tearing cap.</p>
+        </div>
+
+        <div class="warnbox">settings.cfg appears after the first game start. Until then the row in Installation shows «Launch the game once».</div>
+      </div>
+      <footer>
+        <button class="btn ghost" data-close>Cancel</button>
+        <button class="btn">Reset defaults</button>
+        <button class="btn primary" data-close>Save</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ── ДИАЛОГ: мастер, шаг 4 ──────────────────────── -->
+  <div class="overlay" id="dlg-wizard-video">
+    <div class="dialog">
+      <header>Setup wizard — step 4 of 4</header>
+      <div class="dbody">
+        <div class="steps">
+          <span class="step done">1 Morrowind</span>
+          <span class="step done">2 TES3MP</span>
+          <span class="step done">3 Fonts</span>
+          <span class="step current">4 UI and video</span>
+        </div>
+
+        <p class="hint" style="margin-top:0">The same four values the «Configure» dialog edits in <span class="mono">settings.cfg</span>. Each one has its range in the label and an explanation under it — no guesses.</p>
+
+        <div class="field-block">
+          <div class="field-label"><b>TTF resolution</b> <span class="range">16–48</span></div>
+          <div class="input-row"><input class="input" value="18"></div>
+          <p class="hint">Glyph atlas size: higher means crisper letters at a large font size and more video memory.</p>
+        </div>
+        <div class="field-block">
+          <div class="field-label"><b>Font size</b> <span class="range">8–32</span></div>
+          <div class="input-row"><input class="input" value="16"></div>
+          <p class="hint">Base interface text size. A large font on a small atlas looks rough — raise both together.</p>
+        </div>
+        <div class="field-block">
+          <div class="field-label"><b>Scaling factor</b> <span class="range">0.5–4</span></div>
+          <div class="input-row"><input class="input" value="1.00"></div>
+          <p class="hint">Scale of menus and HUD: 1.00 is the original size, 1.50–2.00 for 1440p and 4K.</p>
+        </div>
+        <div class="field-block">
+          <div class="field-label"><b>Framerate limit</b> <span class="range">0–360</span></div>
+          <div class="input-row"><input class="input" value="60"></div>
+          <p class="hint">0 means no limit. 60 is enough; on a 120–144 Hz display use 120 or 144.</p>
+        </div>
+
+        <div class="warnbox"><b>Finish</b> saves these values and closes the setup wizard. settings.cfg is written after the first game start; the same four values stay editable in Installation → UI and video. The chosen font set downloads in the background — progress is on the Fonts row in Installation.</div>
+      </div>
+      <footer>
+        <button class="btn ghost" data-open="wizard">Back</button>
+        <button class="btn primary" data-close>Finish</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ── ДИАЛОГ: язык игры ──────────────────────────── -->
+  <div class="overlay" id="dlg-locale">
+    <div class="dialog">
+      <header>Game language</header>
+      <div class="dbody">
+        <p class="hint" style="margin-top:0">A language pack replaces the game text and, optionally, the voices. Without a pack the game runs in its original language — that is a normal setup, not an error.</p>
+
+        <div class="pack-line">
+          <span><b>Russian</b> <small>· official GOTY localization</small></span>
+          <span class="badge muted">ONLY PACK</span>
+        </div>
+        <p class="hint">With several packs this line becomes a radio list; the dialog is built for that from the start. Today the catalog has one pack, so nothing has to be chosen.</p>
+
+        <div class="choice selected" style="margin-top:12px">
+          <input type="radio" name="locvariant" checked>
+          <span class="grid"><b>Text only</b><small>≈122 MB · interface text and dialogue subtitles · encoding win1251</small></span>
+        </div>
+        <div class="choice">
+          <input type="radio" name="locvariant">
+          <span class="grid"><b>Text and voiceover</b><small>≈508 MB · adds the dubbed dialogue audio · the download takes longer</small></span>
+        </div>
+
+        <div class="state-line"><span class="dot warn"></span> Not installed — nothing is written into the game before you press Install</div>
+
+        <details class="adv" style="margin-top:14px">
+          <summary>Как это выглядит, когда пакетов станет два</summary>
+          <div class="advbody">
+            <div class="choice selected">
+              <input type="radio" name="locpack2" checked>
+              <span class="grid"><b>Russian</b><small>official GOTY localization · text and voiceover</small></span>
+            </div>
+            <div class="choice">
+              <input type="radio" name="locpack2">
+              <span class="grid"><b>German</b><small>community pack · text only — the voiceover choice is hidden because the pack has no voices</small></span>
+            </div>
+          </div>
+        </details>
+      </div>
+      <footer>
+        <button class="btn ghost" data-close>Cancel</button>
+        <button class="btn danger" data-close>Remove</button>
+        <button class="btn primary" data-close>Install</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ── ДИАЛОГ: удаление ───────────────────────────── -->
+  <div class="overlay" id="dlg-uninstall">
+    <div class="dialog">
+      <header>Uninstall</header>
+      <div class="dbody">
+        <p class="hint" style="margin-top:0">Choose what to remove from this computer. The Morrowind folder is never touched.</p>
+        <div class="checks">
+          <label><input type="checkbox" checked> TES3MP and Proton prefix <small>2.1 GiB · work/tes3mp, work/prefix</small></label>
+          <label><input type="checkbox" checked> Mod data files <small>1.4 GiB · work/servers/*/data</small></label>
+          <label><input type="checkbox" checked> Download cache <small>320 MiB · fonts, mods, archives</small></label>
+          <label><input type="checkbox"> Client settings and servers <small>config.json · 2 profiles</small></label>
+        </div>
+        <div class="warnbox">World state and backups stay on the server; you can restore them from the panel after reinstalling.</div>
+      </div>
+      <footer>
+        <button class="btn ghost" data-close>Cancel</button>
+        <button class="btn danger" data-close>Uninstall</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- ── ДИАЛОГ: набор шрифтов ──────────────────────── -->
+  <div class="overlay" id="dlg-fonts">
+    <div class="dialog">
+      <header>Fonts</header>
+      <div class="dbody">
+        <p class="hint" style="margin-top:0">The set is verified before every launch and mapped in openmw.cfg. The previous files stay until the new download succeeds.</p>
+
+        <div class="choice">
+          <input type="radio" name="fontset-install">
+          <span class="grid"><b>Noto Sans · Noto Serif · Roboto Mono</b><small>Recommended · installed · 4.6 MiB</small></span>
+        </div>
+        <div class="choice selected">
+          <input type="radio" name="fontset-install" checked>
+          <span class="grid"><b>IBM Plex Sans · IBM Plex Serif · IBM Plex Mono</b><small>Not installed · 3 files · 4.1 MiB</small></span>
+        </div>
+        <div class="choice">
+          <input type="radio" name="fontset-install">
+          <span class="grid"><b>Roboto · Lora · Cousine</b><small>3 files · 3.8 MiB</small></span>
+        </div>
+
+        <div class="warnbox">The download starts only when you press <b>Download</b>. Until every file passes its SHA256 check the current fonts stay active, so the game is never left without working text.</div>
+      </div>
+      <footer>
+        <button class="btn ghost" data-close>Cancel</button>
+        <button class="btn primary" data-close>Download</button>
+      </footer>
+    </div>
+  </div>
+</div>
+
+<details class="caption" open style="max-width:1120px;line-height:1.6">
+  <summary style="cursor:pointer;color:#cbbba3">Как это ложится на Fyne и что меняется в коде</summary>
+  <ul style="margin:10px 0 0;padding-left:20px">
+    <li><b>Rail</b> — `container.NewVBox` из `widget.Button` с `Importance = High` у активного; Fyne не умеет стилизовать `AppTabs`, поэтому свой список. Пять разделов: Play · Installation · OpenMW-CS · Diagnostics · About. Тема — три `widget.Button` в шапке (System/Dark/Light, активная с `HighImportance`), без выпадающего меню.</li>
+    <li><b>Play</b> — без изменений: `style.Card`, `ui.go:158`. Кнопка «Add server» остаётся только здесь: глобальная «＋» из шапки удаляется.</li>
+    <li><b>Installation</b> — новый `screen_install.go`: строки = `style.Card` + `container.NewBorder(nil,nil,nil,container.NewHBox(buttons...), text)`. Состояния уже есть в `app`: `TES3MPState`, `FontsState`, `LocalizationState`, `ModsState`, `CheckMorrowind`; добавляется `ClientSettingsState` (settings.cfg) и `EditorState`. Advanced = `widget.Accordion` только с work dir, Proton и строкой Client profile; папки, лог и отчёт уезжают в Diagnostics. Внизу — только Uninstall.</li>
+    <li><b>OpenMW-CS</b> — отдельный `screen_cs.go`: `app.OpenMWCS` уже есть и сам требует установленных модов (`ErrModsNotInstalled`), бинарник — `launcher.OpenMWCSExecutable`, «открыть папку» — по образцу `openFolderCommand` (`logs.go:22`); добавляется только статус-чек `os.Stat(tes3mp.Dir/openmw-cs.exe)`.</li>
+    <li><b>UI and video</b> — новый пакет `internal/openmwcfg` (INI с сохранением порядка/комментариев/CRLF), `app.ClientSettings/UpdateClientSettings`, бэкап `settings.cfg.bak-&lt;ts&gt;`. Подписи полей берут диапазоны из констант `openmwcfg` (`MinTTFResolution..MaxTTFResolution` и т.д.) и дефолты из `Default*`, поэтому UI и валидация не могут разойтись; пояснения — ключи `install.uivideo.*_hint`, общего блока «что меняется в файле» хватает одного.</li>
+    <li><b>Diagnostics</b> — новый `screen_diagnostics.go`: хвост лога из `app.ReadLogTail` (`logs.go` уже умеет), кнопки `copyReport` / `openLogFolder` / `openFolder`, те же пути, что были в Installation → Advanced → Folders. Ни меню, ни Installation больше их не дублируют.</li>
+    <li><b>About</b> — новый `screen_about.go`: версия клиента и TES3MP, лицензия, ссылка на проект и единственный селектор <b>Interface language</b> (`app.UpdateSettings` + `i18n.Resolve`). Тема сюда не дублируется — она в шапке.</li>
+    <li><b>Меню «⋯» больше нет</b> — `appMenu`, `headerActions`, `KeyCommonMenu` и `KeyRailMenuNote` удаляются: тема → шапка, язык интерфейса → About, язык игры → Installation, лог/отчёт/папки → Diagnostics, About → вкладка. `showSettings` (`dialogs.go:156`) остаётся удалённым, пути Morrowind / work dir / Proton — только Installation → Advanced.</li>
+    <li><b>Язык игры</b> — `language_wizard.go` остаётся диалогом одного шага (пак-строка, вариант «только текст / текст + озвучка», статус, `[Установить] [Удалить] [Отмена]`), но вход теперь один: строка Installation → Game language. Пункт «⋯ → Язык игры…» и его i18n-ключ удаляются.</li>
+    <li><b>Шрифты</b> — `internal/fonts` получает каталог наборов (`Set` в `Options`), в конфиге `font_set` вместо неиспользуемого `skip_fonts`. Мастер только сохраняет выбор: никакой загрузки по клику в шаге 3. После `CompleteSetup` шелл запускает `InstallFonts` в горутине и рисует прогресс/«Cancel»/«Retry» прямо в строке Fonts; диалог Fonts тоже качает только по явной кнопке Download, а не по выбору радио.</li>
+    <li><b>Мастер</b> — `wizard.go`: 4 шага (Morrowind → TES3MP → Fonts → UI and video), `wizardReady` и `KeyWizardReady*`/`KeyWizardSummary` удаляются, на шаге 4 кнопка `Finish`; `setup_complete` пишется там же. У Fonts одна кнопка Next: развилки «Next / Install fonts and continue» больше нет. Если Morrowind уже настроен, мастер по-прежнему стартует с шага 2.</li>
+    <li><b>Удаление</b> — новый `app.Uninstall(scope)`; удаление только внутри workDir/cacheDir/configDir, без прохода по симлинкам.</li>
+  </ul>
+</details>
+
+<script>
+  const themeSwitch = document.querySelector('.seg');
+  if (themeSwitch) {
+    themeSwitch.querySelectorAll('button').forEach((button) => {
+      button.addEventListener('click', () => {
+        themeSwitch.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
+        button.classList.add('active');
+      });
+    });
+  }
+
+  const rail = document.querySelectorAll('.rail button[data-screen]');
+  const screens = document.querySelectorAll('.screen');
+  rail.forEach((button) => {
+    button.addEventListener('click', () => {
+      rail.forEach((b) => b.classList.remove('active'));
+      button.classList.add('active');
+      screens.forEach((s) => s.classList.remove('active'));
+      document.getElementById('screen-' + button.dataset.screen).classList.add('active');
+      document.querySelector('.content').scrollTop = 0;
+    });
+  });
+
+  document.querySelectorAll('[data-open]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      document.querySelectorAll('.overlay.show').forEach((o) => o.classList.remove('show'));
+      document.getElementById('dlg-' + button.dataset.open).classList.add('show');
+    });
+  });
+
+  document.querySelectorAll('.overlay').forEach((overlay) => {
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) {
+        overlay.classList.remove('show');
+      }
+    });
+    overlay.querySelectorAll('[data-close]').forEach((button) => {
+      button.addEventListener('click', () => overlay.classList.remove('show'));
+    });
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      document.querySelectorAll('.overlay.show').forEach((o) => o.classList.remove('show'));
+    }
+  });
+</script>
+</body>
+</html>
+

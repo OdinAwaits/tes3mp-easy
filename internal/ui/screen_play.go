@@ -23,22 +23,33 @@ func (s *shell) playScreen(tr *i18n.Translator) fyne.CanvasObject {
 		style.Heading(tr.T(i18n.KeyServerListTitle)),
 		style.MutedLabel(tr.T(i18n.KeyServerListHint)),
 	)
-	return container.NewVBox(header,
+	if len(s.service.Config().Servers) == 0 {
+		return container.NewVBox(header, s.serverList(tr, s.service.Config()))
+	}
+	add := s.addServerButton(tr)
+	headerRow := container.NewBorder(nil, nil, nil,
+		container.NewCenter(add), header)
+	return container.NewVBox(headerRow,
 		s.serverList(tr, s.service.Config()))
+}
+
+func (s *shell) addServerButton(tr *i18n.Translator) *widget.Button {
+	add := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonAdd),
+		theme.ContentAddIcon(), func() {
+			s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
+		})
+	add.Importance = widget.HighImportance
+	return add
 }
 
 func (s *shell) serverList(tr *i18n.Translator, cfg config.Config) fyne.CanvasObject {
 	if len(cfg.Servers) == 0 {
 		title := style.CenteredHeading(tr.T(i18n.KeyServerEmptyTitle))
 		hint := style.CenteredMutedLabel(tr.T(i18n.KeyServerEmptyHint))
-		add := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonAdd), theme.ContentAddIcon(), func() {
-			s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
-		})
-		add.Importance = widget.HighImportance
 		content := container.NewVBox(
 			title,
 			hint,
-			container.NewCenter(add),
+			container.NewCenter(s.addServerButton(tr)),
 		)
 		return container.NewCenter(style.Card(content, true))
 	}
@@ -51,10 +62,6 @@ func (s *shell) serverList(tr *i18n.Translator, cfg config.Config) fyne.CanvasOb
 	for _, profile := range cfg.Servers {
 		rows = append(rows, s.serverCard(tr, activeID, profile))
 	}
-	rows = append(rows, container.NewCenter(widget.NewButtonWithIcon(
-		tr.T(i18n.KeyCommonAdd), theme.ContentAddIcon(), func() {
-			s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
-		})))
 	return container.NewVBox(rows...)
 }
 

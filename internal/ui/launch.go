@@ -88,12 +88,11 @@ func (s *shell) playServer(profile config.Server) {
 			return
 		}
 		waitErr := result.Process.Wait()
+		if waitErr == nil {
+			return
+		}
 		fyne.Do(func() {
-			if waitErr != nil {
-				s.showError(fmt.Errorf("%w: %v", app.ErrGameExited, waitErr))
-				return
-			}
-			s.showGameExited()
+			s.showError(fmt.Errorf("%w: %v", app.ErrGameExited, waitErr))
 		})
 	}()
 }
@@ -101,14 +100,4 @@ func (s *shell) playServer(profile config.Server) {
 func (s *shell) modsInstalled(serverID string) bool {
 	state, err := s.service.ModsState(serverID)
 	return err == nil && state.Installed
-}
-
-func (s *shell) showGameExited() {
-	tr := s.service.Translator()
-	hint := widget.NewLabel(tr.T(i18n.KeyLogsExitHint))
-	hint.Wrapping = fyne.TextWrapWord
-	open := widget.NewButton(tr.T(i18n.KeyLogsTitle), s.showLogs)
-	content := container.NewVBox(hint, container.NewHBox(open))
-	dialog.NewCustom(tr.T(i18n.KeyCommonPlay), tr.T(i18n.KeyCommonClose),
-		content, s.window).Show()
 }

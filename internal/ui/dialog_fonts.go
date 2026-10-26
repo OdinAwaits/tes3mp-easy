@@ -83,8 +83,8 @@ func (c *fontSetChooser) id(label string) string {
 	return ""
 }
 
-// showFontsDialog switches the font set from the Installation checklist and
-// installs the chosen files right away.
+// showFontsDialog switches the font set from the Installation checklist. The
+// files are downloaded in the background, and the row shows the progress.
 func (s *shell) showFontsDialog() {
 	tr := s.service.Translator()
 	chooser := newFontSetChooser(tr, s.service.FontSet(), nil)
@@ -117,7 +117,7 @@ func (s *shell) showFontsDialog() {
 		}
 		popup.Hide()
 		s.showScreen(screenInstall)
-		s.installFonts()
+		s.startFontDownload()
 	})
 	apply.Importance = widget.HighImportance
 	popup.SetButtons([]fyne.CanvasObject{cancel, apply})

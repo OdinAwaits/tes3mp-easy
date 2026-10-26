@@ -25,7 +25,9 @@ type installStatus struct {
 	summary    string
 	detail     string
 	importance widget.Importance
-	ready      bool
+	// progress, when progressSet, adds a bar under the summary.
+	progress    float64
+	progressSet bool
 }
 
 // installScreen is the checklist that replaced the one-time setup wizard. Every
@@ -34,11 +36,8 @@ type installStatus struct {
 func (s *shell) installScreen(tr *i18n.Translator) fyne.CanvasObject {
 	morrowindState := s.morrowindStatus(tr)
 	tes3mpState := s.tes3mpStatus(tr)
-	fontsState := s.fontsStatus(tr)
 	localizationState := s.localizationStatus(tr)
 	uiVideoState := s.uiVideoStatus(tr)
-	s.issues = countIssues(morrowindState, tes3mpState, fontsState,
-		localizationState, uiVideoState)
 
 	runWizard := widget.NewButtonWithIcon(tr.T(i18n.KeyInstallRunWizard),
 		theme.DocumentCreateIcon(), s.showSetup)
@@ -49,11 +48,12 @@ func (s *shell) installScreen(tr *i18n.Translator) fyne.CanvasObject {
 		tes3mpInstall = tr.T(i18n.KeyInstallReinstall)
 	}
 
-	localizationActions := []fyne.CanvasObject{
-		widget.NewButton(tr.T(i18n.KeyInstallInstall), s.installLocalization),
+	languageActions := []fyne.CanvasObject{
+		widget.NewButton(tr.T(i18n.KeyLocaleInstall), s.showLanguageDialog),
 	}
-	if localizationState.ready {
-		localizationActions = []fyne.CanvasObject{
+	if s.localizationInstalled() {
+		languageActions = []fyne.CanvasObject{
+			widget.NewButton(tr.T(i18n.KeyLocaleChange), s.showLanguageDialog),
 			widget.NewButton(tr.T(i18n.KeyLanguageWizardRemove),
 				s.removeLocalization),
 		}
@@ -61,27 +61,16 @@ func (s *shell) installScreen(tr *i18n.Translator) fyne.CanvasObject {
 
 	rows := container.NewVBox(
 		installRow(tr.T(i18n.KeyInstallMorrowind), morrowindState,
-			widget.NewButton(tr.T(i18n.KeyInstallCheck), func() {
-				s.showScreen(screenInstall)
-			}),
 			widget.NewButton(tr.T(i18n.KeyInstallChangeFolder), func() {
 				s.openWizard(wizardMorrowind)
 			}),
 		),
 		installRow(tr.Tf(i18n.KeySetupTES3MP, tes3mp.Version), tes3mpState,
-			widget.NewButtonWithIcon(tr.T(i18n.KeyInstallOpenFolder),
-				theme.FolderOpenIcon(), func() {
-					s.openFolder(s.tes3mpFolder())
-				}),
 			widget.NewButton(tes3mpInstall, s.installTES3MPFromList),
 		),
-		installRow(tr.T(i18n.KeyInstallFonts), fontsState,
-			widget.NewButton(tr.T(i18n.KeyFontsSetChange),
-				s.showFontsDialog),
-			widget.NewButton(tr.T(i18n.KeyInstallInstall), s.installFonts),
-		),
-		installRow(tr.T(i18n.KeyInstallLocalization), localizationState,
-			localizationActions...),
+		s.fontsRow(tr),
+		installRow(tr.T(i18n.KeyInstallLanguage), localizationState,
+			languageActions...),
 		installRow(tr.T(i18n.KeyInstallUIVideo), uiVideoState,
 			widget.NewButton(tr.T(i18n.KeyInstallUIVideoConfigure),
 				s.showUIVideoDialog)),
@@ -96,9 +85,59 @@ func (s *shell) installScreen(tr *i18n.Translator) fyne.CanvasObject {
 		header,
 		rows,
 		s.installationAdvanced(tr),
-		s.installationDiagnostics(tr),
 		s.installationDangerZone(tr),
 	)
+}
+
+// fontsRow reports the selected set and owns the inline download state. The
+// background install started by the wizard lands here instead of opening a
+// dialog over another screen.
+func (s *shell) fontsRow(tr *i18n.Translator) fyne.CanvasObject {
+	status := s.fontsStatus(tr)
+	state := s.fontState()
+	switch {
+	case state.downloading:
+		status.summary = tr.T(i18n.KeyFontsDownloading)
+		status.detail = ""
+		status.importance = widget.LowImportance
+		status.progress = 0
+		status.progressSet = true
+		if state.hasProgress {
+			status.summary = fontProgressLabel(tr, state.progress)
+			status.progress = fontProgressFraction(state.progress)
+		}
+	case state.canceled:
+		status.summary = tr.T(i18n.KeyFontsCanceled)
+		status.detail = ""
+		status.importance = widget.LowImportance
+	case state.err != nil:
+		status.summary = tr.T(i18n.KeyFontsDownloadFailed)
+		status.detail = s.failureSummary(state.err)
+		status.importance = widget.WarningImportance
+	case len(state.warnings) > 0:
+		status.summary = tr.Tf(i18n.KeyInstallFontsPartial,
+			strings.Join(state.warnings, ", "))
+		status.importance = widget.WarningImportance
+	}
+
+	var actions []fyne.CanvasObject
+	if state.downloading {
+		actions = append(actions, widget.NewButton(tr.T(i18n.KeyFontsCancel),
+			s.cancelFontDownload))
+	} else {
+		actions = append(actions,
+			widget.NewButton(tr.T(i18n.KeyFontsSetChange),
+				s.showFontsDialog))
+		switch {
+		case state.err != nil, state.canceled:
+			actions = append(actions, widget.NewButton(tr.T(i18n.KeyFontsRetry),
+				s.startFontDownload))
+		case !s.fontsInstalled():
+			actions = append(actions, widget.NewButton(tr.T(i18n.KeyInstallInstall),
+				s.startFontDownload))
+		}
+	}
+	return installRow(tr.T(i18n.KeyInstallFonts), status, actions...)
 }
 
 // installRow renders one checklist line: title and status on the left, actions
@@ -111,6 +150,13 @@ func installRow(title string, status installStatus,
 	summary.Importance = status.importance
 
 	lines := []fyne.CanvasObject{style.Subheading(title), summary}
+	if status.progressSet {
+		bar := widget.NewProgressBar()
+		bar.Min = 0
+		bar.Max = 1
+		bar.SetValue(status.progress)
+		lines = append(lines, bar)
+	}
 	if status.detail != "" {
 		detail := widget.NewLabelWithStyle(status.detail, fyne.TextAlignLeading,
 			fyne.TextStyle{Monospace: true})
@@ -126,37 +172,6 @@ func installRow(title string, status installStatus,
 		container.NewHBox(actions...), text), false)
 }
 
-func countIssues(statuses ...installStatus) int {
-	issues := 0
-	for _, status := range statuses {
-		if !status.ready {
-			issues++
-		}
-	}
-	return issues
-}
-
-// refreshInstallationIssues keeps the rail badge current without blocking the
-// window on filesystem checks.
-func (s *shell) refreshInstallationIssues() {
-	go func() {
-		tr := s.service.Translator()
-		issues := countIssues(
-			s.morrowindStatus(tr),
-			s.tes3mpStatus(tr),
-			s.fontsStatus(tr),
-			s.localizationStatus(tr),
-			s.uiVideoStatus(tr),
-		)
-		fyne.Do(func() {
-			s.issues = issues
-			if button, ok := s.rail[screenInstall]; ok {
-				button.SetText(railInstallLabel(tr, issues))
-			}
-		})
-	}()
-}
-
 func (s *shell) morrowindStatus(tr *i18n.Translator) installStatus {
 	installation, err := s.service.CheckMorrowind("")
 	switch {
@@ -164,7 +179,6 @@ func (s *shell) morrowindStatus(tr *i18n.Translator) installStatus {
 		return installStatus{
 			summary:    tr.Tf(i18n.KeySetupMorrowindReady, installation.Root),
 			importance: widget.SuccessImportance,
-			ready:      true,
 		}
 	case errors.Is(err, app.ErrMorrowindNotConfigured):
 		return installStatus{
@@ -195,7 +209,6 @@ func (s *shell) tes3mpStatus(tr *i18n.Translator) installStatus {
 			summary:    tr.Tf(i18n.KeySetupTES3MPReady, state.Version),
 			detail:     state.Dir,
 			importance: widget.SuccessImportance,
-			ready:      true,
 		}
 	case state.Installed:
 		return installStatus{
@@ -236,7 +249,6 @@ func (s *shell) fontsStatus(tr *i18n.Translator) installStatus {
 			summary:    tr.Tf(i18n.KeyInstallFontsReady, label),
 			detail:     state.FontsDir,
 			importance: widget.SuccessImportance,
-			ready:      true,
 		}
 	case len(state.Missing) > 0 || len(state.Invalid) > 0:
 		broken := append([]string(nil), state.Missing...)
@@ -266,17 +278,22 @@ func (s *shell) localizationStatus(tr *i18n.Translator) installStatus {
 	}
 	if !state.Installed {
 		return installStatus{
-			summary:    tr.T(i18n.KeyInstallLocalizationMissing),
-			importance: widget.WarningImportance,
+			summary:    tr.T(i18n.KeyInstallLanguageOriginal),
+			importance: widget.LowImportance,
 		}
 	}
-	language := localizationInstallLabel(tr, state)
 	return installStatus{
-		summary:    tr.Tf(i18n.KeySetupLocalizationReady, language),
+		summary:    localizationInstallLabel(tr, state),
 		detail:     state.DataFiles,
 		importance: widget.SuccessImportance,
-		ready:      true,
 	}
+}
+
+// localizationInstalled reports whether the overlay marker is present so the
+// row can choose between Install and Change.
+func (s *shell) localizationInstalled() bool {
+	state, err := s.service.LocalizationState()
+	return err == nil && state.Installed
 }
 
 // uiVideoStatus reports whether settings.cfg already holds the launcher
@@ -299,10 +316,8 @@ func (s *shell) uiVideoStatus(tr *i18n.Translator) installStatus {
 	switch {
 	case state.Configured:
 		status.importance = widget.SuccessImportance
-		status.ready = true
 	case !state.Exists:
 		status.importance = widget.LowImportance
-		status.ready = true
 	}
 	return status
 }
@@ -335,7 +350,7 @@ func (s *shell) installationAdvanced(tr *i18n.Translator) fyne.CanvasObject {
 	}
 	if runtime.GOOS == "linux" {
 		protonRow := container.NewBorder(nil, nil, nil,
-			widget.NewButton(tr.T(i18n.KeyInstallChange), func() {
+			widget.NewButton(tr.T(i18n.KeyInstallBrowse), func() {
 				s.changePath(tr.T(i18n.KeySettingsProton), cfg.ProtonPath,
 					func(value string) {
 						settings := s.settings()
@@ -349,44 +364,18 @@ func (s *shell) installationAdvanced(tr *i18n.Translator) fyne.CanvasObject {
 			tr.T(i18n.KeySettingsProton), container.NewVBox(protonRow)))
 	}
 
-	folders := container.NewVBox(
-		s.folderRow(tr, tr.T(i18n.KeyInstallFolderTES3MP), s.tes3mpFolder()),
-		s.folderRow(tr, tr.T(i18n.KeyInstallFolderConfig), s.openMWConfigFolder()),
-		s.folderRow(tr, tr.T(i18n.KeyLogsTitle), s.logFolder()),
-	)
-	items = append(items, widget.NewAccordionItem(tr.T(i18n.KeyInstallFolders),
-		folders))
+	profile := container.NewBorder(nil, nil, nil,
+		aboutBadge(tr.T(i18n.KeyInstallAutomatic), widget.LowImportance),
+		container.NewVBox(
+			widget.NewLabel(tr.T(i18n.KeyInstallClientProfile)),
+			style.MutedLabel(tr.T(i18n.KeyInstallProfileAuto))))
+	items = append(items, widget.NewAccordionItem(
+		tr.T(i18n.KeyInstallClientProfile), container.NewVBox(profile)))
 
 	accordion := widget.NewAccordion(items...)
 	return container.NewVBox(
 		style.Subheading(tr.T(i18n.KeyCommonAdvanced)),
 		accordion,
-		style.MutedLabel(tr.T(i18n.KeyInstallProfileAuto)),
-	)
-}
-
-// folderRow shows one path with an Open folder action.
-func (s *shell) folderRow(tr *i18n.Translator, title, path string,
-) fyne.CanvasObject {
-	return container.NewBorder(nil, nil, style.MutedLabel(title), nil,
-		container.NewHBox(
-			pathLabel(path),
-			widget.NewButtonWithIcon(tr.T(i18n.KeyInstallOpenFolder),
-				theme.FolderOpenIcon(), func() {
-					s.openFolder(path)
-				}),
-		),
-	)
-}
-
-func (s *shell) installationDiagnostics(tr *i18n.Translator) fyne.CanvasObject {
-	copyReport := widget.NewButtonWithIcon(tr.T(i18n.KeyMenuCopyReport),
-		theme.ContentCopyIcon(), s.copyReport)
-	openLog := widget.NewButtonWithIcon(tr.T(i18n.KeyLogsOpenFolder),
-		theme.FolderOpenIcon(), s.openLogFolder)
-	return container.NewVBox(
-		style.Subheading(tr.T(i18n.KeyInstallDiagnostics)),
-		container.NewHBox(copyReport, openLog),
 	)
 }
 
@@ -488,44 +477,17 @@ func (s *shell) installTES3MPFromList() {
 	}()
 }
 
-// installFonts re-runs the fixed font set. The download has no progress
-// callback, so the row reports the result instead of a percentage.
-func (s *shell) installFonts() {
-	tr := s.service.Translator()
-	status := widget.NewLabel(tr.T(i18n.KeyLocaleChecking))
-	status.Wrapping = fyne.TextWrapWord
-	popup := dialog.NewCustomWithoutButtons(tr.T(i18n.KeyInstallFonts),
-		container.NewVBox(status), s.window)
-	popup.Resize(fyne.NewSize(560, 160))
-	popup.Show()
-
-	go func() {
-		result, err := s.service.InstallFonts(context.Background())
-		fyne.Do(func() {
-			popup.Hide()
-			switch {
-			case err != nil:
-				s.showErrorWithRetry(err, s.installFonts)
-			case len(result.Warnings) > 0:
-				s.showNotice(tr.T(i18n.KeyInstallFonts),
-					tr.T(i18n.KeyInstallFontsMissing), result.Warnings)
-			}
-			s.showScreen(screenInstall)
-		})
-	}()
-}
-
-// installLocalization reuses the wizard step so the language choice, download
-// progress and font warning stay in one place.
-func (s *shell) installLocalization() {
-	s.openWizard(wizardLocalization)
+// fontsInstalled reports whether the selected set is complete on disk.
+func (s *shell) fontsInstalled() bool {
+	state, err := s.service.FontsState()
+	return err == nil && state.Installed
 }
 
 func (s *shell) removeLocalization() {
 	tr := s.service.Translator()
 	content := widget.NewLabel(tr.T(i18n.KeyLanguageWizardRemoveHint))
 	content.Wrapping = fyne.TextWrapWord
-	dialog.NewCustomConfirm(tr.T(i18n.KeyLanguageWizardRemove),
+	dialog.NewCustomConfirm(tr.T(i18n.KeyLocaleTitle),
 		tr.T(i18n.KeyLanguageWizardRemove), tr.T(i18n.KeyCommonCancel),
 		content, func(ok bool) {
 			if !ok {
@@ -535,7 +497,7 @@ func (s *shell) removeLocalization() {
 				s.showErrorWithRetry(err, s.removeLocalization)
 				return
 			}
-			s.showNotice(tr.T(i18n.KeyLanguageWizardRemove),
+			s.showNotice(tr.T(i18n.KeyLocaleTitle),
 				tr.T(i18n.KeyLocaleRemoved), nil)
 			s.showScreen(screenInstall)
 		}, s.window).Show()

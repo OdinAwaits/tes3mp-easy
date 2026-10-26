@@ -41,6 +41,12 @@ const (
 	// VoicesSHA256 pins the optional Russian voice archive.
 	VoicesSHA256 = "7abc6591fc5507221c732df08fff7fc1ac5d7447e783660d25ed8cc7b885d6c7"
 
+	// ArchiveSize and VoicesSize are the compressed release asset sizes in
+	// bytes. The UI shows them next to each variant, so they are metadata and
+	// never a download limit.
+	ArchiveSize = 128428544
+	VoicesSize  = 405714944
+
 	// DirName is the global localization directory below the client work dir.
 	DirName    = "localization"
 	markerName = ".locale.json"
@@ -58,6 +64,20 @@ type Pack struct {
 	SHA256            string
 	VoicesSHA256      string
 	Encoding          string
+	// TextSize and VoicesSize are the compressed download sizes in bytes.
+	TextSize   int64
+	VoicesSize int64
+	// HasVoices reports whether the pack ships a separate voice archive.
+	HasVoices bool
+}
+
+// DownloadSize is the compressed size of one variant. A pack without voices
+// always reports the text-only size.
+func (p Pack) DownloadSize(voices bool) int64 {
+	if voices && p.HasVoices {
+		return p.TextSize + p.VoicesSize
+	}
+	return p.TextSize
 }
 
 var packs = map[string]Pack{
@@ -70,6 +90,9 @@ var packs = map[string]Pack{
 		SHA256:            ArchiveSHA256,
 		VoicesSHA256:      VoicesSHA256,
 		Encoding:          Encoding,
+		TextSize:          ArchiveSize,
+		VoicesSize:        VoicesSize,
+		HasVoices:         true,
 	},
 }
 

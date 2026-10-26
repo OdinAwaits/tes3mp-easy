@@ -116,8 +116,8 @@ func TestTranslatorFallback(t *testing.T) {
 	if got := translator.T("missing.key"); got != "missing.key" {
 		t.Fatalf("T(missing.key) = %q", got)
 	}
-	if got := translator.Tf(KeyAboutBody, "1", "2", "3"); got != "Клиент tes3mp-easy 1\nTES3MP 2\n3" {
-		t.Fatalf("Tf(KeyAboutBody) = %q", got)
+	if got := translator.Tf(KeyInstallFontsReady, "Noto"); got != "Набор шрифтов Noto установлен." {
+		t.Fatalf("Tf(KeyInstallFontsReady) = %q", got)
 	}
 	if got := New("de").Language(); got != English {
 		t.Fatalf("New(de).Language() = %q", got)

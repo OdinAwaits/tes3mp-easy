@@ -36,7 +36,6 @@ func (s *shell) editorScreen(tr *i18n.Translator) fyne.CanvasObject {
 		status = installStatus{
 			summary:    tr.Tf(i18n.KeyCSFound, state.Path),
 			importance: widget.SuccessImportance,
-			ready:      true,
 		}
 	}
 

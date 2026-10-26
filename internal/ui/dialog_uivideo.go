@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,23 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/openmwcfg"
 	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
 )
+
+// uiVideoField is one labelled input. The label carries the accepted range of
+// the openmwcfg constants, so the form and the validator cannot drift apart.
+type uiVideoField struct {
+	labelKey  string
+	hintKey   string
+	rangeText string
+	entry     *widget.Entry
+}
+
+func intRange(minimum, maximum int) string {
+	return fmt.Sprintf("%d–%d", minimum, maximum)
+}
+
+func floatRange(minimum, maximum float64) string {
+	return fmt.Sprintf("%g–%g", minimum, maximum)
+}
 
 // uiVideoForm edits the four settings.cfg values the launcher manages. It is
 // shared by the Installation row and the wizard so both validate the same way.
@@ -37,8 +55,18 @@ func newUIVideoForm(values openmwcfg.Settings) *uiVideoForm {
 func (f *uiVideoForm) set(values openmwcfg.Settings) {
 	f.ttf.SetText(strconv.Itoa(values.TTFResolution))
 	f.fontSize.SetText(strconv.Itoa(values.FontSize))
-	f.scaling.SetText(strconv.FormatFloat(values.ScalingFactor, 'g', -1, 64))
+	f.scaling.SetText(formatScaling(values.ScalingFactor))
 	f.framerate.SetText(strconv.Itoa(values.FramerateLimit))
+}
+
+// formatScaling keeps the value the user typed but shows whole factors as
+// "1.00", matching the hint text. Fractional factors are never rounded.
+func formatScaling(value float64) string {
+	text := strconv.FormatFloat(value, 'f', -1, 64)
+	if !strings.Contains(text, ".") {
+		text += ".00"
+	}
+	return text
 }
 
 // values parses the entries and checks the accepted ranges. A parse failure and
@@ -72,20 +100,59 @@ func (f *uiVideoForm) values() (openmwcfg.Settings, error) {
 	return values, nil
 }
 
-// objects renders the labelled fields with the accepted ranges as a hint.
-func (f *uiVideoForm) objects(tr *i18n.Translator) []fyne.CanvasObject {
-	return []fyne.CanvasObject{
-		widget.NewLabel(tr.T(i18n.KeyInstallUIVideoTTF)),
-		f.ttf,
-		widget.NewLabel(tr.T(i18n.KeyInstallUIVideoFontSize)),
-		f.fontSize,
-		widget.NewLabel(tr.T(i18n.KeyInstallUIVideoScaling)),
-		f.scaling,
-		widget.NewLabel(tr.T(i18n.KeyInstallUIVideoFramerate)),
-		f.framerate,
-		style.MutedLabel(tr.T(i18n.KeyInstallUIVideoFramerateHint)),
-		style.MutedLabel(tr.T(i18n.KeyInstallUIVideoRanges)),
+// fields lists the four managed values in display order.
+func (f *uiVideoForm) fields() []uiVideoField {
+	return []uiVideoField{
+		{
+			labelKey: i18n.KeyInstallUIVideoTTF,
+			hintKey:  i18n.KeyInstallUIVideoTTFHint,
+			rangeText: intRange(openmwcfg.MinTTFResolution,
+				openmwcfg.MaxTTFResolution),
+			entry: f.ttf,
+		},
+		{
+			labelKey: i18n.KeyInstallUIVideoFontSize,
+			hintKey:  i18n.KeyInstallUIVideoFontSizeHint,
+			rangeText: intRange(openmwcfg.MinFontSize,
+				openmwcfg.MaxFontSize),
+			entry: f.fontSize,
+		},
+		{
+			labelKey: i18n.KeyInstallUIVideoScaling,
+			hintKey:  i18n.KeyInstallUIVideoScalingHint,
+			rangeText: floatRange(openmwcfg.MinScalingFactor,
+				openmwcfg.MaxScalingFactor),
+			entry: f.scaling,
+		},
+		{
+			labelKey: i18n.KeyInstallUIVideoFramerate,
+			hintKey:  i18n.KeyInstallUIVideoFramerateHint,
+			rangeText: intRange(openmwcfg.MinFramerateLimit,
+				openmwcfg.MaxFramerateLimit),
+			entry: f.framerate,
+		},
 	}
+}
+
+// fieldLabel is a bold name with its accepted range next to it.
+func uiVideoFieldLabel(tr *i18n.Translator, field uiVideoField) fyne.CanvasObject {
+	name := widget.NewLabelWithStyle(tr.T(field.labelKey),
+		fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	return container.NewHBox(name, style.MutedLabel(field.rangeText))
+}
+
+// objects renders every field with its label, range and hint.
+func (f *uiVideoForm) objects(tr *i18n.Translator) []fyne.CanvasObject {
+	fields := f.fields()
+	objects := make([]fyne.CanvasObject, 0, len(fields)*3)
+	for _, field := range fields {
+		objects = append(objects,
+			uiVideoFieldLabel(tr, field),
+			field.entry,
+			style.MutedLabel(tr.T(field.hintKey)),
+		)
+	}
+	return objects
 }
 
 // uiVideoStateLabel is the one-line verdict shown in the checklist and in the
@@ -115,9 +182,9 @@ func (s *shell) showUIVideoDialog() {
 	problem.Importance = widget.DangerImportance
 	problem.Hide()
 
-	content := container.NewVBox(append([]fyne.CanvasObject{
+	content := container.NewVScroll(container.NewVBox(append([]fyne.CanvasObject{
 		style.MutedLabel(tr.T(i18n.KeyInstallUIVideoHint)),
-	}, append(form.objects(tr), problem)...)...)
+	}, append(form.objects(tr), problem)...)...))
 
 	popup := dialog.NewCustomWithoutButtons(tr.T(i18n.KeyInstallUIVideoTitle),
 		content, s.window)
@@ -125,7 +192,7 @@ func (s *shell) showUIVideoDialog() {
 	save := widget.NewButton(tr.T(i18n.KeyCommonSave), func() {
 		values, err := form.values()
 		if err != nil {
-			problem.SetText(tr.T(i18n.KeyInstallUIVideoRanges))
+			problem.SetText(tr.T(i18n.KeyInstallUIVideoInvalid))
 			problem.Show()
 			return
 		}
@@ -141,6 +208,6 @@ func (s *shell) showUIVideoDialog() {
 	})
 	save.Importance = widget.HighImportance
 	popup.SetButtons([]fyne.CanvasObject{cancel, save})
-	popup.Resize(fyne.NewSize(560, 520))
+	popup.Resize(fyne.NewSize(640, 660))
 	popup.Show()
 }

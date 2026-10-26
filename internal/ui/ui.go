@@ -17,7 +17,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/Saagilat/tes3mp-easy/internal/app"
-	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
 )
@@ -53,9 +52,11 @@ func Run(service *app.Service) error {
 type screenID string
 
 const (
-	screenPlay    screenID = "play"
-	screenInstall screenID = "installation"
-	screenCS      screenID = "openmw-cs"
+	screenPlay        screenID = "play"
+	screenInstall     screenID = "installation"
+	screenCS          screenID = "openmw-cs"
+	screenDiagnostics screenID = "diagnostics"
+	screenAbout       screenID = "about"
 )
 
 type shell struct {
@@ -72,10 +73,8 @@ type shell struct {
 	body *fyne.Container
 	// rail maps a section to its button so the active state can be synced.
 	rail map[screenID]*widget.Button
-	// addButton is only relevant on the Play screen.
-	addButton *widget.Button
-	// issues counts installation rows that still need an action.
-	issues int
+	// fonts tracks the background download started after the wizard.
+	fonts fontDownload
 }
 
 func (s *shell) render() {
@@ -101,12 +100,13 @@ func (s *shell) render() {
 	)
 	s.window.SetContent(content)
 	s.showScreen(s.screen)
-	s.refreshInstallationIssues()
 }
 
 // showScreen swaps the body and keeps the rail in sync with the selection.
 func (s *shell) showScreen(id screenID) {
-	if id != screenInstall && id != screenCS {
+	switch id {
+	case screenInstall, screenCS, screenDiagnostics, screenAbout:
+	default:
 		id = screenPlay
 	}
 	s.screen = id
@@ -117,6 +117,10 @@ func (s *shell) showScreen(id screenID) {
 		screen = s.installScreen(tr)
 	case screenCS:
 		screen = s.editorScreen(tr)
+	case screenDiagnostics:
+		screen = s.diagnosticsScreen(tr)
+	case screenAbout:
+		screen = s.aboutScreen(tr)
 	default:
 		screen = s.playScreen(tr)
 	}
@@ -126,13 +130,6 @@ func (s *shell) showScreen(id screenID) {
 		}
 		s.body.Refresh()
 	}
-	if s.addButton != nil {
-		if id == screenPlay {
-			s.addButton.Show()
-		} else {
-			s.addButton.Hide()
-		}
-	}
 	s.syncRail()
 }
 
@@ -140,15 +137,18 @@ func (s *shell) railContent(tr *i18n.Translator) fyne.CanvasObject {
 	s.rail = map[screenID]*widget.Button{
 		screenPlay: s.railButton(tr.T(i18n.KeyRailPlay),
 			theme.MediaPlayIcon(), screenPlay),
-		screenInstall: s.railButton(railInstallLabel(tr, s.issues),
+		screenInstall: s.railButton(tr.T(i18n.KeyRailInstall),
 			theme.DownloadIcon(), screenInstall),
 		screenCS: s.railButton(tr.T(i18n.KeyRailOpenMWCS),
 			theme.DocumentCreateIcon(), screenCS),
+		screenDiagnostics: s.railButton(tr.T(i18n.KeyRailDiagnostics),
+			theme.ListIcon(), screenDiagnostics),
+		screenAbout: s.railButton(tr.T(i18n.KeyRailAbout),
+			theme.InfoIcon(), screenAbout),
 	}
 	buttons := container.NewVBox(s.rail[screenPlay], s.rail[screenInstall],
-		s.rail[screenCS])
-	note := style.MutedLabel(tr.T(i18n.KeyRailMenuNote))
-	return container.NewBorder(nil, note, nil, nil, buttons)
+		s.rail[screenCS], s.rail[screenDiagnostics], s.rail[screenAbout])
+	return container.NewBorder(nil, nil, nil, nil, buttons)
 }
 
 func (s *shell) railButton(label string, icon fyne.Resource,
@@ -162,11 +162,7 @@ func (s *shell) railButton(label string, icon fyne.Resource,
 }
 
 func (s *shell) syncRail() {
-	tr := s.service.Translator()
 	for id, button := range s.rail {
-		if id == screenInstall {
-			button.SetText(railInstallLabel(tr, s.issues))
-		}
 		if id == s.screen {
 			button.Importance = widget.HighImportance
 		} else {
@@ -174,15 +170,6 @@ func (s *shell) syncRail() {
 		}
 		button.Refresh()
 	}
-}
-
-// railInstallLabel shows how many installation rows still need attention.
-func railInstallLabel(tr *i18n.Translator, issues int) string {
-	label := tr.T(i18n.KeyRailInstall)
-	if issues <= 0 {
-		return label
-	}
-	return tr.Tf(i18n.KeyRailInstallBadge, label, issues)
 }
 
 func (s *shell) applyTheme(mode string) {
@@ -199,53 +186,40 @@ func (s *shell) brand(tr *i18n.Translator) fyne.CanvasObject {
 }
 
 func (s *shell) headerActions(tr *i18n.Translator) fyne.CanvasObject {
-	add := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonAdd), theme.ContentAddIcon(), func() {
-		s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
-	})
-	add.Importance = widget.HighImportance
-	s.addButton = add
-	menu := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonMenu), theme.MenuIcon(), nil)
-	menu.OnTapped = func() {
-		widget.ShowPopUpMenuAtRelativePosition(s.appMenu(tr), s.window.Canvas(),
-			fyne.NewPos(0, menu.Size().Height), menu)
+	return s.themeSwitch(tr)
+}
+
+// themeSwitch is the only theme control: the active mode keeps a high
+// importance, so the header shows the current choice without a menu.
+func (s *shell) themeSwitch(tr *i18n.Translator) fyne.CanvasObject {
+	current := style.ParseMode(s.service.Config().Theme)
+	options := []struct {
+		key  string
+		mode style.Mode
+	}{
+		{key: i18n.KeyThemeSystem, mode: style.ModeSystem},
+		{key: i18n.KeyThemeDark, mode: style.ModeDark},
+		{key: i18n.KeyThemeLight, mode: style.ModeLight},
 	}
-	return container.NewHBox(add, menu)
+	buttons := make([]fyne.CanvasObject, 0, len(options))
+	for _, option := range options {
+		mode := option.mode
+		button := widget.NewButton(tr.T(option.key), func() {
+			s.setTheme(string(mode))
+		})
+		button.Importance = themeOptionImportance(current, mode)
+		buttons = append(buttons, button)
+	}
+	return container.NewHBox(buttons...)
 }
 
-// appMenu contains global actions. None of them belong to a server profile.
-func (s *shell) appMenu(tr *i18n.Translator) *fyne.Menu {
-	themeItem := fyne.NewMenuItem(tr.T(i18n.KeySettingsTheme), nil)
-	themeItem.ChildMenu = fyne.NewMenu("",
-		s.themeMenuItem(tr, i18n.KeyThemeSystem, config.ThemeSystem),
-		s.themeMenuItem(tr, i18n.KeyThemeDark, config.ThemeDark),
-		s.themeMenuItem(tr, i18n.KeyThemeLight, config.ThemeLight),
-	)
-	return fyne.NewMenu("",
-		fyne.NewMenuItem(tr.T(i18n.KeyCommonLanguage), s.showLanguageWizard),
-		themeItem,
-		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem(tr.T(i18n.KeyLogsTitle), s.showLogs),
-		fyne.NewMenuItem(tr.T(i18n.KeyMenuCopyReport), s.copyReport),
-		fyne.NewMenuItemSeparator(),
-		fyne.NewMenuItem(tr.T(i18n.KeyCommonAbout), s.showAbout),
-	)
-}
-
-func (s *shell) themeMenuItem(tr *i18n.Translator, labelKey, mode string) *fyne.MenuItem {
-	return newThemeMenuItem(tr, labelKey, mode, s.service.Config().Theme,
-		s.setTheme)
-}
-
-// newThemeMenuItem keeps the theme menu and its checked state testable without
-// a running service.
-func newThemeMenuItem(tr *i18n.Translator, labelKey, mode, current string,
-	apply func(string),
-) *fyne.MenuItem {
-	item := fyne.NewMenuItem(tr.T(labelKey), func() {
-		apply(mode)
-	})
-	item.Checked = style.ParseMode(current) == style.ParseMode(mode)
-	return item
+// themeOptionImportance keeps the active mode visible and is testable without
+// a running Fyne application.
+func themeOptionImportance(current, mode style.Mode) widget.Importance {
+	if current == mode {
+		return widget.HighImportance
+	}
+	return widget.MediumImportance
 }
 
 // setTheme persists the theme and re-renders the window with it.
@@ -266,17 +240,8 @@ func (s *shell) copyReport() {
 	lines, _ := s.service.ReadLogTail(app.TailLines)
 	report := s.service.DiagnosticReport(nil, lines)
 	s.window.Clipboard().SetContent(report)
-	dialog.ShowInformation(tr.T(i18n.KeyMenuCopyReport),
-		tr.T(i18n.KeyMenuReportCopied), s.window)
-}
-
-func (s *shell) showAbout() {
-	tr := s.service.Translator()
-	dialog.ShowInformation(
-		tr.T(i18n.KeyAboutTitle),
-		tr.Tf(i18n.KeyAboutBody, app.Version, app.TES3MPVersion, app.ProjectURL),
-		s.window,
-	)
+	dialog.ShowInformation(tr.T(i18n.KeyDiagnosticsCopyReport),
+		tr.T(i18n.KeyDiagnosticsReportCopied), s.window)
 }
 
 func (s *shell) settings() app.Settings {

@@ -14,366 +14,323 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
 )
 
-type languageWizardStep int
+// languageDialog installs one optional game language pack for every server
+// profile. It is an explicit action, not a wizard step: without a pack the game
+// keeps its original language, which is a normal setup and never an error.
+type languageDialog struct {
+	shell *shell
+	state locale.State
+	pack  locale.Pack
 
-const (
-	languageWizardChoose languageWizardStep = iota
-	languageWizardInstall
-	languageWizardStepCount
-)
+	popup    *dialog.CustomDialog
+	status   *widget.Label
+	detail   *widget.Label
+	problem  *widget.Label
+	progress *widget.ProgressBar
 
-type languageWizard struct {
-	shell   *shell
-	step    languageWizardStep
-	popup   *dialog.CustomDialog
-	title   *widget.Label
-	stepNo  *widget.Label
-	body    *fyne.Container
-	problem *widget.Label
-	retry   *widget.Button
-	back    *widget.Button
-	next    *widget.Button
+	packChoice  *widget.RadioGroup
+	variantBox  *fyne.Container
+	variants    *widget.RadioGroup
+	variantHint *widget.Label
+
+	install *widget.Button
+	remove  *widget.Button
 	cancel  *widget.Button
 
-	choice     *widget.RadioGroup
-	choiceHint *widget.Label
-	voice      *widget.Check
-	status     *widget.Label
-	progress   *widget.ProgressBar
-
-	current     locale.State
-	busy        bool
-	finished    bool
-	changed     bool
-	retryAction func()
+	busy    bool
+	changed bool
 }
 
-// showLanguageWizard installs one optional localization package for every
-// server profile. It is not a per-profile setting.
-func (s *shell) showLanguageWizard() {
+// showLanguageDialog opens the single-step language pack dialog from the
+// Installation row and from the ⋯ menu.
+func (s *shell) showLanguageDialog() {
 	tr := s.service.Translator()
 	state, err := s.service.LocalizationState()
 	if err != nil {
 		s.showError(err)
 		return
 	}
-	w := &languageWizard{shell: s, current: state}
-
-	w.title = widget.NewLabelWithStyle("", fyne.TextAlignLeading,
-		fyne.TextStyle{Bold: true})
-	w.stepNo = widget.NewLabel("")
-	w.body = container.NewVBox()
-	w.problem = widget.NewLabel("")
-	w.problem.Wrapping = fyne.TextWrapWord
-	w.problem.Importance = widget.DangerImportance
-	w.problem.Hide()
-
-	w.retry = widget.NewButton(tr.T(i18n.KeyWizardRetry), func() {
-		if w.retryAction == nil || w.busy {
-			return
-		}
-		action := w.retryAction
-		w.clearProblem()
-		action()
-	})
-	w.retry.Importance = widget.HighImportance
-	w.retry.Hide()
-
-	w.choice = widget.NewRadioGroup(localizationLabels(tr), nil)
-	w.choice.Horizontal = false
+	packs := locale.Packages()
+	if len(packs) == 0 {
+		s.showNotice(tr.T(i18n.KeyLocaleTitle),
+			tr.T(i18n.KeyInstallLanguageOriginal), nil)
+		return
+	}
+	d := &languageDialog{shell: s, state: state, pack: packs[0]}
 	if state.Installed {
-		w.choice.SetSelected(localizationLabel(tr, state.Language))
-	}
-	if w.choice.Selected == "" && len(w.choice.Options) > 0 {
-		w.choice.SetSelected(w.choice.Options[0])
-	}
-	w.choice.OnChanged = func(string) {
-		w.syncChoiceHint()
-		w.syncVoice()
-		w.updateButtons()
-	}
-	w.voice = widget.NewCheck(tr.T(i18n.KeyInstallLocalizationVoices), nil)
-	w.voice.SetChecked(s.service.Voiceover())
-	w.syncVoice()
-	w.voice.OnChanged = func(bool) { w.updateButtons() }
-
-	w.back = widget.NewButton(tr.T(i18n.KeyWizardBack), w.previous)
-	w.next = widget.NewButton(tr.T(i18n.KeyWizardNext), w.advance)
-	w.next.Importance = widget.HighImportance
-	w.cancel = widget.NewButton(tr.T(i18n.KeyCommonCancel), w.close)
-
-	problemRow := container.NewBorder(nil, nil, nil, w.retry, w.problem)
-	footer := container.NewBorder(nil, nil, w.back,
-		container.NewHBox(w.cancel, w.next))
-	content := container.NewBorder(
-		container.NewVBox(w.title, w.stepNo),
-		container.NewVBox(problemRow, footer),
-		nil, nil,
-		container.NewVScroll(w.body),
-	)
-	w.popup = dialog.NewCustomWithoutButtons(tr.T(i18n.KeyLocaleInstallTitle),
-		content, s.window)
-	w.popup.Resize(fyne.NewSize(640, 480))
-	w.renderStep()
-	w.popup.Show()
-}
-
-func languageWizardTitleKey(step languageWizardStep) string {
-	if step == languageWizardInstall {
-		return i18n.KeyLanguageWizardInstallTitle
-	}
-	return i18n.KeyLanguageWizardChooseTitle
-}
-
-func (w *languageWizard) renderStep() {
-	tr := w.shell.service.Translator()
-	w.title.SetText(tr.T(languageWizardTitleKey(w.step)))
-	w.stepNo.SetText(tr.Tf(i18n.KeyWizardStep, int(w.step)+1,
-		int(languageWizardStepCount)))
-	w.body.Objects = w.stepObjects(tr)
-	w.body.Refresh()
-	w.updateButtons()
-}
-
-func (w *languageWizard) stepObjects(tr *i18n.Translator) []fyne.CanvasObject {
-	if w.step == languageWizardInstall {
-		return w.installObjects(tr)
-	}
-	return w.chooseObjects(tr)
-}
-
-func (w *languageWizard) chooseObjects(tr *i18n.Translator) []fyne.CanvasObject {
-	w.choiceHint = widget.NewLabel("")
-	w.choiceHint.Wrapping = fyne.TextWrapWord
-	w.syncChoiceHint()
-	return []fyne.CanvasObject{
-		wizardHint(tr, i18n.KeyLanguageWizardChooseHint),
-		widget.NewLabel(tr.Tf(i18n.KeyLanguageWizardCurrent,
-			localizationStateLabel(tr, w.current))),
-		w.choice,
-		w.choiceHint,
-		w.voice,
-		style.MutedLabel(tr.T(i18n.KeyInstallLocalizationHint)),
-	}
-}
-
-// syncVoice shows the voiceover checkbox only for packs that ship voices.
-func (w *languageWizard) syncVoice() {
-	if w.voice == nil {
-		return
-	}
-	tr := w.shell.service.Translator()
-	if localizationValue(tr, w.choice.Selected) == locale.LanguageRussian {
-		w.voice.Show()
-		return
-	}
-	w.voice.Hide()
-}
-
-func (w *languageWizard) installObjects(tr *i18n.Translator) []fyne.CanvasObject {
-	w.status = widget.NewLabel(tr.T(i18n.KeyLanguageWizardApplying))
-	w.status.Wrapping = fyne.TextWrapWord
-	w.progress = widget.NewProgressBar()
-	w.progress.Min = 0
-	w.progress.Max = 1
-	return []fyne.CanvasObject{
-		wizardHint(tr, i18n.KeyLanguageWizardInstallHint),
-		w.status,
-		w.progress,
-	}
-}
-
-func (w *languageWizard) updateButtons() {
-	if w.next == nil {
-		return
-	}
-	tr := w.shell.service.Translator()
-	w.next.Show()
-	w.next.Enable()
-	w.back.Hide()
-	w.retry.Hide()
-	w.cancel.Show()
-	w.cancel.Enable()
-
-	if w.busy {
-		w.next.Disable()
-		w.back.Hide()
-		w.retry.Hide()
-		w.cancel.Disable()
-		return
-	}
-
-	if w.step == languageWizardChoose {
-		w.next.SetText(tr.T(i18n.KeyWizardNext))
-		return
-	}
-	w.next.Hide()
-	w.back.Show()
-	if w.finished {
-		w.back.Hide()
-		w.next.Show()
-		w.next.Enable()
-		w.next.SetText(tr.T(i18n.KeyCommonClose))
-		w.cancel.Hide()
-		return
-	}
-	if w.retryAction != nil {
-		w.retry.Show()
-	}
-}
-
-func (w *languageWizard) advance() {
-	if w.busy {
-		return
-	}
-	if w.step == languageWizardChoose {
-		tr := w.shell.service.Translator()
-		chosen := localizationValue(tr, w.choice.Selected)
-		if chosen == "" ||
-			!localizationNeedsInstall(w.current, chosen, w.voice.Checked) {
-			w.close()
-			return
+		if pack, ok := locale.PackFor(state.Language); ok {
+			d.pack = pack
 		}
-		w.gotoStep(languageWizardInstall)
-		w.startInstall()
+	}
+
+	d.status = widget.NewLabel(localizationStatusText(tr, state))
+	d.status.Wrapping = fyne.TextWrapWord
+	d.detail = widget.NewLabelWithStyle("", fyne.TextAlignLeading,
+		fyne.TextStyle{Monospace: true})
+	d.detail.Wrapping = fyne.TextWrapWord
+	d.detail.Importance = widget.LowImportance
+	d.problem = widget.NewLabel("")
+	d.problem.Wrapping = fyne.TextWrapWord
+	d.problem.Importance = widget.DangerImportance
+	d.problem.Hide()
+	d.progress = widget.NewProgressBar()
+	d.progress.Min = 0
+	d.progress.Max = 1
+	d.progress.Hide()
+	d.variantBox = container.NewVBox()
+	d.variantHint = style.MutedLabel("")
+
+	objects := []fyne.CanvasObject{style.MutedLabel(tr.T(i18n.KeyLocaleQuestion))}
+	if len(packs) > 1 {
+		d.packChoice = widget.NewRadioGroup(localizationLabels(tr), nil)
+		d.packChoice.Horizontal = false
+		d.packChoice.SetSelected(localizationLabel(tr, d.pack.Language))
+		d.packChoice.OnChanged = func(string) {
+			if pack, ok := localizationPack(tr, d.packChoice.Selected); ok {
+				d.pack = pack
+			}
+			d.renderVariants(tr)
+			d.updateButtons()
+		}
+		objects = append(objects, d.packChoice)
+	} else {
+		objects = append(objects, container.NewHBox(
+			widget.NewLabelWithStyle(localizationLabel(tr, d.pack.Language),
+				fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			style.MutedLabel(tr.T(i18n.KeyLocaleOnlyPack)),
+		))
+	}
+	d.renderVariants(tr)
+	d.refreshDetail()
+	objects = append(objects, d.variantBox, d.variantHint, d.status,
+		d.detail, d.problem, d.progress)
+
+	popup := dialog.NewCustomWithoutButtons(tr.T(i18n.KeyLocaleTitle),
+		container.NewVScroll(container.NewVBox(objects...)), s.window)
+	d.popup = popup
+	if len(packs) > 1 {
+		popup.Resize(fyne.NewSize(640, 520))
+	} else {
+		popup.Resize(fyne.NewSize(620, 440))
+	}
+	d.install = widget.NewButton(tr.T(i18n.KeyInstallInstall), d.installPack)
+	d.install.Importance = widget.HighImportance
+	d.remove = widget.NewButton(tr.T(i18n.KeyLanguageWizardRemove),
+		d.removePack)
+	d.remove.Importance = widget.DangerImportance
+	cancel := widget.NewButton(tr.T(i18n.KeyCommonCancel), d.close)
+	d.cancel = cancel
+	popup.SetButtons([]fyne.CanvasObject{cancel, d.remove, d.install})
+	d.updateButtons()
+	popup.Show()
+}
+
+// renderVariants rebuilds the text/voice radio list for the chosen pack. The
+// voiceover option only exists when the pack ships a separate voice archive.
+func (d *languageDialog) renderVariants(tr *i18n.Translator) {
+	options := []string{tr.T(i18n.KeyLocaleVariantText)}
+	if d.pack.HasVoices {
+		options = append(options, tr.T(i18n.KeyLocaleVariantVoices))
+	}
+	selected := options[0]
+	if len(options) > 1 && d.state.Installed &&
+		d.state.Language == d.pack.Language && d.state.Voiceover {
+		selected = options[1]
+	}
+	d.variants = widget.NewRadioGroup(options, nil)
+	d.variants.Horizontal = false
+	d.variants.SetSelected(selected)
+	d.variants.OnChanged = func(string) {
+		d.syncVariantHint(tr)
+		d.updateButtons()
+	}
+	objects := []fyne.CanvasObject{d.variants}
+	if !d.pack.HasVoices {
+		objects = append(objects, style.MutedLabel(tr.T(i18n.KeyLocaleNoVoices)))
+	}
+	d.variantBox.Objects = objects
+	d.variantBox.Refresh()
+	d.syncVariantHint(tr)
+}
+
+// voices reports the selected variant. A pack without voices is always
+// installed as text only.
+func (d *languageDialog) voices() bool {
+	if d.variants == nil || !d.pack.HasVoices {
+		return false
+	}
+	return d.variants.Selected ==
+		d.shell.service.Translator().T(i18n.KeyLocaleVariantVoices)
+}
+
+func (d *languageDialog) syncVariantHint(tr *i18n.Translator) {
+	if d.variantHint == nil {
 		return
 	}
-	if w.finished {
-		w.close()
+	d.variantHint.SetText(localeVariantHint(tr, d.pack, d.voices()))
+}
+
+func (d *languageDialog) updateButtons() {
+	if d.install == nil {
+		return
+	}
+	needed := localizationNeedsInstall(d.state, d.pack.Language, d.voices())
+	if d.busy || !needed {
+		d.install.Disable()
+	} else {
+		d.install.Enable()
+	}
+	if d.state.Installed {
+		d.remove.Show()
+	} else {
+		d.remove.Hide()
+	}
+	if d.busy {
+		d.remove.Disable()
+		d.cancel.Disable()
+	} else {
+		d.remove.Enable()
+		d.cancel.Enable()
+	}
+	if d.variants != nil {
+		if d.busy {
+			d.variants.Disable()
+		} else {
+			d.variants.Enable()
+		}
+	}
+	if d.packChoice != nil {
+		if d.busy {
+			d.packChoice.Disable()
+		} else {
+			d.packChoice.Enable()
+		}
 	}
 }
 
-func (w *languageWizard) previous() {
-	if w.busy || w.finished {
+func (d *languageDialog) installPack() {
+	if d.busy {
 		return
 	}
-	if w.step == languageWizardInstall {
-		w.gotoStep(languageWizardChoose)
-	}
-}
-
-func (w *languageWizard) gotoStep(step languageWizardStep) {
-	w.step = step
-	w.clearProblem()
-	w.renderStep()
-}
-
-func (w *languageWizard) close() {
-	if w.busy {
+	tr := d.shell.service.Translator()
+	chosen, voices := d.pack.Language, d.voices()
+	if !localizationNeedsInstall(d.state, chosen, voices) {
 		return
 	}
-	w.popup.Hide()
-	if w.changed {
-		w.changed = false
-		w.shell.render()
-	}
-}
-
-func (w *languageWizard) startInstall() {
-	if w.busy {
+	if err := d.shell.service.SetVoiceover(voices); err != nil {
+		d.setProblem(err)
 		return
 	}
-	tr := w.shell.service.Translator()
-	chosen := localizationValue(tr, w.choice.Selected)
-	if chosen == "" {
-		return
-	}
-	voices := w.voice.Checked
-	if err := w.shell.service.SetVoiceover(voices); err != nil {
-		w.setProblem(err, nil)
-		return
-	}
-	status := w.status
-	progress := w.progress
-	w.clearProblem()
-	w.busy = true
-	w.finished = false
-	w.updateButtons()
-	if status != nil {
-		status.SetText(tr.T(i18n.KeyLanguageWizardApplying))
-	}
-	if progress != nil {
-		progress.SetValue(0)
-	}
+	d.busy = true
+	d.clearProblem()
+	d.progress.Show()
+	d.progress.SetValue(0)
+	d.status.SetText(tr.T(i18n.KeyLanguageWizardApplying))
+	d.updateButtons()
 
 	go func() {
-		result, err := w.shell.service.InstallLocalization(
+		result, err := d.shell.service.InstallLocalization(
 			context.Background(), chosen, voices, func(update locale.Progress) {
 				fyne.Do(func() {
-					if progress != nil {
-						progress.SetValue(localeProgressFraction(update))
-					}
-					if status != nil {
-						status.SetText(localeProgressLabel(tr, update))
-					}
+					d.progress.SetValue(localeProgressFraction(update))
+					d.status.SetText(localeProgressLabel(tr, update))
 				})
 			})
 		fyne.Do(func() {
-			w.finishInstall(result, err)
+			d.finishInstall(result, err)
 		})
 	}()
 }
 
-func (w *languageWizard) finishInstall(result locale.Result, err error) {
-	w.busy = false
+func (d *languageDialog) finishInstall(result locale.Result, err error) {
+	d.busy = false
 	if err != nil {
-		w.finished = false
-		w.setProblem(err, w.startInstall)
+		d.setProblem(err)
 		return
 	}
-	w.finished = true
-	w.changed = true
-	w.clearProblem()
-	tr := w.shell.service.Translator()
-	if w.progress != nil {
-		w.progress.SetValue(1)
+	d.state = result.State
+	d.changed = true
+	d.clearProblem()
+	d.progress.SetValue(1)
+	text := d.shell.service.Translator().T(i18n.KeyLanguageWizardDone)
+	if len(result.Warnings) > 0 {
+		text += "\n\n" + strings.Join(result.Warnings, "\n")
 	}
-	if w.status != nil {
-		text := tr.T(i18n.KeyLanguageWizardDone)
-		if len(result.Warnings) > 0 {
-			text += "\n\n" + strings.Join(result.Warnings, "\n")
-		}
-		w.status.SetText(text)
-	}
-	w.choice.Disable()
-	w.updateButtons()
+	d.status.SetText(text)
+	d.refreshDetail()
+	d.renderVariants(d.shell.service.Translator())
+	d.updateButtons()
 }
 
-func (w *languageWizard) syncChoiceHint() {
-	if w.choiceHint == nil || w.choice == nil {
+func (d *languageDialog) removePack() {
+	if d.busy {
 		return
 	}
-	tr := w.shell.service.Translator()
-	key := i18n.KeyLanguageWizardRussianHint
-	if localizationValue(tr, w.choice.Selected) != locale.LanguageRussian {
-		key = i18n.KeyLanguageWizardChooseHint
-	}
-	w.choiceHint.SetText(tr.T(key))
+	d.popup.Hide()
+	d.changed = false
+	d.shell.removeLocalization()
 }
 
-func (w *languageWizard) setProblem(err error, retry func()) {
+func (d *languageDialog) close() {
+	if d.busy {
+		return
+	}
+	d.popup.Hide()
+	if d.changed {
+		d.changed = false
+		d.shell.showScreen(d.shell.screen)
+	}
+}
+
+func (d *languageDialog) refreshDetail() {
+	if d.detail == nil {
+		return
+	}
+	if !d.state.Installed {
+		d.detail.SetText("")
+		d.detail.Hide()
+		return
+	}
+	d.detail.SetText(d.state.DataFiles)
+	d.detail.Show()
+}
+
+func (d *languageDialog) setProblem(err error) {
 	if err == nil {
 		return
 	}
-	w.problem.SetText(w.shell.failureBody(err))
-	w.problem.Show()
-	w.retryAction = retry
-	if retry != nil {
-		w.retry.Show()
-	} else {
-		w.retry.Hide()
-	}
-	w.updateButtons()
+	d.problem.SetText(d.shell.failureBody(err))
+	d.problem.Show()
+	d.updateButtons()
 }
 
-func (w *languageWizard) clearProblem() {
-	w.retryAction = nil
-	if w.problem != nil {
-		w.problem.Hide()
+func (d *languageDialog) clearProblem() {
+	if d.problem != nil {
+		d.problem.Hide()
 	}
-	if w.retry != nil {
-		w.retry.Hide()
+}
+
+// localizationStatusText is the dialog status line. A missing pack is a normal
+// setup, so it stays neutral and never reads like a failure.
+func localizationStatusText(tr *i18n.Translator, state locale.State) string {
+	if !state.Installed {
+		return tr.T(i18n.KeyInstallLanguageOriginal)
 	}
+	return tr.Tf(i18n.KeyLocaleInstalled, localizationInstallLabel(tr, state))
+}
+
+// localeVariantHint describes the selected variant with its download size.
+func localeVariantHint(tr *i18n.Translator, pack locale.Pack, voices bool) string {
+	if voices && pack.HasVoices {
+		return tr.Tf(i18n.KeyLocaleVariantVoicesHint,
+			formatBytes(pack.DownloadSize(true)))
+	}
+	encoding := pack.Encoding
+	if encoding == "" {
+		encoding = "—"
+	}
+	return tr.Tf(i18n.KeyLocaleVariantTextHint,
+		formatBytes(pack.DownloadSize(false)), encoding)
 }
 
 func localizationLabels(tr *i18n.Translator) []string {
@@ -385,13 +342,13 @@ func localizationLabels(tr *i18n.Translator) []string {
 	return labels
 }
 
-func localizationValue(tr *i18n.Translator, label string) string {
+func localizationPack(tr *i18n.Translator, label string) (locale.Pack, bool) {
 	for _, pack := range locale.Packages() {
 		if label == localizationLabel(tr, pack.Language) {
-			return pack.Language
+			return pack, true
 		}
 	}
-	return ""
+	return locale.Pack{}, false
 }
 
 // localizationNeedsInstall reports whether the requested package or voiceover
@@ -406,22 +363,11 @@ func localizationNeedsInstall(state locale.State, language string,
 }
 
 // localizationInstallLabel names an installed overlay the way the Installation
-// row shows it: "Russian + voiceover" when the voices are present.
+// row shows it: "Russian · text + voice".
 func localizationInstallLabel(tr *i18n.Translator, state locale.State) string {
 	label := localizationLabel(tr, state.Language)
 	if state.Voiceover {
-		return tr.Tf(i18n.KeyInstallLocalizationVoice, label)
+		return tr.Tf(i18n.KeyInstallLanguageVoices, label)
 	}
-	return label
-}
-
-func localizationStateLabel(tr *i18n.Translator, state locale.State) string {
-	if !state.Installed {
-		return tr.T(i18n.KeyLanguageWizardStateMissing)
-	}
-	label := localizationLabel(tr, state.Language)
-	if state.Voiceover {
-		return tr.Tf(i18n.KeyLanguageWizardStateInstalledVoice, label)
-	}
-	return tr.Tf(i18n.KeyLanguageWizardStateInstalled, label)
+	return tr.Tf(i18n.KeyInstallLanguageText, label)
 }
