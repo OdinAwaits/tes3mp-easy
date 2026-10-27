@@ -212,7 +212,7 @@ func TestCheckArchives(t *testing.T) {
 			}
 		}
 		check := checkArchives(root)
-		if check.Status != StatusWarn || !strings.Contains(check.Message, "no state") {
+		if check.Status != StatusWarn || !strings.Contains(check.Message, "no restore point") {
 			t.Fatalf("check = %#v, want empty warning", check)
 		}
 	})

@@ -20,6 +20,8 @@ func TestExitCodes(t *testing.T) {
 		{name: "unsafe path", exit: ExitUnsafePath, want: 8, code: CodeUnsafePath},
 		{name: "config invalid", exit: ExitConfigInvalid, want: 9, code: CodeConfigInvalid},
 		{name: "checks failed", exit: ExitChecksFailed, want: 10, code: CodeChecksFailed},
+		{name: "plugin in use", exit: ExitPluginInUse, want: 11, code: CodePluginInUse},
+		{name: "archive in use", exit: ExitArchiveInUse, want: 12, code: CodeArchiveInUse},
 	}
 
 	for _, tt := range tests {

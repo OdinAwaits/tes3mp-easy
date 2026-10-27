@@ -1,44 +1,58 @@
 package doctor
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"math"
 	"path/filepath"
 	"strings"
 
+	"github.com/Saagilat/tes3mp-easy/internal/restorepoint"
 	"github.com/Saagilat/tes3mp-easy/internal/retention"
 )
 
 func checkBudgets(root string) Check {
-	stateDir := filepath.Join(root, "backups", "state")
-	modsDir := filepath.Join(root, "backups", "mods")
+	dirs := []struct {
+		rel    string
+		budget int64
+		label  string
+	}{
+		{"backups/state", retention.DefaultStateBudget, "1.0 GiB"},
+		{"backups/mods", retention.DefaultModsBudget, "512 MiB"},
+		{"backups/snapshots", restorepoint.DefaultSnapshotBudget, "1.5 GiB"},
+		{"backups/checkpoints", restorepoint.DefaultCheckpointBudget, "256 MiB"},
+		{"backups/configs", 32 << 20, "32 MiB"},
+	}
 
-	stateBytes, err := directorySize(stateDir)
-	if err != nil {
-		return errorCheck("budgets", "cannot inspect %s: %v", stateDir, err)
-	}
-	modsBytes, err := directorySize(modsDir)
-	if err != nil {
-		return errorCheck("budgets", "cannot inspect %s: %v", modsDir, err)
-	}
-
-	problems := make([]string, 0, 2)
-	if stateBytes > retention.DefaultStateBudget {
-		problems = append(problems, fmt.Sprintf(
-			"backups/state uses %s, over the 1.0 GiB budget",
-			humanBytes(stateBytes)))
-	}
-	if modsBytes > retention.DefaultModsBudget {
-		problems = append(problems, fmt.Sprintf(
-			"backups/mods uses %s, over the 512 MiB budget",
-			humanBytes(modsBytes)))
+	problems := make([]string, 0)
+	parts := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		path := filepath.Join(root, dir.rel)
+		bytes, err := directorySizeOptional(path)
+		if err != nil {
+			return errorCheck("budgets", "cannot inspect %s: %v", path, err)
+		}
+		if bytes > dir.budget {
+			problems = append(problems, fmt.Sprintf(
+				"%s uses %s, over the %s budget",
+				dir.rel, humanBytes(bytes), dir.label))
+		}
+		parts = append(parts, fmt.Sprintf("%s %s",
+			strings.TrimPrefix(dir.rel, "backups/"), humanBytes(bytes)))
 	}
 	if len(problems) > 0 {
 		return warnCheck("budgets", "%s", strings.Join(problems, "; "))
 	}
-	return okCheck("budgets", "state %s, mods %s",
-		humanBytes(stateBytes), humanBytes(modsBytes))
+	return okCheck("budgets", "%s", strings.Join(parts, ", "))
+}
+
+func directorySizeOptional(root string) (int64, error) {
+	bytes, err := directorySize(root)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	return bytes, err
 }
 
 func directorySize(root string) (int64, error) {

@@ -1,12 +1,16 @@
 package doctor
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/Saagilat/tes3mp-easy/internal/archive"
+	"github.com/Saagilat/tes3mp-easy/internal/restorepoint"
 )
 
 type stateArchive struct {
@@ -17,10 +21,77 @@ type stateArchive struct {
 }
 
 func checkArchives(root string) Check {
+	legacy, legacyChecked, problems := checkLegacyArchives(root)
+	if len(problems) > 0 {
+		return errorCheck("archives", "%s", joinProblems(problems))
+	}
+
+	snapshots, err := restorepoint.ListSnapshots(root)
+	if err != nil {
+		return errorCheck("archives", "%v", err)
+	}
+	checkpoints, err := restorepoint.ListCheckpoints(root)
+	if err != nil {
+		return errorCheck("archives", "%v", err)
+	}
+	if len(snapshots) > 0 {
+		path := filepath.Join(restorepoint.Dir(root, restorepoint.KindSnapshot),
+			snapshots[0].Name)
+		if err := verifyRestorePoint(path); err != nil {
+			problems = append(problems, err.Error())
+		}
+	}
+	if len(checkpoints) > 0 {
+		path := filepath.Join(restorepoint.Dir(root, restorepoint.KindCheckpoint),
+			checkpoints[0].Name)
+		if err := verifyRestorePoint(path); err != nil {
+			problems = append(problems, err.Error())
+		}
+	}
+	if len(problems) > 0 {
+		return errorCheck("archives", "%s", joinProblems(problems))
+	}
+
+	warnings := make([]string, 0)
+	missing := make([]string, 0)
+	for _, checkpoint := range checkpoints {
+		if checkpoint.Base.Available {
+			continue
+		}
+		missing = append(missing, checkpoint.Name)
+	}
+	if len(missing) > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"%d checkpoints have a missing base: %s",
+			len(missing), summarizeNames(missing)))
+	}
+
+	if len(snapshots) == 0 && len(checkpoints) == 0 && legacy == 0 {
+		return warnCheck("archives", "no restore point archives yet")
+	}
+	if len(warnings) > 0 {
+		return warnCheck("archives", "%s", strings.Join(warnings, "; "))
+	}
+	parts := make([]string, 0, 2)
+	if len(snapshots) > 0 || len(checkpoints) > 0 {
+		parts = append(parts, fmt.Sprintf("%d snapshots and %d checkpoints",
+			len(snapshots), len(checkpoints)))
+	}
+	if legacy > 0 {
+		parts = append(parts, fmt.Sprintf("validated %d of %d legacy state archives",
+			legacyChecked, legacy))
+	}
+	return okCheck("archives", "validated %s", strings.Join(parts, "; "))
+}
+
+func checkLegacyArchives(root string) (count, checked int, problems []string) {
 	dir := filepath.Join(root, "backups", "state")
 	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, 0, nil
+	}
 	if err != nil {
-		return errorCheck("archives", "cannot read %s: %v", dir, err)
+		return 0, 0, []string{fmt.Sprintf("cannot read %s: %v", dir, err)}
 	}
 
 	archives := make([]stateArchive, 0, len(entries))
@@ -41,9 +112,8 @@ func checkArchives(root string) Check {
 		})
 	}
 	if len(archives) == 0 {
-		return warnCheck("archives", "no state archives yet")
+		return 0, 0, nil
 	}
-
 	sort.Slice(archives, func(i, j int) bool {
 		if archives[i].timestamp != archives[j].timestamp {
 			return archives[i].timestamp > archives[j].timestamp
@@ -55,7 +125,6 @@ func checkArchives(root string) Check {
 	})
 
 	samples := archiveSamples(len(archives))
-	problems := make([]string, 0, len(samples))
 	for _, index := range samples {
 		item := archives[index]
 		reader, err := archive.Open(item.path)
@@ -72,12 +141,28 @@ func checkArchives(root string) Check {
 			problems = append(problems, fmt.Sprintf("%s: %v", item.name, closeErr))
 		}
 	}
+	return len(archives), len(samples), problems
+}
 
-	if len(problems) > 0 {
-		return errorCheck("archives", "%s", joinProblems(problems))
+func verifyRestorePoint(path string) error {
+	dir, err := os.MkdirTemp("", "tes3mp-easy-doctor-")
+	if err != nil {
+		return err
 	}
-	return okCheck("archives", "validated %d of %d state archives",
-		len(samples), len(archives))
+	defer os.RemoveAll(dir)
+	if _, err := restorepoint.Extract(path, dir); err != nil {
+		return fmt.Errorf("%s: %w", filepath.Base(path), err)
+	}
+	return nil
+}
+
+func summarizeNames(names []string) string {
+	const limit = 3
+	if len(names) <= limit {
+		return strings.Join(names, ", ")
+	}
+	return strings.Join(names[:limit], ", ") +
+		fmt.Sprintf(" and %d more", len(names)-limit)
 }
 
 // archiveSamples chooses the newest, oldest and middle archive. The selection

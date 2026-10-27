@@ -18,6 +18,8 @@ const (
 	ExitUnsafePath
 	ExitConfigInvalid
 	ExitChecksFailed
+	ExitPluginInUse
+	ExitArchiveInUse
 )
 
 // Error code strings exposed through the JSON envelope.
@@ -32,6 +34,8 @@ const (
 	CodeUnsafePath         = "unsafe_path"
 	CodeConfigInvalid      = "config_invalid"
 	CodeChecksFailed       = "checks_failed"
+	CodePluginInUse        = "plugin_in_use"
+	CodeArchiveInUse       = "archive_in_use"
 )
 
 // ErrorCode returns the stable error.code value for an exit status.
@@ -59,6 +63,10 @@ func (c ExitCode) ErrorCode() string {
 		return CodeConfigInvalid
 	case ExitChecksFailed:
 		return CodeChecksFailed
+	case ExitPluginInUse:
+		return CodePluginInUse
+	case ExitArchiveInUse:
+		return CodeArchiveInUse
 	default:
 		return CodeInternal
 	}
@@ -66,7 +74,7 @@ func (c ExitCode) ErrorCode() string {
 
 // Valid reports whether c is one of the defined exit statuses.
 func (c ExitCode) Valid() bool {
-	return c >= ExitOK && c <= ExitChecksFailed
+	return c >= ExitOK && c <= ExitArchiveInUse
 }
 
 // Error is an ops failure with both a process exit status and a JSON error.

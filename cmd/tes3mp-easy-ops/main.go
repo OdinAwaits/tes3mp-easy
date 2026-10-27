@@ -48,10 +48,12 @@ Commands:
   snapshot create [--label <text>] [--reason manual|mods|base]
   snapshot list [--limit <n>] [--before <name>]
   snapshot restore (--latest|--archive <name>) [--no-restart]
+  snapshot rm <name>... [--force] [--dry-run]
   checkpoint create [--label <text>] [--reason timer|manual|predeploy] [--if-running]
   checkpoint list [--limit <n>] [--before <name>]
   checkpoint pin|unpin <name>
   checkpoint restore (--latest|--archive <name>) [--accept-mod-mismatch] [--no-restart]
+  checkpoint rm <name>... [--force] [--dry-run]
   mods import --file <path>
   mods deploy (--current|--latest|--archive <name>) [--no-restart]
   state deploy (--latest|--archive <name>) [--no-restart]

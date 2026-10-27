@@ -74,6 +74,8 @@ func TestOpsExitCodeHTTPMapping(t *testing.T) {
 		{exit: ops.ExitUnsafePath, code: ops.CodeUnsafePath, http: 400},
 		{exit: ops.ExitConfigInvalid, code: ops.CodeConfigInvalid, http: 422},
 		{exit: ops.ExitChecksFailed, code: ops.CodeChecksFailed, http: 503},
+		{exit: ops.ExitPluginInUse, code: ops.CodePluginInUse, http: 409},
+		{exit: ops.ExitArchiveInUse, code: ops.CodeArchiveInUse, http: 409},
 	}
 
 	for _, tt := range tests {

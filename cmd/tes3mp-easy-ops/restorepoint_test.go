@@ -274,3 +274,132 @@ func TestSnapshotRestoreStateAndConfigs(t *testing.T) {
 		t.Fatalf("config backups = %v, %v", backups, err)
 	}
 }
+
+
+func TestRestorePointRemoveProtection(t *testing.T) {
+	root := restorePointRoot(t)
+
+	code, raw, stdout, stderr := runJSON(t, root, "snapshot", "create")
+	if code != int(ops.ExitOK) {
+		t.Fatalf("snapshot exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	base := decodeData[snapshotCreateData](t, raw)
+
+	code, _, stdout, stderr = runJSON(t, root, "snapshot", "rm", base.Archive)
+	if code != int(ops.ExitArchiveInUse) {
+		t.Fatalf("rm last snapshot exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(
+		restorepoint.Dir(root, restorepoint.KindSnapshot), base.Archive)); err != nil {
+		t.Fatalf("last snapshot was removed: %v", err)
+	}
+
+	code, raw, stdout, stderr = runJSON(t, root, "checkpoint", "create")
+	if code != int(ops.ExitOK) {
+		t.Fatalf("checkpoint exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	checkpoint := decodeData[checkpointCreateData](t, raw)
+
+	code, _, stdout, stderr = runJSON(t, root, "snapshot", "rm", base.Archive)
+	if code != int(ops.ExitArchiveInUse) {
+		t.Fatalf("rm base exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, _, stdout, stderr = runJSON(t, root,
+		"checkpoint", "pin", checkpoint.Archive)
+	if code != int(ops.ExitOK) {
+		t.Fatalf("pin exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, _, stdout, stderr = runJSON(t, root,
+		"checkpoint", "rm", checkpoint.Archive)
+	if code != int(ops.ExitArchiveInUse) {
+		t.Fatalf("rm pinned exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, _, stdout, stderr = runJSON(t, root,
+		"checkpoint", "rm", checkpoint.Archive, "--force")
+	if code != int(ops.ExitOK) {
+		t.Fatalf("rm pinned --force exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if _, err := os.Stat(restorepoint.PinPath(root, checkpoint.Archive)); !os.IsNotExist(err) {
+		t.Fatalf("pin sidecar still exists: %v", err)
+	}
+
+	code, raw, stdout, stderr = runJSON(t, root, "snapshot", "create")
+	if code != int(ops.ExitOK) {
+		t.Fatalf("second snapshot exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	newBase := decodeData[snapshotCreateData](t, raw)
+	if newBase.Archive == base.Archive {
+		t.Fatalf("second snapshot reused name %s", newBase.Archive)
+	}
+
+	code, raw, stdout, stderr = runJSON(t, root,
+		"snapshot", "rm", base.Archive, "--dry-run")
+	if code != int(ops.ExitOK) {
+		t.Fatalf("dry-run exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	plan := decodeData[restorepoint.RemoveResult](t, raw)
+	if len(plan.Removed) != 1 || plan.Removed[0] != base.Archive {
+		t.Fatalf("dry-run plan = %+v", plan)
+	}
+	if _, err := os.Stat(filepath.Join(
+		restorepoint.Dir(root, restorepoint.KindSnapshot), base.Archive)); err != nil {
+		t.Fatalf("dry-run removed archive: %v", err)
+	}
+
+	code, raw, stdout, stderr = runJSON(t, root, "snapshot", "rm", base.Archive)
+	if code != int(ops.ExitOK) {
+		t.Fatalf("rm old snapshot exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	removed := decodeData[restorepoint.RemoveResult](t, raw)
+	if len(removed.Removed) != 1 || removed.Freed <= 0 {
+		t.Fatalf("rm result = %+v", removed)
+	}
+	if _, err := os.Stat(filepath.Join(
+		restorepoint.Dir(root, restorepoint.KindSnapshot), base.Archive)); !os.IsNotExist(err) {
+		t.Fatalf("old snapshot still exists: %v", err)
+	}
+}
+
+
+func TestRetentionKeepsDocumentedLimits(t *testing.T) {
+	root := restorePointRoot(t)
+
+	for i := 0; i < 6; i++ {
+		code, _, stdout, stderr := runJSON(t, root, "snapshot", "create")
+		if code != int(ops.ExitOK) {
+			t.Fatalf("snapshot %d exit=%d stdout=%q stderr=%q",
+				i, code, stdout, stderr)
+		}
+	}
+	code, raw, stdout, stderr := runJSON(t, root, "snapshot", "list")
+	if code != int(ops.ExitOK) {
+		t.Fatalf("snapshot list exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	snapshots := decodeData[snapshotListData](t, raw)
+	if len(snapshots.Items) != 5 {
+		t.Fatalf("snapshots after retention = %d, want 5", len(snapshots.Items))
+	}
+
+	for i := 0; i < 3; i++ {
+		code, _, stdout, stderr = runJSON(t, root,
+			"checkpoint", "create", "--reason", "predeploy")
+		if code != int(ops.ExitOK) {
+			t.Fatalf("predeploy %d exit=%d stdout=%q stderr=%q",
+				i, code, stdout, stderr)
+		}
+	}
+	code, raw, stdout, stderr = runJSON(t, root, "checkpoint", "list")
+	if code != int(ops.ExitOK) {
+		t.Fatalf("checkpoint list exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	checkpoints := decodeData[checkpointListData](t, raw)
+	predeploy := 0
+	for _, item := range checkpoints.Items {
+		if item.Reason == "predeploy" {
+			predeploy++
+		}
+	}
+	if predeploy != 2 {
+		t.Fatalf("predeploy after retention = %d, want 2", predeploy)
+	}
+}

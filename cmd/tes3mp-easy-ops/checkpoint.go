@@ -65,6 +65,9 @@ func runCheckpoint(opts options, args []string, client *systemd.Client,
 		return runCheckpointPin(opts, args[0], args[1:], stdout, stderr)
 	case "restore":
 		return runCheckpointRestore(opts, args[1:], client, stdout, stderr)
+	case "rm":
+		return runRestorePointRemove(opts, "checkpoint rm", restorepoint.KindCheckpoint,
+			args[1:], stdout, stderr)
 	default:
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInvalidArgument,
@@ -122,7 +125,7 @@ func runCheckpointCreate(opts options, args []string, client *systemd.Client,
 		Archive:  result.name,
 		Reason:   createArgs.reason,
 		Skipped:  false,
-		Pruned:   []string{},
+		Pruned:   nonNil(result.pruned),
 		Warnings: nonNil(result.warnings),
 	}
 	if result.manifest.Format != "" {
@@ -203,7 +206,11 @@ func createCheckpointLocked(root string, now time.Time, reason, label string,
 	}
 	warnings = append(warnings, spaceWarnings...)
 
-	name, err := restorepoint.NextName(dir, restorepoint.KindCheckpoint, now)
+	nameKind := restorepoint.KindCheckpoint
+	if reason == "predeploy" {
+		nameKind = restorepoint.KindPredeploy
+	}
+	name, err := restorepoint.NextName(dir, nameKind, now)
 	if err != nil {
 		return checkpointCreateResult{}, restorePointError(command, err)
 	}
@@ -275,6 +282,9 @@ func createCheckpointLocked(root string, now time.Time, reason, label string,
 				fmt.Sprintf("%s: sha256 %s", command, target), err)
 		}
 		result.sha256 = sum
+	}
+	if !dryRun {
+		applyRestorePointRetention(root, now, &result.pruned, &result.warnings)
 	}
 	return result, nil
 }
@@ -432,9 +442,9 @@ func writeCheckpointCreate(opts options, data checkpointCreateData,
 	}
 	if _, err := fmt.Fprintf(stdout,
 		"archive: %s\nsize: %d\nsha256: %s\nreason: %s\nlabel: %s\n"+
-			"base: %s\nplayers: %d\nwarnings: %d\n",
+			"base: %s\nplayers: %d\npruned: %d\nwarnings: %d\n",
 		data.Archive, size, sha, data.Reason, label, base, players,
-		len(data.Warnings)); err != nil {
+		len(data.Pruned), len(data.Warnings)); err != nil {
 		return writeOutputFailure(stderr, err)
 	}
 	return int(ops.ExitOK)

@@ -4,10 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/Saagilat/tes3mp-easy/internal/lock"
 	"github.com/Saagilat/tes3mp-easy/internal/ops"
+	"github.com/Saagilat/tes3mp-easy/internal/restorepoint"
 	"github.com/Saagilat/tes3mp-easy/internal/systemd"
 )
 
@@ -42,6 +44,9 @@ func runSnapshot(opts options, args []string, client *systemd.Client,
 		return runSnapshotList(opts, args[1:], stdout, stderr)
 	case "restore":
 		return runSnapshotRestore(opts, args[1:], client, stdout, stderr)
+	case "rm":
+		return runRestorePointRemove(opts, "snapshot rm", restorepoint.KindSnapshot,
+			args[1:], stdout, stderr)
 	default:
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInvalidArgument,
@@ -84,7 +89,7 @@ func runSnapshotCreate(opts options, args []string, stdout, stderr io.Writer) in
 		Reason:      result.manifest.Reason,
 		Label:       optionalLabel(result.manifest.Label),
 		ModsArchive: result.mods,
-		Pruned:      []string{},
+		Pruned:      nonNil(result.pruned),
 		Warnings:    nonNil(result.warnings),
 	}
 	if opts.json {
@@ -129,10 +134,14 @@ func writeSnapshotCreateHuman(w io.Writer, data snapshotCreateData) error {
 	if data.Label != nil {
 		label = *data.Label
 	}
+	pruned := "-"
+	if len(data.Pruned) > 0 {
+		pruned = strings.Join(data.Pruned, ",")
+	}
 	_, err := fmt.Fprintf(w,
 		"archive: %s\nsize: %d\nsha256: %s\nreason: %s\nlabel: %s\n"+
-			"mods_archive: %s\npruned: -\nwarnings: %d\n",
+			"mods_archive: %s\npruned: %s\nwarnings: %d\n",
 		data.Archive, data.Size, data.SHA256, data.Reason, label,
-		data.ModsArchive, len(data.Warnings))
+		data.ModsArchive, pruned, len(data.Warnings))
 	return err
 }

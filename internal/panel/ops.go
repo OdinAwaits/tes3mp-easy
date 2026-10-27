@@ -297,7 +297,7 @@ func OpsHTTPStatusForCode(code string) int {
 		return 400
 	case ops.CodeNotFound:
 		return 404
-	case ops.CodeLocked:
+	case ops.CodeLocked, ops.CodePluginInUse, ops.CodeArchiveInUse:
 		return 409
 	case ops.CodeNoSpace:
 		return 507
@@ -318,7 +318,7 @@ func opsHTTPStatusForExit(exit ops.ExitCode) int {
 		return 400
 	case ops.ExitNotFound:
 		return 404
-	case ops.ExitLocked:
+	case ops.ExitLocked, ops.ExitPluginInUse, ops.ExitArchiveInUse:
 		return 409
 	case ops.ExitNoSpace:
 		return 507

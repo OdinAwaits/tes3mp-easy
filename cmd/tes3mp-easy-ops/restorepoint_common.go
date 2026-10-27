@@ -24,6 +24,7 @@ type snapshotCreateResult struct {
 	sha256   string
 	manifest restorepoint.Manifest
 	mods     string
+	pruned   []string
 	warnings []string
 }
 
@@ -34,6 +35,7 @@ type checkpointCreateResult struct {
 	manifest restorepoint.Manifest
 	baseName string
 	baseSHA  string
+	pruned   []string
 	warnings []string
 }
 
@@ -172,5 +174,23 @@ func createSnapshotLocked(root string, now time.Time, reason, label string,
 		result.warnings = append(result.warnings,
 			fmt.Sprintf("mods archive: %v", err))
 	}
+	if !dryRun {
+		applyRestorePointRetention(root, now, &result.pruned, &result.warnings)
+	}
 	return result, nil
+}
+
+func applyRestorePointRetention(root string, now time.Time,
+	pruned, warnings *[]string,
+) {
+	retained, err := restorepoint.ApplyRetention(restorepoint.RetentionOptions{
+		Root: root,
+		Now:  now,
+	})
+	if err != nil {
+		*warnings = append(*warnings, fmt.Sprintf("retention: %v", err))
+		return
+	}
+	*pruned = append(*pruned, retained.Pruned...)
+	*warnings = append(*warnings, retained.Warnings...)
 }
