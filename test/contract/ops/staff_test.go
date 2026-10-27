@@ -80,20 +80,8 @@ func TestStaffSetContract(t *testing.T) {
 		t.Fatalf("unrelated setting = %#v, want keep", settings["other"])
 	}
 	backups, err := filepath.Glob(path + ".bak-*")
-	if err != nil || len(backups) != 1 {
-		t.Fatalf("staff backups = %v, %v; want one", backups, err)
-	}
-	backup, err := os.ReadFile(backups[0])
-	if err != nil {
-		t.Fatalf("read backup: %v", err)
-	}
-	var top map[string]any
-	if err := json.Unmarshal(backup, &top); err != nil {
-		t.Fatalf("decode backup: %v", err)
-	}
-	oldSettings := top["settings"].(map[string]any)
-	if oldSettings["staffRank"] != float64(0) {
-		t.Fatalf("backup staffRank = %#v, want 0", oldSettings["staffRank"])
+	if err != nil || len(backups) != 0 {
+		t.Fatalf("staff backups = %v, %v; want none", backups, err)
 	}
 
 	res = testHarness.RunRoot(t, root,

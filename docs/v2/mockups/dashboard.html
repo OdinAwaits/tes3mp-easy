@@ -56,19 +56,6 @@
         </div>
       </section>
 
-      <section class="card">
-        <h2>Таймеры и проверки</h2>
-        <dl class="meta-list">
-          <dt>State backup</dt>
-          <dd>16:30 UTC · следующий 16:45</dd>
-          <dt>doctor</dt>
-          <dd><span class="badge" data-status="warn">disk</span> <span class="badge" data-status="ok">memory</span> <span class="badge" data-status="ok">cgroup</span></dd>
-        </dl>
-        <p class="muted">disk: свободно 700 MiB — меньше 1 GiB. Мутации работают; при свободных &lt;512 MiB панель заблокирует изменения, игра продолжит работать.</p>
-        <div class="actions">
-          <a class="button button--secondary" href="state.html">Состояния</a>
-        </div>
-      </section>
     </div>
 
     <p class="notice">Свободно 700 MiB — это зона предупреждения (512 MiB–1 GiB). Retention и новые state-архивы работают; при остатке &lt;512 MiB <code>backups create</code> вернёт <code>no_space</code>, а сервер продолжит работать.</p>

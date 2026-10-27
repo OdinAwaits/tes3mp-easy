@@ -55,32 +55,6 @@
         </div>
       </section>
 
-      <section class="card">
-        <h2>Таймеры и проверки</h2>
-        <dl class="meta-list">
-          <dt>State backup</dt>
-          <dd><span class="badge" id="backup-timer" data-status="{{.Timer}}">{{.Timer}}</span></dd>
-          <dt>doctor</dt>
-          <dd>
-            {{if .Doctor}}
-              {{range .Doctor.Checks}}<span class="badge" data-status="{{.Status}}">{{.Name}}</span> {{end}}
-            {{else}}<span class="muted">нет данных</span>{{end}}
-          </dd>
-        </dl>
-        {{if .TimerError}}<p role="alert">{{.TimerError}}</p>{{end}}
-        {{if .DoctorError}}<p role="alert">{{.DoctorError}}</p>{{end}}
-        {{if .Doctor}}
-          <ul class="check-list">
-            {{range .Doctor.Checks}}
-              <li><span class="badge" data-status="{{.Status}}">{{.Status}}</span>
-                <strong>{{.Name}}</strong>{{if .Message}} <span class="muted">— {{.Message}}</span>{{end}}</li>
-            {{end}}
-          </ul>
-        {{end}}
-        <div class="actions">
-          <a class="button button--secondary" href="/admin/state">Состояния</a>
-        </div>
-      </section>
     </div>
 
     <p class="notice">Мутации блокируются, пока <code>doctor</code> в статусе <code>error</code>. Метрики на это не влияют.</p>

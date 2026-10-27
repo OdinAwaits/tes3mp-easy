@@ -459,13 +459,11 @@ tes3mp-easy-ops staff set --player "John Doe" --rank 2
 - Файл: `players/<name>.json`. Если файла нет — exit 3, `not_found`; ops не
   создаёт нового игрока.
 - `settings.staffRank` = 0..3 (0 none, 1 moderator, 2 admin, 3 owner).
-- Перед записью делается `players/<name>.json.bak-<timestamp>`.
-- Запись атомарная; при ошибке JSON не портится.
+- Запись атомарная; при ошибке JSON не портится. Отдельный `.bak` не создаётся.
 - Возвращает `{"player": "...", "rank": 2, "restart_required": true}`.
 - Сервер не перезапускает: панель показывает баннер «нужен рестарт».
 
-Полный state backup перед сменой ранга не нужен: это один маленький JSON, и
-рядом остаётся `.bak`.
+Полный state backup перед сменой ранга не нужен: это один маленький JSON.
 
 ### `config get` / `config set`
 

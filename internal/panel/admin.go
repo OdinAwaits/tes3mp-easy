@@ -43,9 +43,9 @@ type opsSnapshotter interface {
 	ConfigSnapshot(context.Context, string) (ConfigSnapshot, error)
 }
 
-// currentDoctor caches `ops doctor` for one minute so the dashboard poll does
-// not spawn a subprocess every five seconds. Mutations share the same cache to
-// refuse operations that doctor already marked as doomed.
+// currentDoctor caches `ops doctor` for one minute so mutations do not spawn a
+// subprocess for every request and can refuse operations that doctor already
+// marked as doomed.
 func (h *panelHandler) currentDoctor(ctx context.Context) (Doctor, error) {
 	doctor, ok := h.ops.(opsDoctor)
 	if !ok {
@@ -108,12 +108,8 @@ type dashboardPageData struct {
 	Health       string
 	StartedAt    string
 	StatusError  string
-	Timer        string
-	TimerError   string
 	Events       []string
 	EventsError  string
-	Doctor       *Doctor
-	DoctorError  string
 	Mods         *modsCurrent
 	ModsError    string
 	Metrics      metricsView
@@ -206,11 +202,10 @@ type adminStaffPageData struct {
 }
 
 type adminStaffPlayer struct {
-	Name     string
-	Rank     int
-	RankText string
-	SetURL   string
-	Error    string
+	Name   string
+	Rank   int
+	SetURL string
+	Error  string
 }
 
 func adminPageFor(r *http.Request, session sessionState) adminPage {
@@ -388,7 +383,6 @@ func (h *panelHandler) dashboardData(r *http.Request,
 		Status:      "unknown",
 		StatusLabel: statusLabel("unknown"),
 		Health:      "unknown",
-		Timer:       "unknown",
 	}
 	data.ServerName = defaultServerName
 	name, port := h.serverNamePort()
@@ -427,34 +421,6 @@ func (h *panelHandler) dashboardData(r *http.Request,
 			}
 		}
 
-		timer, timerErr := h.ops.Status(r.Context(), "tes3mp-easy-backup.timer")
-		if timerErr != nil {
-			data.Timer = "unknown"
-			data.TimerError = "Состояние таймера автобэкапов недоступно."
-		} else {
-			data.Timer = timer.State
-			if data.Timer == "" {
-				data.Timer = "unknown"
-			}
-			if data.Timer != "running" && data.Timer != "starting" {
-				data.TimerError = "Автобэкапы не идут: таймер неактивен."
-			}
-		}
-
-		if _, ok := h.ops.(opsDoctor); ok {
-			report, doctorErr := h.currentDoctor(r.Context())
-			if report.Status != "" || len(report.Checks) > 0 {
-				copy := report
-				if copy.Checks == nil {
-					copy.Checks = []DoctorCheck{}
-				}
-				data.Doctor = &copy
-			}
-			if doctorErr != nil {
-				_, message, _ := adminFailure(doctorErr)
-				data.DoctorError = message
-			}
-		}
 	}
 
 	if current, err := h.readCurrentMods(); err != nil {
@@ -1777,16 +1743,13 @@ func readStaffPlayers(root string) ([]adminStaffPlayer, error) {
 		}
 		if err := json.Unmarshal(data, &raw); err != nil {
 			player.Error = "повреждённый JSON"
-			player.RankText = "?"
 		} else {
 			if raw.Name != "" {
 				player.Name = raw.Name
 			}
 			player.Rank = raw.Settings.StaffRank
-			player.RankText = staffRankText(player.Rank)
 			if player.Rank < 0 || player.Rank > 3 {
 				player.Rank = -1
-				player.RankText = "?"
 				player.Error = "некорректный ранг"
 			}
 		}
@@ -1796,19 +1759,4 @@ func readStaffPlayers(root string) ([]adminStaffPlayer, error) {
 		return strings.ToLower(players[i].Name) < strings.ToLower(players[j].Name)
 	})
 	return players, nil
-}
-
-func staffRankText(rank int) string {
-	switch rank {
-	case 0:
-		return "0 — игрок"
-	case 1:
-		return "1 — модератор"
-	case 2:
-		return "2 — админ"
-	case 3:
-		return "3 — владелец"
-	default:
-		return "неизвестно"
-	}
 }

@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/Saagilat/tes3mp-easy/internal/atomicfile"
 	"github.com/Saagilat/tes3mp-easy/internal/lock"
@@ -35,15 +34,11 @@ type staffSetRequest struct {
 	root    string
 	player  string
 	rank    int
-	now     time.Time
 	dryRun  bool
 	writeFn func(string, []byte, os.FileMode) error
 }
 
-var (
-	staffNowFunc       = func() time.Time { return time.Now().UTC() }
-	staffWriteFileFunc = atomicfile.WriteFile
-)
+var staffWriteFileFunc = atomicfile.WriteFile
 
 func runStaff(opts options, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
@@ -89,7 +84,6 @@ func runStaffSet(opts options, args []string, stdout, stderr io.Writer) int {
 		root:    opts.root,
 		player:  setArgs.player,
 		rank:    setArgs.rank,
-		now:     staffNowFunc(),
 		dryRun:  opts.dryRun,
 		writeFn: staffWriteFileFunc,
 	})
@@ -195,15 +189,6 @@ func setStaffRankLocked(req staffSetRequest) (staffSetResult, *ops.Error) {
 		if mode == 0 {
 			mode = 0o640
 		}
-		backup, err := nextStaffBackupPath(path, req.now)
-		if err != nil {
-			return staffSetResult{}, ops.NewError(ops.ExitInternal,
-				fmt.Sprintf("staff set: %v", err))
-		}
-		if err := req.writeFn(backup, data, mode); err != nil {
-			return staffSetResult{}, ops.NewError(ops.ExitInternal,
-				fmt.Sprintf("staff set: write backup %s: %v", backup, err))
-		}
 		if err := req.writeFn(path, updated, mode); err != nil {
 			return staffSetResult{}, ops.NewError(ops.ExitInternal,
 				fmt.Sprintf("staff set: write %s: %v", path, err))
@@ -245,29 +230,6 @@ func updateStaffJSON(data []byte, rank int) ([]byte, error) {
 		return nil, fmt.Errorf("encode player JSON: %v", err)
 	}
 	return append(updated, '\n'), nil
-}
-
-func nextStaffBackupPath(path string, at time.Time) (string, error) {
-	if at.IsZero() {
-		at = time.Now().UTC()
-	}
-	base := path + ".bak-" + at.UTC().Format("2006-01-02_15-04-05")
-	for collision := 0; collision <= 9999; collision++ {
-		name := base
-		if collision > 0 {
-			name = fmt.Sprintf("%s-%02d", base, collision)
-		}
-		_, err := os.Lstat(name)
-		switch {
-		case err == nil:
-			continue
-		case errors.Is(err, fs.ErrNotExist):
-			return name, nil
-		default:
-			return "", fmt.Errorf("stat backup %s: %v", name, err)
-		}
-	}
-	return "", fmt.Errorf("no free backup name for %s", path)
 }
 
 func writeStaffSetHuman(w io.Writer, data staffSetData) error {

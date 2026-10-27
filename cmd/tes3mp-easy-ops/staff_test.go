@@ -8,14 +8,11 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Saagilat/tes3mp-easy/internal/atomicfile"
 	"github.com/Saagilat/tes3mp-easy/internal/lock"
 	"github.com/Saagilat/tes3mp-easy/internal/ops"
 )
-
-var staffUnitNow = time.Date(2026, 10, 23, 18, 0, 0, 0, time.UTC)
 
 func staffUnitRoot(t *testing.T) string {
 	t.Helper()
@@ -38,14 +35,6 @@ func staffUnitRoot(t *testing.T) string {
 		t.Fatalf("write player: %v", err)
 	}
 	return root
-}
-
-func fixStaffUnitNow(t *testing.T, at time.Time) {
-	t.Helper()
-
-	old := staffNowFunc
-	staffNowFunc = func() time.Time { return at }
-	t.Cleanup(func() { staffNowFunc = old })
 }
 
 func TestParseStaffSetArgs(t *testing.T) {
@@ -104,16 +93,12 @@ func TestParseStaffSetArgs(t *testing.T) {
 	}
 }
 
-func TestSetStaffRankLockedWritesAndBacksUp(t *testing.T) {
+func TestSetStaffRankLockedWritesAtomically(t *testing.T) {
 	root := staffUnitRoot(t)
 	path := filepath.Join(root, "players", "John Doe.json")
-	before, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read player: %v", err)
-	}
 
 	result, opsErr := setStaffRankLocked(staffSetRequest{
-		root: root, player: "John Doe", rank: 2, now: staffUnitNow,
+		root: root, player: "John Doe", rank: 2,
 		writeFn: atomicfile.WriteFile,
 	})
 	if opsErr != nil {
@@ -133,17 +118,12 @@ func TestSetStaffRankLockedWritesAndBacksUp(t *testing.T) {
 	if !bytes.Contains(updated, []byte(`"other": "keep"`)) {
 		t.Fatalf("unrelated setting was lost:\n%s", updated)
 	}
-	backup := path + ".bak-2026-10-23_18-00-00"
-	contents, err := os.ReadFile(backup)
-	if err != nil {
-		t.Fatalf("read backup: %v", err)
-	}
-	if !bytes.Equal(contents, before) {
-		t.Fatalf("backup differs from original:\n%s", contents)
+	if backups, _ := filepath.Glob(path + ".bak-*"); len(backups) != 0 {
+		t.Fatalf("staff set created backups: %v", backups)
 	}
 }
 
-func TestSetStaffRankLockedDryRunAndCollision(t *testing.T) {
+func TestSetStaffRankLockedDryRun(t *testing.T) {
 	root := staffUnitRoot(t)
 	path := filepath.Join(root, "players", "John Doe.json")
 	before, err := os.ReadFile(path)
@@ -152,7 +132,7 @@ func TestSetStaffRankLockedDryRunAndCollision(t *testing.T) {
 	}
 
 	if _, opsErr := setStaffRankLocked(staffSetRequest{
-		root: root, player: "John Doe", rank: 3, now: staffUnitNow,
+		root: root, player: "John Doe", rank: 3,
 		dryRun: true, writeFn: atomicfile.WriteFile,
 	}); opsErr != nil {
 		t.Fatalf("dry-run set: %v", opsErr)
@@ -164,25 +144,6 @@ func TestSetStaffRankLockedDryRunAndCollision(t *testing.T) {
 	if matches, _ := filepath.Glob(path + ".bak-*"); len(matches) != 0 {
 		t.Fatalf("dry-run created backups: %v", matches)
 	}
-
-	first := path + ".bak-2026-10-23_18-00-00"
-	if err := os.WriteFile(first, []byte("occupied\n"), 0o600); err != nil {
-		t.Fatalf("write occupied backup: %v", err)
-	}
-	if _, opsErr := setStaffRankLocked(staffSetRequest{
-		root: root, player: "John Doe", rank: 1, now: staffUnitNow,
-		writeFn: atomicfile.WriteFile,
-	}); opsErr != nil {
-		t.Fatalf("set with collision: %v", opsErr)
-	}
-	collision := first + "-01"
-	if contents, err := os.ReadFile(collision); err != nil ||
-		!bytes.Equal(contents, before) {
-		t.Fatalf("collision backup = %q, %v; want original", contents, err)
-	}
-	if contents, err := os.ReadFile(first); err != nil || string(contents) != "occupied\n" {
-		t.Fatalf("occupied backup was overwritten: %q, %v", contents, err)
-	}
 }
 
 func TestSetStaffRankLockedWriteFailureKeepsPlayer(t *testing.T) {
@@ -193,16 +154,11 @@ func TestSetStaffRankLockedWriteFailureKeepsPlayer(t *testing.T) {
 		t.Fatalf("read player: %v", err)
 	}
 
-	calls := 0
-	write := func(name string, data []byte, mode os.FileMode) error {
-		calls++
-		if calls == 2 {
-			return errors.New("simulated write failure")
-		}
-		return atomicfile.WriteFile(name, data, mode)
+	write := func(string, []byte, os.FileMode) error {
+		return errors.New("simulated write failure")
 	}
 	_, opsErr := setStaffRankLocked(staffSetRequest{
-		root: root, player: "John Doe", rank: 3, now: staffUnitNow,
+		root: root, player: "John Doe", rank: 3,
 		writeFn: write,
 	})
 	if opsErr == nil || opsErr.Exit != ops.ExitInternal {
@@ -226,7 +182,7 @@ func TestSetStaffRankLockedErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, opsErr := setStaffRankLocked(staffSetRequest{
-				root: root, player: tt.player, rank: 1, now: staffUnitNow,
+				root: root, player: tt.player, rank: 1,
 				writeFn: atomicfile.WriteFile,
 			})
 			if opsErr == nil || opsErr.Exit != tt.exit {

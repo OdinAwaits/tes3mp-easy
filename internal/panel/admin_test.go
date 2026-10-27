@@ -228,14 +228,11 @@ func adminError(code string, exit ops.ExitCode, message string,
 	return &OpsError{Exit: exit, Code: code, Message: message, Details: details}
 }
 
-func TestAdminDashboardShowsStatusDoctorAndTimer(t *testing.T) {
+func TestAdminDashboardShowsServerStatus(t *testing.T) {
 	opsClient := &fakeAdminOps{
 		statuses: map[string]Status{
 			"tes3mp.service": {
 				Unit: "tes3mp.service", State: "running", Health: "healthy",
-			},
-			"tes3mp-easy-backup.timer": {
-				Unit: "tes3mp-easy-backup.timer", State: "stopped", Health: "unhealthy",
 			},
 		},
 		doctor: Doctor{Status: "warn", Checks: []DoctorCheck{
@@ -249,13 +246,17 @@ func TestAdminDashboardShowsStatusDoctorAndTimer(t *testing.T) {
 		t.Fatalf("GET /admin = %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{
-		"Панель запущена", "работает", "Friends",
-		"State backup", "Автобэкапы не идут",
-		"свободно меньше 1 ГиБ",
-	} {
+	for _, want := range []string{"Панель запущена", "работает", "Friends"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard does not contain %q:\n%s", want, body)
+		}
+	}
+	for _, unwanted := range []string{
+		"Таймеры и проверки", "State backup", "backup-timer",
+		"Автобэкапы не идут", "свободно меньше 1 ГиБ",
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("dashboard still contains %q:\n%s", unwanted, body)
 		}
 	}
 }
@@ -653,6 +654,10 @@ func TestAdminStatePageGroupsAndValidatesInput(t *testing.T) {
 			t.Fatalf("state page does not contain %q:\n%s", want, body)
 		}
 	}
+	if got := strings.Count(body, "Скачать моды"); got != 2 {
+		t.Fatalf("mods download links = %d, want 2 (missing archive hidden):\n%s",
+			got, body)
+	}
 
 	rec = env.request(t, http.MethodGet, "/admin/restore-points", nil)
 	if rec.Code != http.StatusMovedPermanently ||
@@ -873,11 +878,14 @@ func TestAdminStaffListsPlayersAndSetsRank(t *testing.T) {
 		t.Fatalf("GET /admin/staff = %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{
-		"John Doe", "Jane", "2 — админ", "0 — игрок", "повреждённый JSON",
-	} {
+	for _, want := range []string{"John Doe", "Jane", "повреждённый JSON"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("staff page does not contain %q:\n%s", want, body)
+		}
+	}
+	for _, unwanted := range []string{"<th>Ранг</th>", "0 — игрок", "2 — админ"} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("staff page still contains %q:\n%s", unwanted, body)
 		}
 	}
 
