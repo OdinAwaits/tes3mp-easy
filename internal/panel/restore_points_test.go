@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Saagilat/tes3mp-easy/internal/ops"
 )
 
 type fakeRestorePointAdminOps struct {
@@ -21,6 +23,12 @@ type fakeRestorePointAdminOps struct {
 	createdCheck    bool
 	restored        []string
 	restoreErr      error
+	acceptMismatch  []bool
+	pins            []string
+	removals        []string
+	removalForce    []bool
+	removeResult    RestorePointRemoveResult
+	removeErr       error
 }
 
 func (f *fakeRestorePointAdminOps) SnapshotsList(context.Context, int, string,
@@ -50,9 +58,52 @@ func (f *fakeRestorePointAdminOps) SnapshotRestore(_ context.Context, name strin
 }
 
 func (f *fakeRestorePointAdminOps) CheckpointRestore(_ context.Context, name string,
+	acceptMismatch bool,
 ) (RestoreResult, error) {
 	f.restored = append(f.restored, name)
+	f.acceptMismatch = append(f.acceptMismatch, acceptMismatch)
 	return RestoreResult{Archive: name, Restarted: true}, f.restoreErr
+}
+
+func (f *fakeRestorePointAdminOps) CheckpointPin(_ context.Context, name string,
+	pinned bool,
+) error {
+	action := "unpin"
+	if pinned {
+		action = "pin"
+	}
+	f.pins = append(f.pins, action+":"+name)
+	return nil
+}
+
+func (f *fakeRestorePointAdminOps) SnapshotRemove(_ context.Context, name string,
+	force bool,
+) (RestorePointRemoveResult, error) {
+	return f.remove("snapshot:"+name, force)
+}
+
+func (f *fakeRestorePointAdminOps) CheckpointRemove(_ context.Context, name string,
+	force bool,
+) (RestorePointRemoveResult, error) {
+	return f.remove("checkpoint:"+name, force)
+}
+
+func (f *fakeRestorePointAdminOps) remove(name string, force bool,
+) (RestorePointRemoveResult, error) {
+	f.removals = append(f.removals, name)
+	f.removalForce = append(f.removalForce, force)
+	if f.removeErr != nil {
+		return RestorePointRemoveResult{}, f.removeErr
+	}
+	if len(f.removeResult.Removed) == 0 && len(f.removeResult.Skipped) == 0 {
+		archive := strings.TrimPrefix(name, "snapshot:")
+		archive = strings.TrimPrefix(archive, "checkpoint:")
+		return RestorePointRemoveResult{
+			Removed: []string{archive},
+			Freed:   1024,
+		}, nil
+	}
+	return f.removeResult, nil
 }
 
 func newRestorePointAdminEnv(t *testing.T, rp *fakeRestorePointAdminOps) *adminTestEnv {
@@ -74,6 +125,114 @@ func newRestorePointAdminEnv(t *testing.T, rp *fakeRestorePointAdminOps) *adminT
 		ops:     rp.fakeAdminOps,
 		session: session,
 		cookie:  &http.Cookie{Name: sessionCookieName, Value: session.ID},
+	}
+}
+
+func TestRestorePointsPinAndDelete(t *testing.T) {
+	pinned := "checkpoint-2026-10-27_16-45-00.tar.gz"
+	missingBase := "checkpoint-2026-10-27_16-46-00.tar.gz"
+	base := "snapshot-2026-10-27_16-40-00.tar.gz"
+	old := "snapshot-2026-10-26_16-40-00.tar.gz"
+	rp := &fakeRestorePointAdminOps{
+		fakeAdminOps: &fakeAdminOps{},
+		snapshots: SnapshotList{Items: []SnapshotItem{
+			{Name: "snapshot-2026-10-27_17-00-00.tar.gz", Size: 2048,
+				Mtime: "2026-10-27T17:00:00Z", Reason: "manual"},
+			{Name: base, Size: 2048, Mtime: "2026-10-27T16:40:00Z",
+				Reason: "base", UsedBy: 1},
+			{Name: old, Size: 1024, Mtime: "2026-10-26T16:40:00Z",
+				Reason: "manual"},
+		}},
+		checkpoints: CheckpointList{Items: []CheckpointItem{
+			{Name: pinned, Size: 1024, Mtime: "2026-10-27T16:45:00Z",
+				Reason: "manual", Label: stringPtr("перед квестом"), Pinned: true,
+				Base: CheckpointBaseItem{Name: base, Available: true}},
+			{Name: missingBase, Size: 1024,
+				Mtime: "2026-10-27T16:46:00Z", Reason: "timer",
+				Base: CheckpointBaseItem{Name: base, Available: false}},
+		}},
+	}
+	env := newRestorePointAdminEnv(t, rp)
+
+	rec := env.request(t, http.MethodGet, "/admin/restore-points", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET restore-points = %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"закреплён", "База удалена", "Ярлык: перед квестом",
+		"Удалить вместе с базой", "Защищён: последний снапшот",
+		"Только мир, оставить текущие моды",
+		`data-confirm-name="` + old + `"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("page does not contain %q:\n%s", want, body)
+		}
+	}
+	if got := strings.Count(body, `action="/admin/restore-points/delete"`); got != 4 {
+		t.Fatalf("delete forms = %d, want 4 (latest snapshot is protected)", got)
+	}
+
+	rec = env.request(t, http.MethodPost, "/admin/restore-points/pin",
+		url.Values{"archive": {pinned}, "pin_action": {"unpin"}})
+	if rec.Code != http.StatusSeeOther ||
+		len(rp.pins) != 1 || rp.pins[0] != "unpin:"+pinned {
+		t.Fatalf("unpin = %d calls=%v", rec.Code, rp.pins)
+	}
+
+	rec = env.request(t, http.MethodPost, "/admin/restore-points/restore",
+		url.Values{"archive": {missingBase}, "accept_mismatch": {"1"}})
+	if rec.Code != http.StatusSeeOther || len(rp.restored) != 1 ||
+		rp.restored[0] != missingBase || !rp.acceptMismatch[0] {
+		t.Fatalf("restore with mismatch = %d restored=%v accept=%v",
+			rec.Code, rp.restored, rp.acceptMismatch)
+	}
+
+	rec = env.request(t, http.MethodPost, "/admin/restore-points/delete",
+		url.Values{"archive": {pinned}, "confirm": {"wrong"}})
+	if rec.Code != http.StatusBadRequest || len(rp.removals) != 0 {
+		t.Fatalf("wrong confirm = %d removals=%v", rec.Code, rp.removals)
+	}
+
+	rec = env.request(t, http.MethodPost, "/admin/restore-points/delete",
+		url.Values{"archive": {pinned}, "confirm": {pinned}})
+	if rec.Code != http.StatusOK || len(rp.removals) != 1 ||
+		rp.removals[0] != "checkpoint:"+pinned || rp.removalForce[0] {
+		t.Fatalf("checkpoint delete = %d removals=%v force=%v",
+			rec.Code, rp.removals, rp.removalForce)
+	}
+	if !strings.Contains(rec.Body.String(), "Удалено: "+pinned) {
+		t.Fatalf("delete page does not report success:\n%s", rec.Body.String())
+	}
+
+	rec = env.request(t, http.MethodPost, "/admin/restore-points/delete",
+		url.Values{"archive": {base}, "confirm": {base}, "force": {"1"}})
+	if rec.Code != http.StatusOK || len(rp.removals) != 2 ||
+		rp.removals[1] != "snapshot:"+base || !rp.removalForce[1] {
+		t.Fatalf("snapshot delete = %d removals=%v force=%v",
+			rec.Code, rp.removals, rp.removalForce)
+	}
+}
+
+func TestRestorePointsDeleteExplainsArchiveInUse(t *testing.T) {
+	rp := &fakeRestorePointAdminOps{
+		fakeAdminOps: &fakeAdminOps{},
+		removeErr: &OpsError{
+			Exit:    ops.ExitArchiveInUse,
+			Code:    ops.CodeArchiveInUse,
+			Message: "restore point is in use: pinned",
+		},
+	}
+	env := newRestorePointAdminEnv(t, rp)
+	name := "checkpoint-2026-10-27_16-45-00.tar.gz"
+
+	rec := env.request(t, http.MethodPost, "/admin/restore-points/delete",
+		url.Values{"archive": {name}, "confirm": {name}})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("delete in use = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Снимите закрепление") {
+		t.Fatalf("in-use page has no hint:\n%s", rec.Body.String())
 	}
 }
 
@@ -137,4 +296,8 @@ func TestRestorePointsPageUsesSnapshotAndCheckpointOps(t *testing.T) {
 		rp.restored[1] != name {
 		t.Fatalf("checkpoint restore = %d calls=%v", rec.Code, rp.restored)
 	}
+}
+
+func stringPtr(value string) *string {
+	return &value
 }

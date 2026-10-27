@@ -120,6 +120,8 @@ func (h *panelHandler) routes() http.Handler {
 	mux.HandleFunc("POST /admin/restore-points/checkpoint/create", h.authenticated(false, h.handleStateCreate))
 	mux.HandleFunc("POST /admin/restore-points/snapshot/create", h.authenticated(false, h.handleStateCreate))
 	mux.HandleFunc("POST /admin/restore-points/restore", h.authenticated(false, h.handleStateDeploy))
+	mux.HandleFunc("POST /admin/restore-points/pin", h.authenticated(false, h.handleStatePin))
+	mux.HandleFunc("POST /admin/restore-points/delete", h.authenticated(false, h.handleStateDelete))
 	// Old POST addresses remain as aliases for bookmarks and tests; GET /admin/state
 	// is a permanent redirect to the new page.
 	mux.HandleFunc("POST /admin/state/create", h.authenticated(false, h.handleStateCreate))

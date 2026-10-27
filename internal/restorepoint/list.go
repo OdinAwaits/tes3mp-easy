@@ -85,9 +85,6 @@ func ListSnapshots(root string) ([]SnapshotItem, error) {
 	}
 	used := make(map[string]int)
 	for _, checkpoint := range checkpoints {
-		if checkpoint.Reason == "predeploy" {
-			continue
-		}
 		used[checkpoint.Base.Name]++
 	}
 	for i := range items {

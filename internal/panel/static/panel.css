@@ -916,6 +916,35 @@ td form {
   margin: 0;
 }
 
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .35rem;
+}
+
+.delete-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .3rem;
+}
+
+.delete-confirm input {
+  min-height: 2rem;
+  max-width: 15rem;
+  padding: .28rem .5rem;
+  font-size: .8rem;
+}
+
+.delete-force {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  color: var(--muted);
+  font-size: .8rem;
+}
+
 .check-list {
   margin: 1rem 0 0;
   padding: 0;

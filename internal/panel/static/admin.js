@@ -229,4 +229,33 @@
     }
     window.setInterval(refreshLogs, 5000);
   }
+  var mismatchForms = document.querySelectorAll("[data-mismatch-form]");
+  mismatchForms.forEach(function (form) {
+    var checkbox = form.querySelector("[data-mismatch-checkbox]");
+    var submit = form.querySelector("[data-mismatch-submit]");
+    if (!checkbox || !submit) {
+      return;
+    }
+    var update = function () {
+      submit.disabled = !checkbox.checked;
+    };
+    checkbox.addEventListener("change", update);
+    update();
+  });
+
+  var deleteForms = document.querySelectorAll("[data-delete-form]");
+  deleteForms.forEach(function (form) {
+    var expected = form.getAttribute("data-confirm-name") || "";
+    var input = form.querySelector("input[name='confirm']");
+    var submit = form.querySelector("[data-delete-submit]");
+    if (!input || !submit) {
+      return;
+    }
+    var update = function () {
+      submit.disabled = input.value !== expected;
+    };
+    input.addEventListener("input", update);
+    input.addEventListener("change", update);
+    update();
+  });
 })();

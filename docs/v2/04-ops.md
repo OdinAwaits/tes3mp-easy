@@ -461,7 +461,8 @@ mtime (новые сверху). По умолчанию не считает sha
 
 ### `snapshot rm` / `checkpoint rm` / `backups rm`
 
-Правила и JSON — `03-contracts.md` §4. Ops проверяет всю пачку до первого
+Правила и JSON — `03-contracts.md` §4. `checkpoint rm` удаляет и обычные
+чекпоинты, и `checkpoint-predeploy-*`. Ops проверяет всю пачку до первого
 удаления: без `--force` защищённое имя даёт `archive_in_use`, exit 12, и не
 удаляется ничего. С `--force` база удаляется (если это не последний снапшот),
 её чекпоинты остаются с `available=false`, их имена попадают в `warnings`.

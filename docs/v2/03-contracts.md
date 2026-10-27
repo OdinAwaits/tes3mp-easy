@@ -379,7 +379,9 @@ backups rm --type mods|configs <name>... [--force] [--dry-run]
 ```
 
 - имя проверяется как безопасное (`unsafe_path`, exit 8) и как архив своего
-  типа (`invalid_argument`, exit 2); отсутствующий файл — `not_found`, exit 3;
+  типа (`invalid_argument`, exit 2); `checkpoint rm` принимает и
+  `checkpoint-predeploy-*` (обе разновидности лежат в `backups/checkpoints`),
+  отсутствующий файл — `not_found`, exit 3;
 - без `--force` защищённые имена не удаляются: закреплённый чекпоинт, архив из
   `current.txt`, последний снапшот и база, на которую ссылаются чекпоинты, дают
   `archive_in_use`, exit 12, и отклоняется вся пачка — частичного удаления нет;

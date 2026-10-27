@@ -65,7 +65,7 @@ func Remove(opts RemoveOptions) (RemoveResult, error) {
 	names := uniqueNames(opts.Names)
 	infos := make(map[string]int64, len(names))
 	for _, name := range names {
-		if err := ValidateName(opts.Kind, name); err != nil {
+		if err := validateRemoveName(opts.Kind, name); err != nil {
 			return RemoveResult{}, err
 		}
 		path := filepath.Join(dir, name)
@@ -164,6 +164,26 @@ func Remove(opts RemoveOptions) (RemoveResult, error) {
 		}
 	}
 	return result, nil
+}
+
+// validateRemoveName accepts ordinary checkpoints and predeploy checkpoints for
+// a checkpoint batch; both live in backups/checkpoints and share the pin file
+// convention.
+func validateRemoveName(kind Kind, name string) error {
+	parsed, err := ParseName(name)
+	if err != nil {
+		return err
+	}
+	if kind == KindCheckpoint {
+		if !parsed.Kind.IsCheckpoint() {
+			return invalidf("archive name %q is not a checkpoint archive", name)
+		}
+		return nil
+	}
+	if parsed.Kind != kind {
+		return invalidf("archive name %q is not a %s archive", name, kind)
+	}
+	return nil
 }
 
 func uniqueNames(names []string) []string {

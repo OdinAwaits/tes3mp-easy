@@ -154,6 +154,21 @@ type RestoreResult struct {
 	Restarted           bool     `json:"restarted"`
 }
 
+// RestorePointSkipped is one protected archive reported by `rm`.
+type RestorePointSkipped struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+
+// RestorePointRemoveResult is the decoded `data` object of `snapshot rm` and
+// `checkpoint rm`.
+type RestorePointRemoveResult struct {
+	Removed  []string              `json:"removed"`
+	Skipped  []RestorePointSkipped `json:"skipped"`
+	Freed    int64                 `json:"freed"`
+	Warnings []string              `json:"warnings"`
+}
+
 // RestorePointOps is the newer snapshot/checkpoint surface. It is separate
 // from Ops so older test doubles and callers keep compiling.
 type RestorePointOps interface {
@@ -162,7 +177,10 @@ type RestorePointOps interface {
 	CheckpointsList(ctx context.Context, limit int, before string) (CheckpointList, error)
 	CheckpointCreate(ctx context.Context) (Checkpoint, error)
 	SnapshotRestore(ctx context.Context, name string) (RestoreResult, error)
-	CheckpointRestore(ctx context.Context, name string) (RestoreResult, error)
+	CheckpointRestore(ctx context.Context, name string, acceptMismatch bool) (RestoreResult, error)
+	CheckpointPin(ctx context.Context, name string, pinned bool) error
+	SnapshotRemove(ctx context.Context, name string, force bool) (RestorePointRemoveResult, error)
+	CheckpointRemove(ctx context.Context, name string, force bool) (RestorePointRemoveResult, error)
 }
 
 // ImportResult is the decoded `data` object of `ops mods import`.
@@ -936,13 +954,17 @@ func (c *OpsClient) SnapshotRestore(ctx context.Context, name string,
 
 // CheckpointRestore restores players/ and world/ from a checkpoint.
 func (c *OpsClient) CheckpointRestore(ctx context.Context, name string,
+	acceptMismatch bool,
 ) (RestoreResult, error) {
 	if name == "" {
 		return RestoreResult{}, opsArgumentError("checkpoint restore",
 			"archive name is required")
 	}
-	raw, err := c.call(ctx, c.longMutationTimeout, "checkpoint restore",
-		"checkpoint", "restore", "--archive", name)
+	args := []string{"checkpoint", "restore", "--archive", name}
+	if acceptMismatch {
+		args = append(args, "--accept-mod-mismatch")
+	}
+	raw, err := c.call(ctx, c.longMutationTimeout, "checkpoint restore", args...)
 	if err != nil {
 		return RestoreResult{}, err
 	}
@@ -951,6 +973,62 @@ func (c *OpsClient) CheckpointRestore(ctx context.Context, name string,
 		return RestoreResult{}, err
 	}
 	data.MissingPlugins = nonNilStrings(data.MissingPlugins)
+	return data, nil
+}
+
+// CheckpointPin creates or removes the immutable checkpoint pin sidecar.
+func (c *OpsClient) CheckpointPin(ctx context.Context, name string, pinned bool) error {
+	if name == "" {
+		return opsArgumentError("checkpoint pin", "archive name is required")
+	}
+	action := "unpin"
+	if pinned {
+		action = "pin"
+	}
+	command := "checkpoint " + action
+	if _, err := c.call(ctx, c.mutationTimeout, command,
+		"checkpoint", action, name); err != nil {
+		return err
+	}
+	return nil
+}
+
+// SnapshotRemove deletes snapshots after the ops-side protection checks.
+func (c *OpsClient) SnapshotRemove(ctx context.Context, name string, force bool,
+) (RestorePointRemoveResult, error) {
+	return c.removeRestorePoint(ctx, "snapshot rm", "snapshot", name, force)
+}
+
+// CheckpointRemove deletes checkpoints after the ops-side protection checks.
+func (c *OpsClient) CheckpointRemove(ctx context.Context, name string, force bool,
+) (RestorePointRemoveResult, error) {
+	return c.removeRestorePoint(ctx, "checkpoint rm", "checkpoint", name, force)
+}
+
+func (c *OpsClient) removeRestorePoint(ctx context.Context, command, subject,
+	name string, force bool,
+) (RestorePointRemoveResult, error) {
+	if name == "" {
+		return RestorePointRemoveResult{},
+			opsArgumentError(command, "archive name is required")
+	}
+	args := []string{subject, "rm", name}
+	if force {
+		args = append(args, "--force")
+	}
+	raw, err := c.call(ctx, c.mutationTimeout, command, args...)
+	if err != nil {
+		return RestorePointRemoveResult{}, err
+	}
+	var data RestorePointRemoveResult
+	if err := c.decodeData(command, raw, &data); err != nil {
+		return RestorePointRemoveResult{}, err
+	}
+	data.Removed = nonNilStrings(data.Removed)
+	if data.Skipped == nil {
+		data.Skipped = []RestorePointSkipped{}
+	}
+	data.Warnings = nonNilStrings(data.Warnings)
 	return data, nil
 }
 

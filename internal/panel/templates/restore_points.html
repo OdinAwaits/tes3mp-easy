@@ -3,6 +3,7 @@
 <head>
 {{template "head"}}
   <title>Точки отката — tes3mp-easy</title>
+  <script defer src="/static/admin.js"></script>
 </head>
 <body>
   {{template "adminNav" .}}
@@ -17,6 +18,14 @@
     {{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
     {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
     {{if .RestartRequired}}<p class="notice">Нужен перезапуск сервера, чтобы применить изменения.</p>{{end}}
+    {{if .Warnings}}
+      <div class="notice" role="status">
+        <p>Предупреждения:</p>
+        <ul class="check-list">
+          {{range .Warnings}}<li>{{.}}</li>{{end}}
+        </ul>
+      </div>
+    {{end}}
 
     <div class="toolbar">
       <div class="actions">
@@ -58,16 +67,64 @@
               <tbody>
                 {{range .Items}}
                   <tr>
-                    <td><code>{{.Name}}</code>{{if .Current}} <span class="badge" data-status="ok">текущий</span>{{end}}</td>
-                    <td><span class="tag">{{.Class}}</span></td>
+                    <td>
+                      <code>{{.Name}}</code>
+                      {{if .Current}} <span class="badge" data-status="ok">текущий</span>{{end}}
+                      {{if .Pinned}} <span class="badge" data-status="ok">закреплён</span>{{end}}
+                      {{if and .BaseName (not .BaseAvailable)}} <span class="badge" data-status="warn">База удалена</span>{{end}}
+                      {{if .Label}}<div class="muted">Ярлык: {{.Label}}</div>{{end}}
+                      {{if .BaseName}}<div class="muted">База: <code>{{.BaseName}}</code></div>{{end}}
+                    </td>
+                    <td>
+                      <span class="tag">{{.Class}}</span>
+                      {{if .Reason}}<div class="muted">{{.Reason}}</div>{{end}}
+                      {{if .UsedBy}}<div class="muted">Ссылаются: {{.UsedBy}}</div>{{end}}
+                    </td>
                     <td>{{.SizeLabel}}</td>
                     <td><time datetime="{{.Mtime}}">{{.MtimeLabel}}</time></td>
                     <td>
-                      <form method="post" action="/admin/restore-points/restore">
-                        <input type="hidden" name="_csrf" value="{{$.CSRF}}">
-                        <input type="hidden" name="archive" value="{{.Name}}">
-                        <button class="button button--danger button--small" type="submit">Восстановить</button>
-                      </form>
+                      <div class="row-actions">
+                        <form method="post" action="/admin/restore-points/restore"{{if and .BaseName (not .BaseAvailable)}} data-mismatch-form{{end}}>
+                          <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+                          <input type="hidden" name="archive" value="{{.Name}}">
+                          {{if and .BaseName (not .BaseAvailable)}}
+                            <label class="delete-force">
+                              <input type="checkbox" name="accept_mismatch" value="1" data-mismatch-checkbox>
+                              Только мир, оставить текущие моды
+                            </label>
+                          {{end}}
+                          <button class="button button--danger button--small" type="submit"{{if and .BaseName (not .BaseAvailable)}} data-mismatch-submit disabled{{end}}>Восстановить</button>
+                        </form>
+                        {{if .CanPin}}
+                          <form method="post" action="/admin/restore-points/pin">
+                            <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+                            <input type="hidden" name="archive" value="{{.Name}}">
+                            <input type="hidden" name="pin_action" value="{{if .Pinned}}unpin{{else}}pin{{end}}">
+                            <button class="button button--secondary button--small" type="submit">{{if .Pinned}}Открепить{{else}}Закрепить{{end}}</button>
+                          </form>
+                        {{end}}
+                        {{if .CanDelete}}
+                          <form method="post" action="/admin/restore-points/delete"
+                                data-delete-form data-confirm-name="{{.Name}}">
+                            <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+                            <input type="hidden" name="archive" value="{{.Name}}">
+                            <label class="delete-confirm">
+                              <span class="muted">Имя для удаления</span>
+                              <input type="text" name="confirm" autocomplete="off" autocapitalize="off" spellcheck="false">
+                            </label>
+                            {{if .NeedsForce}}
+                              <label class="delete-force">
+                                <input type="checkbox" name="force" value="1">
+                                Удалить вместе с базой
+                              </label>
+                            {{end}}
+                            <button class="button button--danger button--small" type="submit"
+                                    data-delete-submit disabled>Удалить</button>
+                          </form>
+                        {{else}}
+                          <span class="muted">Защищён: последний снапшот</span>
+                        {{end}}
+                      </div>
                     </td>
                   </tr>
                 {{end}}

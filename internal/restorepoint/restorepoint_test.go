@@ -75,6 +75,33 @@ func TestNextNameAddsCollision(t *testing.T) {
 	}
 }
 
+func TestRemoveAcceptsPredeployCheckpoint(t *testing.T) {
+	root := t.TempDir()
+	name := "checkpoint-predeploy-2026-10-27_16-40-00.tar.gz"
+	dir := Dir(root, KindCheckpoint)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Remove(RemoveOptions{
+		Root:  root,
+		Kind:  KindCheckpoint,
+		Names: []string{name},
+	})
+	if err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if !slices.Equal(result.Removed, []string{name}) || result.Freed != 1 {
+		t.Fatalf("result = %+v", result)
+	}
+	if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+		t.Fatalf("archive still exists: %v", err)
+	}
+}
+
 func TestDigestIsOrderIndependent(t *testing.T) {
 	files := []File{
 		{Path: "players/b.json", Size: 2, SHA256: "bb"},

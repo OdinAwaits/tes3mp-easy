@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Saagilat/tes3mp-easy/internal/archive"
+	"github.com/Saagilat/tes3mp-easy/internal/ops"
 	"github.com/Saagilat/tes3mp-easy/internal/restorepoint"
 )
 
@@ -155,16 +156,26 @@ type adminStatePageData struct {
 	StateURL  string
 	ModsURL   string
 	ServerURL string
+	Warnings  []string
 }
 
 type adminBackupItem struct {
-	Name       string
-	Size       int64
-	SizeLabel  string
-	Mtime      string
-	MtimeLabel string
-	Current    bool
-	Class      string
+	Name          string
+	Size          int64
+	SizeLabel     string
+	Mtime         string
+	MtimeLabel    string
+	Current       bool
+	Class         string
+	Reason        string
+	Label         string
+	Pinned        bool
+	BaseName      string
+	BaseAvailable bool
+	UsedBy        int
+	CanPin        bool
+	CanDelete     bool
+	NeedsForce    bool
 }
 
 type adminBackupGroup struct {
@@ -235,6 +246,12 @@ func adminPageFor(r *http.Request, session sessionState) adminPage {
 		page.Notice = "Предыдущий архив модов задеплоен."
 	case "state_deployed":
 		page.Notice = "Состояние восстановлено."
+	case "checkpoint_pinned":
+		page.Notice = "Чекпоинт закреплён: retention его не удалит."
+	case "checkpoint_unpinned":
+		page.Notice = "Чекпоинт откреплён."
+	case "restore_point_deleted":
+		page.Notice = "Архив удалён."
 	case "staff_saved":
 		page.Notice = "Ранг изменён. Перезапустите сервер, чтобы применить его."
 	case "config_saved":
@@ -1143,28 +1160,42 @@ func (h *panelHandler) restorePointPageData(r *http.Request,
 	}
 
 	snapItem := adminBackupGroup{Label: "Снапшоты"}
-	for _, item := range snapshots.Items {
+	for i, item := range snapshots.Items {
 		mtime, label := backupTime(item.Mtime)
-		snapItem.Items = append(snapItem.Items, adminBackupItem{
-			Name:       item.Name,
-			Size:       item.Size,
-			SizeLabel:  humanSize(item.Size),
-			Mtime:      mtime,
-			MtimeLabel: label,
-			Class:      "snapshot",
-		})
-	}
-	regular := adminBackupGroup{Label: "Чекпоинты"}
-	predeploy := adminBackupGroup{Label: "Predeploy-чекпоинты"}
-	for _, item := range checkpoints.Items {
-		mtime, label := backupTime(item.Mtime)
+		reason := item.Reason
 		row := adminBackupItem{
 			Name:       item.Name,
 			Size:       item.Size,
 			SizeLabel:  humanSize(item.Size),
 			Mtime:      mtime,
 			MtimeLabel: label,
-			Class:      "checkpoint",
+			Class:      "snapshot",
+			Reason:     reason,
+			Label:      optionalText(item.Label),
+			UsedBy:     item.UsedBy,
+			CanDelete:  snapshotBefore != "" || i > 0,
+			NeedsForce: item.UsedBy > 0,
+		}
+		snapItem.Items = append(snapItem.Items, row)
+	}
+	regular := adminBackupGroup{Label: "Чекпоинты"}
+	predeploy := adminBackupGroup{Label: "Predeploy-чекпоинты"}
+	for _, item := range checkpoints.Items {
+		mtime, label := backupTime(item.Mtime)
+		row := adminBackupItem{
+			Name:          item.Name,
+			Size:          item.Size,
+			SizeLabel:     humanSize(item.Size),
+			Mtime:         mtime,
+			MtimeLabel:    label,
+			Class:         "checkpoint",
+			Reason:        item.Reason,
+			Label:         optionalText(item.Label),
+			Pinned:        item.Pinned,
+			BaseName:      item.Base.Name,
+			BaseAvailable: item.Base.Available,
+			CanPin:        item.Reason != "predeploy",
+			CanDelete:     true,
 		}
 		if item.Reason == "predeploy" {
 			row.Class = "checkpoint-predeploy"
@@ -1199,6 +1230,13 @@ func restorePointNextURL(before string, limit int) string {
 	values.Set("before", before)
 	values.Set("limit", strconv.Itoa(limit))
 	return "/admin/restore-points?" + values.Encode()
+}
+
+func optionalText(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (h *panelHandler) redirectToRestorePoints(w http.ResponseWriter, r *http.Request) {
@@ -1353,7 +1391,8 @@ func (h *panelHandler) handleStateDeploy(w http.ResponseWriter, r *http.Request,
 			result, restoreErr = rp.SnapshotRestore(r.Context(), name)
 		} else {
 			action = "checkpoint.restore"
-			result, restoreErr = rp.CheckpointRestore(r.Context(), name)
+			result, restoreErr = rp.CheckpointRestore(r.Context(), name,
+				r.PostForm.Get("accept_mismatch") != "")
 		}
 		if restoreErr != nil {
 			h.logger.Printf("audit: action=%s archive=%s result=error code=%s",
@@ -1394,6 +1433,139 @@ func (h *panelHandler) renderStateFailure(w http.ResponseWriter, r *http.Request
 	data.Error = message
 	data.ErrorField = field
 	h.render(w, status, "restore_points.html", data)
+}
+
+func (h *panelHandler) handleStatePin(w http.ResponseWriter, r *http.Request,
+	session sessionState,
+) {
+	if h.ops == nil {
+		h.renderStateFailure(w, r, session, http.StatusServiceUnavailable,
+			"ops не настроен: закрепление недоступно.", "")
+		return
+	}
+	rp, ok := h.ops.(RestorePointOps)
+	if !ok {
+		h.renderStateFailure(w, r, session, http.StatusServiceUnavailable,
+			"ops не поддерживает закрепление чекпоинтов.", "")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		h.renderStateFailure(w, r, session, http.StatusBadRequest,
+			"Некорректная форма.", "")
+		return
+	}
+	name := r.PostForm.Get("archive")
+	if !safeArchiveName(name) {
+		h.renderStateFailure(w, r, session, http.StatusBadRequest,
+			"Некорректное имя архива.", "archive")
+		return
+	}
+	parsed, err := restorepoint.ParseName(name)
+	if err != nil || parsed.Kind != restorepoint.KindCheckpoint {
+		h.renderStateFailure(w, r, session, http.StatusBadRequest,
+			"Закрепить можно только обычный чекпоинт.", "archive")
+		return
+	}
+	pinned := false
+	switch r.PostForm.Get("pin_action") {
+	case "pin":
+		pinned = true
+	case "unpin":
+	default:
+		h.renderStateFailure(w, r, session, http.StatusBadRequest,
+			"Неизвестное действие закрепления.", "pin_action")
+		return
+	}
+	if err := rp.CheckpointPin(r.Context(), name, pinned); err != nil {
+		h.renderStateOpsFailure(w, r, session,
+			"checkpoint.pin", err)
+		return
+	}
+	result := "checkpoint_unpinned"
+	if pinned {
+		result = "checkpoint_pinned"
+	}
+	h.logger.Printf("audit: action=checkpoint.pin archive=%s pinned=%t result=ok",
+		name, pinned)
+	http.Redirect(w, r, "/admin/restore-points?ok="+result, http.StatusSeeOther)
+}
+
+func (h *panelHandler) handleStateDelete(w http.ResponseWriter, r *http.Request,
+	session sessionState,
+) {
+	if h.ops == nil {
+		h.renderStateFailure(w, r, session, http.StatusServiceUnavailable,
+			"ops не настроен: удаление недоступно.", "")
+		return
+	}
+	rp, ok := h.ops.(RestorePointOps)
+	if !ok {
+		h.renderStateFailure(w, r, session, http.StatusServiceUnavailable,
+			"ops не поддерживает удаление точек отката.", "")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		h.renderStateFailure(w, r, session, http.StatusBadRequest,
+			"Некорректная форма.", "")
+		return
+	}
+	name := r.PostForm.Get("archive")
+	confirm := r.PostForm.Get("confirm")
+	if !safeArchiveName(name) {
+		h.renderStateFailure(w, r, session, http.StatusBadRequest,
+			"Некорректное имя архива.", "archive")
+		return
+	}
+	if confirm != name {
+		h.renderStateFailure(w, r, session, http.StatusBadRequest,
+			"Введите имя архива целиком, чтобы подтвердить удаление.", "confirm")
+		return
+	}
+	parsed, err := restorepoint.ParseName(name)
+	if err != nil {
+		h.renderStateFailure(w, r, session, http.StatusBadRequest,
+			"Некорректное имя точки отката.", "archive")
+		return
+	}
+	force := r.PostForm.Get("force") != "" &&
+		parsed.Kind == restorepoint.KindSnapshot
+	action := "checkpoint.rm"
+	var result RestorePointRemoveResult
+	if parsed.Kind == restorepoint.KindSnapshot {
+		action = "snapshot.rm"
+		result, err = rp.SnapshotRemove(r.Context(), name, force)
+	} else {
+		result, err = rp.CheckpointRemove(r.Context(), name, force)
+	}
+	if err != nil {
+		h.logger.Printf("audit: action=%s archive=%s force=%t result=error code=%s",
+			action, name, force, adminErrorCode(err))
+		status, message, field := adminFailure(err)
+		if adminErrorCode(err) == ops.CodeArchiveInUse {
+			message += " Снимите закрепление или повторите с «Удалить вместе с базой»."
+		}
+		h.renderStateFailure(w, r, session, status, message, field)
+		return
+	}
+	h.logger.Printf("audit: action=%s archive=%s force=%t result=ok freed=%d",
+		action, name, force, result.Freed)
+
+	data, pageErr := h.statePageData(r, session, "", adminBackupPageSize)
+	if pageErr != nil {
+		status, message, field := adminFailure(pageErr)
+		data.Error = message
+		data.ErrorField = field
+		h.render(w, status, "restore_points.html", data)
+		return
+	}
+	data.Notice = fmt.Sprintf("Удалено: %s. Освобождено %s.",
+		strings.Join(result.Removed, ", "), humanSize(result.Freed))
+	data.Warnings = append(data.Warnings, result.Warnings...)
+	for _, skipped := range result.Skipped {
+		data.Warnings = append(data.Warnings, fmt.Sprintf(
+			"%s не удалён: %s", skipped.Name, skipped.Reason))
+	}
+	h.render(w, http.StatusOK, "restore_points.html", data)
 }
 
 type adminConfigFieldDef struct {
