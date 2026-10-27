@@ -301,14 +301,10 @@ func (h *panelHandler) handleBackups(w http.ResponseWriter, r *http.Request) {
 	if typ == "" {
 		typ = "mods"
 	}
-	if typ != "mods" {
-		message := "Неизвестный тип бэкапа. Публично доступны только mods."
-		if typ == "state" {
-			message = "Публично доступны только архивы модов."
-		}
+	if typ != "mods" && typ != "state" {
 		h.renderBackups(w, http.StatusBadRequest, backupsPageData{
 			Type:  "mods",
-			Error: message,
+			Error: "Неизвестный тип бэкапа. Доступны mods и state.",
 		})
 		return
 	}
@@ -396,11 +392,36 @@ func (h *panelHandler) handleBackupDownload(typ string) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
-		target := filepath.Join(h.cfg.Root, "backups", typ, name)
-		info, err := os.Lstat(target)
-		if err != nil || !info.Mode().IsRegular() {
+		switch typ {
+		case "mods":
+			if archive.ValidateModsArchiveName(name) != nil {
+				http.NotFound(w, r)
+				return
+			}
+		case "state":
+			if archive.ValidateStateArchiveName(name) != nil {
+				http.NotFound(w, r)
+				return
+			}
+		default:
 			http.NotFound(w, r)
 			return
+		}
+		target := filepath.Join(h.cfg.Root, "backups", typ, name)
+		info, err := os.Lstat(target)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 ||
+			!info.Mode().IsRegular() {
+			http.NotFound(w, r)
+			return
+		}
+		if typ == "state" {
+			// Old archives may contain the server config with its password
+			// or banlist.json. Serve only archives that match the current
+			// public state layout.
+			if _, err := archive.ValidateStateLayoutFile(target); err != nil {
+				http.NotFound(w, r)
+				return
+			}
 		}
 		file, err := os.Open(target)
 		if err != nil {
@@ -521,7 +542,7 @@ func backupTypeLabel(typ string) string {
 	if typ == "mods" {
 		return "Моды"
 	}
-	return "Состояние"
+	return "Состояния"
 }
 
 func humanSize(size int64) string {

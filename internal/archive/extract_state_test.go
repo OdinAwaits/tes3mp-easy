@@ -139,13 +139,8 @@ func TestExtractStateRejectsInvalidLayout(t *testing.T) {
 
 func TestExtractStateConfigs(t *testing.T) {
 	_, current := modsDirWith(t, "mods")
-	entries := append(stateDeployEntries(t, current),
-		fixtureEntry{name: "configs/", typ: tar.TypeDir},
-		fixtureEntry{name: "configs/config.lua", body: "config = {}\n"},
-		fixtureEntry{name: "configs/tes3mp-server-default.cfg", body: "[General]\n"},
-		fixtureEntry{name: "configs/banlist.json", body: "{}\n"},
-	)
-	reader, err := NewReader(bytes.NewReader(makeTarGz(t, entries)))
+	reader, err := NewReader(bytes.NewReader(
+		makeTarGz(t, stateDeployEntries(t, current))))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,21 +150,21 @@ func TestExtractStateConfigs(t *testing.T) {
 	if err := ExtractState(reader, dest); err != nil {
 		t.Fatalf("ExtractState: %v", err)
 	}
-	for _, name := range []string{
-		"config.lua", "tes3mp-server-default.cfg", "banlist.json",
-	} {
-		path := filepath.Join(dest, "configs", name)
-		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatalf("extracted configs/%s: %v", name, err)
-		}
-		if info.Mode().Perm() != 0o600 {
-			t.Fatalf("configs/%s mode = %04o, want 0600",
-				name, info.Mode().Perm())
-		}
+	path := filepath.Join(dest, "configs", "config.lua")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("extracted configs/config.lua: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dest, "configs", "customScripts.lua")); !os.IsNotExist(err) {
-		t.Fatalf("customScripts.lua was extracted: %v", err)
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("configs/config.lua mode = %04o, want 0600",
+			info.Mode().Perm())
+	}
+	for _, name := range []string{
+		"tes3mp-server-default.cfg", "banlist.json", "customScripts.lua",
+	} {
+		if _, err := os.Stat(filepath.Join(dest, "configs", name)); !os.IsNotExist(err) {
+			t.Fatalf("configs/%s was extracted: %v", name, err)
+		}
 	}
 }
 
@@ -184,24 +179,20 @@ func TestValidateStateRejectsCustomScriptsConfig(t *testing.T) {
 	}
 }
 
-func TestValidateStateRejectsPartialConfigs(t *testing.T) {
+func TestValidateStateRejectsMissingConfig(t *testing.T) {
 	modsDir, current := modsDirWith(t, "mods")
-	entries := append(stateEntries(current),
-		fixtureEntry{name: "configs/config.lua", body: "config = {}\n"})
+	entries := withoutEntry(stateEntries(current), "configs/config.lua")
 	_, err := validateStateEntries(t, entries, modsDir)
 	if !errors.Is(err, ErrInvalid) ||
-		!bytes.Contains([]byte(err.Error()), []byte("configs/tes3mp-server-default.cfg")) {
+		!bytes.Contains([]byte(err.Error()), []byte("configs/config.lua")) {
 		t.Fatalf("error = %v, want missing state config", err)
 	}
 }
 
 func TestValidateStateRejectsConfigDirectories(t *testing.T) {
 	modsDir, current := modsDirWith(t, "mods")
-	entries := append(stateEntries(current),
-		fixtureEntry{name: "configs/", typ: tar.TypeDir},
+	entries := append(withoutEntry(stateEntries(current), "configs/config.lua"),
 		fixtureEntry{name: "configs/config.lua/", typ: tar.TypeDir},
-		fixtureEntry{name: "configs/tes3mp-server-default.cfg", body: ""},
-		fixtureEntry{name: "configs/banlist.json", body: "[]\n"},
 	)
 	_, err := validateStateEntries(t, entries, modsDir)
 	if !errors.Is(err, ErrInvalid) ||

@@ -13,9 +13,10 @@
 - Удалять, переименовывать и менять тип существующих полей нельзя без
   `/api/v2` или нового major-релиза ops.
 - Любое изменение контракта требует обновления фикстур и тестов в том же PR.
-- Поддерживаются форматы этой версии. Исключение — state-архивы без `configs/`:
-  они читаются для восстановления world+players. Старый `current.txt` и старые
-  имена snapshot/checkpoint не принимаются.
+- Поддерживаются только форматы этой версии. State-архивы без
+  `configs/config.lua` и архивы с `tes3mp-server-default.cfg` или
+  `banlist.json` отклоняются как `archive_invalid`. Старый `current.txt` и
+  старые имена snapshot/checkpoint не принимаются.
 
 ## 2. Ops: JSON-envelope
 
@@ -215,11 +216,11 @@ CLI: `backups create --type state [--manual] [--if-running] [--dry-run]`.
 }
 ```
 
-- Создаёт state-архив: `players/`, `world/`, `configs/` и `current.txt`.
-  `configs/` содержит только `config.lua`, `tes3mp-server-default.cfg` и
-  `banlist.json`; `customScripts.lua` не входит. Если хотя бы один из трёх
-  конфигов отсутствует или не является обычным файлом, команда завершается
-  `archive_invalid` (exit 7) и не оставляет архива.
+- Создаёт state-архив: `players/`, `world/`, `configs/config.lua` и
+  `current.txt`. `tes3mp-server-default.cfg`, `banlist.json` и
+  `customScripts.lua` не входят. Если `config.lua` отсутствует или не является
+  обычным файлом, команда завершается `archive_invalid` (exit 7) и не оставляет
+  архива.
 - `current.txt` — первая запись архива, чтобы retention читал ссылку на моды
   без полного сканирования.
 - После создания выполняется только state-retention: state-архивы по возрасту
@@ -272,10 +273,11 @@ CLI: `state deploy (--latest|--archive <name>) [--no-restart] [--dry-run]`.
 - State-архив обязан ссылаться на текущий пакет модов: `current.txt` состояния
   должен совпадать с `backups/mods/current.txt`, а sha256 — с файлом. Иначе
   `archive_invalid`; моды автоматически не подменяются.
-- Восстанавливаются `players/`, `world/` и три конфига из `configs/`.
-  `customScripts.lua` и остальные файлы `configs/` не трогаются.
-- Старые state-архивы без `configs/` остаются валидными: восстанавливаются
-  только `players/` и `world/`, конфиги не меняются.
+- Восстанавливаются `players/`, `world/` и `configs/config.lua`.
+  `tes3mp-server-default.cfg`, `banlist.json`, `customScripts.lua` и остальные
+  файлы `configs/` не трогаются.
+- State-архивы без `configs/config.lua` или с `tes3mp-server-default.cfg` либо
+  `banlist.json` отклоняются как `archive_invalid`; обратной совместимости нет.
 - Перед изменением всегда создаётся `state-predeploy-*` с текущими данными.
 - Если сервер работал, он останавливается до подмены и запускается после, кроме
   `--no-restart`.
@@ -427,9 +429,7 @@ State-архив — снимок мира и конфигов, который �
 ```text
 current.txt
 configs/
-├── config.lua
-├── tes3mp-server-default.cfg
-└── banlist.json
+└── config.lua
 requiredDataFiles.json
 players/
 world/
@@ -441,8 +441,8 @@ world/
 ```
 
 - `current.txt` записывается первой записью tar и ссылается на пакет модов.
-- `configs/` необязателен для старых архивов. Если его нет, `state deploy`
-  восстанавливает только `players/` и `world/`.
+- `configs/config.lua` обязателен. `tes3mp-server-default.cfg` с паролем
+  сервера и `banlist.json` в state не входят.
 - `customScripts.lua` в state не входит: он генерируется из `mods/scripts/`.
 - `requiredDataFiles.json` в корне описывает состав пакета модов.
 - `players/` — файлы верхнего уровня; вложенные каталоги запрещены.
@@ -450,8 +450,8 @@ world/
   них запрещена.
 - Symlink, hardlink, device, FIFO и неизвестные top-level записи отклоняются
   с `archive_invalid`.
-- Архивы без `configs/` остаются читаемыми: это режим обратной совместимости
-  только для world+players.
+- Архивы без `configs/config.lua`, с `tes3mp-server-default.cfg` или
+  `banlist.json` отклоняются: старый формат не поддерживается.
 
 ### 6.3. `requiredDataFiles.json`
 
@@ -485,18 +485,17 @@ world/
 
 ### 6.5. Configs
 
-`configs/` в state содержит ровно три файла:
+`configs/` в state содержит ровно один файл:
 
 ```text
 configs/
-├── config.lua
-├── tes3mp-server-default.cfg
-└── banlist.json
+└── config.lua
 ```
 
-`customScripts.lua` генерируется из `mods/scripts/` и не входит в state.
-`config set` пишет файл атомарно и оставляет рядом `.bak-<timestamp>`;
-`.bak` не входит в state.
+`tes3mp-server-default.cfg` и `banlist.json` — серверные файлы, а не состояние
+мира, и в публичный архив не попадают. `customScripts.lua` генерируется из
+`mods/scripts/` и также не входит в state. `config set` пишет файл атомарно и
+оставляет рядом `.bak-<timestamp>`; `.bak` не входит в state.
 
 ### 6.6. Лимиты архивов
 
@@ -556,8 +555,10 @@ Gzip-мусор после tar, повреждённый gzip, абсолютн�
 
 ## 7. Публичный HTTP API
 
-Публикуются только моды и статус сервера. State-архивы содержат пароль сервера
-и banlist и доступны только после входа в панель.
+Публикуются статус сервера, моды и состояния. State-архив содержит только
+`config.lua`; `tes3mp-server-default.cfg` с паролем сервера и `banlist.json` в
+него не входят. Перед отдачей state-архив проверяется на текущий layout, старые
+архивы с этими файлами получают `404`.
 
 ### `GET /api/v1/server`
 
@@ -595,6 +596,20 @@ Gzip-мусор после tar, повреждённый gzip, абсолютн�
 Отдаёт текущий пакет модов как `application/gzip` с `Content-Disposition` и
 `ETag: "<sha256>"`. Поддерживает `If-None-Match`. Лимит скачиваний общий с
 публичной страницей бэкапов; при превышении — 429 `rate_limited`.
+
+### `GET /backups?type=mods|state`
+
+Публичная HTML-страница со списком архивов. `type` по умолчанию `mods`;
+неизвестное значение — `400`. Пагинация — `limit` (1..500, по умолчанию 200) и
+`before`.
+
+### `GET /backups/mods/<name>` и `GET /backups/state/<name>`
+
+Скачивание архива без авторизации. Имя проверяется по шаблону своего типа;
+symlink, каталоги и отсутствующие файлы — `404`. Перед отдачей state-архив
+проверяется на layout §6.2: старые архивы с `tes3mp-server-default.cfg` или
+`banlist.json` не отдаются. Оба маршрута используют общий rate limit
+скачиваний.
 
 ### `GET /healthz`
 
@@ -741,8 +756,8 @@ Gzip-мусор после tar, повреждённый gzip, абсолютн�
   архивы состояния.
 - `current.txt` только `<sha256> <filename>`; строка только с хешем —
   `archive_invalid`.
-- Старые state-архивы без `configs/` валидны и восстанавливают только
-  `players/` и `world/`.
+- State-архивы без `configs/config.lua` и архивы с
+  `tes3mp-server-default.cfg` или `banlist.json` не принимаются.
 - Имена вне шаблонов §6.7 не являются валидными архивами.
 - Старые URL `/list-backups/...` и `/download/...` не поддерживаются.
 - Старые клиентские конфиги не мигрируются.

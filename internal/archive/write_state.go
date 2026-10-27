@@ -18,8 +18,9 @@ import (
 // files are read and validated before the first tar entry is written, so an
 // invalid current.txt never produces a partially valid archive.
 //
-// ConfigsDir is optional for tests and for restoring old archives, but state
-// creation always sets it. When set, the three state config files must exist.
+// ConfigsDir is required. The state config file must exist and be a regular
+// file; server-only files such as tes3mp-server-default.cfg and banlist.json
+// are deliberately excluded.
 type StateSource struct {
 	PlayersDir        string
 	WorldDir          string
@@ -30,16 +31,14 @@ type StateSource struct {
 
 // stateConfigFiles is the fixed configuration set stored in a state archive.
 // customScripts.lua is generated from mods/scripts and deliberately excluded.
+// Server-only files (tes3mp-server-default.cfg with the server password and
+// banlist.json) are not state data and never enter the public archive.
 var stateConfigFiles = []string{
 	"config.lua",
-	"tes3mp-server-default.cfg",
-	"banlist.json",
 }
 
 var stateConfigFileSet = map[string]struct{}{
-	"config.lua":                {},
-	"tes3mp-server-default.cfg": {},
-	"banlist.json":              {},
+	"config.lua": {},
 }
 
 // StateStats describes a written state archive. Uncompressed follows the tar
@@ -65,7 +64,7 @@ type stateDirSource struct {
 // configs/ trees. It validates the nested layout from docs/v2/03-contracts.md
 // §6.2 and writes entries in a deterministic order:
 //
-//	current.txt, configs/, configs/<three fixed files>, requiredDataFiles.json,
+//	current.txt, configs/, configs/config.lua, requiredDataFiles.json,
 //	players/, world/, then the five world subdirectories.
 //
 // current.txt is first so retention can read the mods reference without
@@ -128,17 +127,15 @@ func WriteState(w io.Writer, src StateSource) (StateStats, error) {
 	}
 	stats.Files++
 
-	if configs != nil {
-		if err := addStateEntry(&stats, 0); err != nil {
+	if err := addStateEntry(&stats, 0); err != nil {
+		return fail(err)
+	}
+	if err := writeStateDir(tw, "configs/", configs.info); err != nil {
+		return fail(fmt.Errorf("write configs/: %w", err))
+	}
+	for _, file := range configs.files {
+		if err := writeStateFile(tw, file.name, file.path, &stats); err != nil {
 			return fail(err)
-		}
-		if err := writeStateDir(tw, "configs/", configs.info); err != nil {
-			return fail(fmt.Errorf("write configs/: %w", err))
-		}
-		for _, file := range configs.files {
-			if err := writeStateFile(tw, file.name, file.path, &stats); err != nil {
-				return fail(err)
-			}
 		}
 	}
 
@@ -188,6 +185,8 @@ func validateStateSource(src StateSource) error {
 		return errors.New("archive: players directory is required")
 	case src.WorldDir == "":
 		return errors.New("archive: world directory is required")
+	case src.ConfigsDir == "":
+		return errors.New("archive: configs directory is required")
 	case src.RequiredDataFiles == "":
 		return errors.New("archive: requiredDataFiles.json is required")
 	case src.CurrentFile == "":
@@ -203,9 +202,6 @@ type stateConfigSource struct {
 }
 
 func collectStateConfigs(dir string) (*stateConfigSource, error) {
-	if dir == "" {
-		return nil, nil
-	}
 	info, err := readStateDir(dir)
 	if err != nil {
 		return nil, err

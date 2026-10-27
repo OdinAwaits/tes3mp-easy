@@ -98,6 +98,7 @@ func (h *panelHandler) routes() http.Handler {
 	mux.HandleFunc("GET /healthz", handleHealthz)
 	mux.HandleFunc("GET /backups", h.handleBackups)
 	mux.HandleFunc("GET /backups/mods/{name}", h.handleBackupDownload("mods"))
+	mux.HandleFunc("GET /backups/state/{name}", h.handleBackupDownload("state"))
 	mux.HandleFunc("GET /api/v1/server", h.handleServerInfo)
 	mux.HandleFunc("GET /api/v1/mods/current", h.handleModsCurrent)
 	mux.HandleFunc("GET /api/v1/mods/current/archive", h.handleModsArchive)

@@ -10,12 +10,13 @@
   <main class="page">
     <div class="page-head">
       <p class="eyebrow">Публичный архив</p>
-      <h1>Публичные архивы модов</h1>
-      <p class="lead">Скачайте текущий или предыдущий архив модов. Состояния мира доступны только администратору.</p>
+      <h1>Публичные архивы</h1>
+      <p class="lead">Скачайте текущий или предыдущий архив модов или состояние мира.</p>
     </div>
 
     <nav class="tabs" aria-label="Раздел">
-      <a href="{{.ModsURL}}" aria-current="page">Моды</a>
+      <a href="{{.ModsURL}}"{{if eq .Type "mods"}} aria-current="page"{{end}}>Моды</a>
+      <a href="/backups?type=state"{{if eq .Type "state"}} aria-current="page"{{end}}>Состояния</a>
       <a href="/">Главная</a>
     </nav>
 

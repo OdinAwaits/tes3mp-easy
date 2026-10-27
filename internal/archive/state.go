@@ -8,6 +8,7 @@ import (
 
 // StateInfo describes a validated state archive. RequiredDataFiles is the
 // parsed root metadata file, and Current is the parsed root current.txt.
+// ConfigFiles is always 1: only configs/config.lua belongs to the state format.
 type StateInfo struct {
 	Current           Current
 	RequiredDataFiles []RequiredFile
@@ -15,10 +16,6 @@ type StateInfo struct {
 	WorldFiles        int
 	ConfigFiles       int
 }
-
-// HasConfigs reports whether the archive includes configs/. Old state archives
-// without configs remain valid and restore only players/ and world/.
-func (info StateInfo) HasConfigs() bool { return info.ConfigFiles > 0 }
 
 // stateWorldDirs is the fixed set of world subdirectories from
 // docs/v2/03-contracts.md §6.2. The slice preserves a deterministic order for
@@ -38,6 +35,19 @@ var stateWorldDirSet = map[string]struct{}{
 func ValidateStateFile(name, modsDir string) (StateInfo, error) {
 	info, _, err := ValidateStateFileWithSize(name, modsDir)
 	return info, err
+}
+
+// ValidateStateLayoutFile validates a state archive on disk without checking
+// the referenced mods package. Public downloads use it to reject archives that
+// do not match the current layout, including old archives that still contain
+// tes3mp-server-default.cfg or banlist.json.
+func ValidateStateLayoutFile(name string) (StateInfo, error) {
+	reader, err := Open(name)
+	if err != nil {
+		return StateInfo{}, err
+	}
+	defer reader.Close()
+	return ValidateState(reader)
 }
 
 // ValidateStateFileWithSize is ValidateStateFile plus the total uncompressed
@@ -191,9 +201,6 @@ func stateRequiredDirs() []string {
 }
 
 func validateStateConfigs(seen map[string]bool) error {
-	if !seen["configs"] {
-		return nil
-	}
 	for _, name := range stateConfigFiles {
 		if !seen["configs/"+name] {
 			return archiveInvalidf(

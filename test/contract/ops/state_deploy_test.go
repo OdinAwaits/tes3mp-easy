@@ -30,8 +30,6 @@ func stateDeployContractRoot(t *testing.T) (string, fixtures.ModsManifest,
 	state.Name = "state-manual-2026-10-22_13-00-00.tar.gz"
 	state.Configs = []fixtures.StateFile{
 		{Name: "config.lua", Body: "config = {}\n"},
-		{Name: "tes3mp-server-default.cfg", Body: "[General]\n"},
-		{Name: "banlist.json", Body: "{\"playerNames\":[],\"ipAddresses\":[]}\n"},
 	}
 	state.Players = []fixtures.StateFile{{
 		Name: "player.json", Body: "{\"restored\":true}\n",

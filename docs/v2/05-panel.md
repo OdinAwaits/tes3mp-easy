@@ -124,8 +124,9 @@ TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10
 | Метод | Путь | Назначение |
 |---|---|---|
 | GET | `/` | Имя сервера, статус, текущие моды, ссылки на архивы модов, вход |
-| GET | `/backups` | Публичный список архивов модов |
+| GET | `/backups` | Публичный список архивов модов и состояний |
 | GET | `/backups/mods/<name>` | Скачать архив модов |
+| GET | `/backups/state/<name>` | Скачать состояние |
 | GET | `/api/v1/server` | Информация для клиента (без пароля) |
 | GET | `/api/v1/mods/current` | Метаданные текущего архива модов |
 | GET | `/api/v1/mods/current/archive` | Текущий архив модов |
@@ -145,9 +146,11 @@ ops-клиент (`ops.go`). Contract-тесты панели живут в `tes
 проверяют cookie, ошибки и реальный бинарник; лимиты памяти — в
 `test/resource`.
 
-Публичные скачивания и `/api/v1/mods/current/archive` делят лимит 60 запросов
-в минуту на IP. Имена архивов проверяются как `filepath.Base` + `.tar.gz`,
-symlink и каталоги не отдаются. `/api/v1/server` берёт `hostname`/`port` из
+Публичные скачивания модов и состояний и `/api/v1/mods/current/archive` делят
+лимит 60 запросов в минуту на IP. Имена архивов проверяются как
+`filepath.Base` + `.tar.gz` и по шаблону типа, symlink и каталоги не отдаются.
+State перед отдачей проверяется на текущий layout без cfg/banlist.
+`/api/v1/server` берёт `hostname`/`port` из
 `configs/tes3mp-server-default.cfg` (пустой `hostname` отдаётся как `TES3MP`)
 и `mods_sha256` из `current.txt`; при
 недоступном systemd он отвечает `503 service_unavailable`, а не выдумывает
@@ -250,22 +253,22 @@ symlink и каталоги не отдаются. `/api/v1/server` берёт `
 - сравнение хеша — штатный `argon2` verify, без утечки времени;
 - логирование неудачных попыток без пароля.
 
-## 6. Публичные архивы модов
+## 6. Публичные архивы
 
-Публично отдаются только пакеты модов. State-архивы содержат
-`tes3mp-server-default.cfg` с паролем и `banlist.json`, поэтому доступны только
-после входа в панель.
+Публично отдаются пакеты модов и состояния. В state входит только
+`configs/config.lua`; `tes3mp-server-default.cfg` с паролем сервера и
+`banlist.json` в архив не попадают.
 
 ```text
-GET /backups
-  panel ──sudo -u tes3mp──► ops backups list --type mods --limit 200 --json
+GET /backups?type=mods|state
+  panel ──sudo -u tes3mp──► ops backups list --type <type> --limit 200 --json
   panel группирует items по дням/неделям/месяцам для отображения
 ```
 
 - `limit` по умолчанию 200, максимум 500; `next_before` становится ссылкой
   «показать более старые»;
-- `type` отсутствует или равен `mods`; `type=state` и неизвестные значения
-  возвращают `400`;
+- `type` отсутствует или равен `mods`; `state` показывает состояния;
+  неизвестное значение возвращает `400`;
 - `before` проверяется как безопасное имя `.tar.gz` до вызова ops;
 - группировка только визуальная: контракт списка остаётся плоским;
 - текущий архив модов помечен, но скачивается как обычный.
@@ -273,10 +276,11 @@ GET /backups
 Скачивание:
 
 ```text
-GET /backups/mods/<name>
+GET /backups/<type>/<name>
   name = filepath.Base(name)
-  name должен быть mods-*.tar.gz или mods-init-*.tar.gz
-  file = backups/mods/<name>
+  name должен соответствовать mods-* / mods-init-* или state-*
+  file = backups/<type>/<name>
+  для state: validate current layout (configs/config.lua only)
   http.ServeContent(w, r, name, mtime, file)
 ```
 
@@ -285,7 +289,9 @@ GET /backups/mods/<name>
 - `Content-Type: application/gzip`,
   `Content-Disposition: attachment; filename="..."`;
 - rate limit 60 скачиваний в минуту на IP;
-- symlink и каталоги не отдаются.
+- symlink и каталоги не отдаются;
+- старый state с `tes3mp-server-default.cfg` или `banlist.json` не отдаётся
+  (`404`), даже если файл лежит в `backups/state/`.
 
 ## 7. Интеграция с ops
 
@@ -424,8 +430,9 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
 Создание:
 
 - «Создать состояние» → `ops backups create --type state --manual`;
-- state включает `players/`, `world/`, три конфига и ссылку на текущий пакет
-  модов; `customScripts.lua` не включается.
+- state включает `players/`, `world/`, `configs/config.lua` и ссылку на текущий
+  пакет модов; `tes3mp-server-default.cfg`, `banlist.json` и
+  `customScripts.lua` не включаются.
 
 Восстановление — два шага без автоподстановки:
 
@@ -435,11 +442,13 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
 
 Ограничения:
 
-- state-архивы не публикуются: только `/admin/state/download/<name>` после
-  входа;
+- state-архивы публичны: `/backups?type=state` и `/backups/state/<name>`;
+  `/admin/state/download/<name>` остаётся для админской страницы;
 - отдельного удаления и истории конфигов нет;
-- состояние без `configs/` валидно: `state deploy` восстанавливает только
-  `players/` и `world/` и возвращает warning, что конфиги не изменены;
+- `state deploy` восстанавливает только `players/`, `world/` и
+  `configs/config.lua`; пароль сервера и `banlist.json` не изменяются;
+- state без `configs/config.lua` или с `tes3mp-server-default.cfg` /
+  `banlist.json` отклоняется как `archive_invalid`;
 - перед восстановлением ops создаёт `state-predeploy-*` и перезапускает
   сервер, если он работал.
 
@@ -657,9 +666,11 @@ panel-data/
 ## 16. Безопасность
 
 - Панель не отдаёт файлы по произвольному пути: публично только
-  `backups/mods/<name>` после `filepath.Base` и проверки имени; state-архивы —
-  только через `/admin/state/download/<name>` после входа. В state лежит
-  `configs/tes3mp-server-default.cfg` с паролем сервера.
+  `backups/mods/<name>` и `backups/state/<name>` после `filepath.Base`,
+  проверки имени и, для state, проверки layout. В state входит только
+  `configs/config.lua`; `tes3mp-server-default.cfg` с паролем сервера и
+  `banlist.json` в архив не попадают. Старые state с этими файлами публично не
+  отдаются.
 - Нет file manager, web terminal, raw editor.
 - Все формы — CSRF.
 - Все изменяющие действия — POST, без GET-побочек.
@@ -682,12 +693,12 @@ panel-data/
 | CSS и тема | `/static/panel.css` отдаётся как `text/css`; полные шаблоны подключают общий `head`; нет `style=`; активный раздел помечен `aria-current` |
 | Логин | верный/неверный пароль, rate limit, cookie-флаги, CSRF |
 | Argon2id | memory 32768, threads 1, time 3, verify |
-| Публичные скачивания | path traversal, не-`.tar.gz`, отсутствующий файл, `Content-Disposition` |
+| Публичные скачивания | path traversal, не-`.tar.gz`, отсутствующий файл, `Content-Disposition`, state с cfg/banlist → `404` |
 | Пагинация | `limit`/`before`, `next_before` |
 | Загрузка модов | лимит 512 MiB, UUID-имя, `MultipartReader`, вызов fake ops, очистка upload |
 | Ошибки ops | каждый `error.code` → ожидаемый HTTP и текст |
 | Конфиги | валидация, повторное чтение, diff формы целиком, `config_invalid` |
-| Состояния | state с configs, кнопки deploy/restore, ссылка на моды только при `mods_available`, приватное скачивание |
+| Состояния | state с config.lua, кнопки deploy/restore, ссылка на моды только при `mods_available`, публичное скачивание |
 | Метрики | fixture `memory.current`/`cpu.stat`/`/proc/meminfo`/`/proc/stat`, CPU %, `null` без cgroup, окна и бакеты, `available=false`, SVG без `style=` |
 | Staff | список из `players/*.json`, вызов `ops staff set`, текущая кнопка disabled |
 | Lifecycle и TLS | конфиг env/flags, ACME fake-obtainer (IP SAN, shortlived profile, wrong IP, renewal window, отказ продления, замена legacy self-signed), `files` pair, TLS ≥ 1.2, `/healthz`, HSTS, bind rollback, `SIGTERM` |

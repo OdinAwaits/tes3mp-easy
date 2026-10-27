@@ -73,7 +73,7 @@ internal/
 | `backups prune [--dry-run]` | Полный retention state + mods |
 | `mods import --file <path>` | Проверяет и импортирует архив модов |
 | `mods deploy (--current\|--latest\|--archive <name>) [--no-restart]` | Деплоит пакет модов, создаёт `state-predeploy-*`, запускает full retention |
-| `state deploy (--latest\|--archive <name>) [--no-restart]` | Восстанавливает world+players+configs на текущем пакете модов |
+| `state deploy (--latest\|--archive <name>) [--no-restart]` | Восстанавливает world+players+config.lua на текущем пакете модов |
 | `staff set --player <name> --rank 0..3` | Меняет `settings.staffRank` |
 | `config get --file server\|config\|banlist` | Отдаёт структурированные настройки |
 | `config set --file ... --key <k> --value <v>` | Меняет одну настройку |
@@ -314,10 +314,11 @@ CLI: `backups create --type state [--manual] [--if-running] [--dry-run]`.
    `skipped=true`, `reason=not_running` и ничего не создавать.
 3. Проверить свободное место. Если меньше 1 GiB, выполнить full retention:
    state-политика и mods с защитой всех пакетов из `current.txt` состояний.
-4. Прочитать `players/`, `world/`, три файла `configs/` и
-   `backups/mods/current.txt`; `customScripts.lua` не включать.
-5. Записать `current.txt` первой записью tar, затем `configs/`, корневой
-   `requiredDataFiles.json`, `players/` и пять каталогов `world/`.
+4. Прочитать `players/`, `world/`, `configs/config.lua` и
+   `backups/mods/current.txt`; `tes3mp-server-default.cfg`, `banlist.json` и
+   `customScripts.lua` не включать.
+5. Записать `current.txt` первой записью tar, затем `configs/config.lua`,
+   корневой `requiredDataFiles.json`, `players/` и пять каталогов `world/`.
 6. Атомарно опубликовать архив и выполнить state-only retention.
 
 State-создание никогда не открывает и не удаляет mods-архивы, кроме
@@ -337,17 +338,17 @@ CLI: `backups prune [--dry-run]`.
 CLI: `state deploy (--latest|--archive <name>) [--no-restart] [--dry-run]`.
 
 1. Найти state по имени или `--latest`.
-2. Проверить layout, `current.txt` и три конфига; старые state без `configs/`
-   допустимы.
+2. Проверить layout, `current.txt` и `configs/config.lua`; state без
+   `config.lua` или с `tes3mp-server-default.cfg`/`banlist.json` отклоняется.
 3. Проверить, что `current.txt` состояния совпадает с
    `backups/mods/current.txt`, а sha256 — с пакетом. Иначе `archive_invalid`.
 4. Создать `state-predeploy-*` из живых данных.
 5. Остановить сервер, если он работал.
 6. Распаковать state в `.staging`, заменить содержимое `players/`, `world/` и
-   три файла `configs/`. `customScripts.lua` и посторонние файлы в `configs/`
-   остаются.
+   `configs/config.lua`. `tes3mp-server-default.cfg`, `banlist.json`,
+   `customScripts.lua` и посторонние файлы в `configs/` остаются.
 7. Запустить сервер, если он работал и не указан `--no-restart`.
-8. При ошибке откатить `players/`, `world/`, `configs/` и очистить staging.
+8. При ошибке откатить `players/`, `world/`, `config.lua` и очистить staging.
 
 Моды не подменяются автоматически. Панель предлагает сначала `mods deploy`
 для указанного пакета, затем `state deploy`.
@@ -565,8 +566,8 @@ bootstrap создаёт `mods-init-*`, пишет канонический `cur
 - Временный файл в целевом каталоге; `fsync` файла и каталога; `rename`.
 - `mods import` делает rename upload → `backups/mods/`; при `EXDEV` между
   bind mounts — атомарное копирование через `.part` + `rename`.
-- `players/`, `world/` и `configs/` state-архива пишутся прямо из data root, без
-  staging-копии.
+- `players/`, `world/` и `configs/config.lua` state-архива пишутся прямо из
+  data root, без staging-копии; серверные конфиги в архив не попадают.
 - `tar` детерминированный: сортировка путей, mtime из файлов, uid/gid 0, без
   лишних заголовков. Байт-в-байт совпадение с GNU tar не цель.
 
@@ -613,7 +614,7 @@ type Runner interface {
 |---|---|---|
 | Unit | tar, CRC, `requiredDataFiles.json`, `current.txt`, retention, config, pathguard, lock | нет |
 | Contract | запуск бинарника с `--root` и `--json`, коды выхода, envelope | fake |
-| Integration | lifecycle на temp-root, `mods deploy`, `state deploy`, восстановление configs | fake + temp-root |
+| Integration | lifecycle на temp-root, `mods deploy`, `state deploy`, восстановление config.lua | fake + temp-root |
 | Fault | битый архив, path traversal, lock, нет места, systemd error, rollback | fake |
 | E2E | чистая VM: установка, вход, state backup, восстановление, клиент | настоящий |
 | Docs | ссылки, отсутствие дублированных схем | нет |
@@ -621,8 +622,9 @@ type Runner interface {
 Ключевые фикстуры:
 
 - пустой мир с обязательными каталогами;
-- state с игроками, всеми пятью world-каталогами и тремя конфигами;
-- state без `configs/` для обратной совместимости;
+- state с игроками, всеми пятью world-каталогами и `configs/config.lua`;
+- state без `configs/config.lua` и старый state с `tes3mp-server-default.cfg`
+  или `banlist.json` (оба должны отклоняться);
 - state с повреждённым `current.txt` и с ссылкой на отсутствующий пакет;
 - мир с плоскими каталогами (должен падать);
 - state без `requiredDataFiles.json`;

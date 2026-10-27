@@ -46,7 +46,6 @@ type stateDeploySelection struct {
 	path         string
 	modsArchive  string
 	uncompressed int64
-	hasConfigs   bool
 }
 
 func resolveStateDeployTarget(req stateDeployRequest) (stateDeploySelection, *ops.Error) {
@@ -82,7 +81,6 @@ func resolveStateDeployTarget(req stateDeployRequest) (stateDeploySelection, *op
 		path:         target,
 		modsArchive:  info.Current.Name,
 		uncompressed: size,
-		hasConfigs:   info.HasConfigs(),
 	}, nil
 }
 

@@ -51,8 +51,6 @@ func stateDeployRoot(t *testing.T) (string, fixtures.ModsManifest,
 	state.Name = "state-manual-2026-10-22_13-00-00.tar.gz"
 	state.Configs = []fixtures.StateFile{
 		{Name: "config.lua", Body: "config = {}\n"},
-		{Name: "tes3mp-server-default.cfg", Body: "[General]\n"},
-		{Name: "banlist.json", Body: "{\"playerNames\":[],\"ipAddresses\":[]}\n"},
 	}
 	state.Players = []fixtures.StateFile{{
 		Name: "player.json", Body: "{\"restored\":true}\n",
@@ -171,6 +169,16 @@ func TestRunStateDeployRestoresConfigs(t *testing.T) {
 		[]byte("require('custom.live')\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	serverConfig := []byte("[General]\npassword = live-secret\n")
+	if err := os.WriteFile(filepath.Join(root, "configs",
+		"tes3mp-server-default.cfg"), serverConfig, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	banlist := []byte("{\"playerNames\":[\"live\"],\"ipAddresses\":[]}\n")
+	if err := os.WriteFile(filepath.Join(root, "configs", "banlist.json"),
+		banlist, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	code, _, stdout, stderr := runStateDeployCommand(t, root,
 		systemd.New(activeRunner(t)), "--archive", stateName)
@@ -191,6 +199,40 @@ func TestRunStateDeployRestoresConfigs(t *testing.T) {
 		t.Fatalf("customScripts.lua = %q, %v; want live file preserved",
 			custom, err)
 	}
+	got, err = os.ReadFile(filepath.Join(root, "configs",
+		"tes3mp-server-default.cfg"))
+	if err != nil || !bytes.Equal(got, serverConfig) {
+		t.Fatalf("tes3mp-server-default.cfg = %q, %v; want live file preserved",
+			got, err)
+	}
+	got, err = os.ReadFile(filepath.Join(root, "configs", "banlist.json"))
+	if err != nil || !bytes.Equal(got, banlist) {
+		t.Fatalf("banlist.json = %q, %v; want live file preserved", got, err)
+	}
+}
+
+func TestRunStateDeployRejectsLegacyArchive(t *testing.T) {
+	fixStateDeployHooks(t)
+	root, manifest, _, _ := stateDeployRoot(t)
+	legacy := fixtures.FullState(manifest)
+	legacy.Name = "state-manual-2026-10-22_14-00-00.tar.gz"
+	legacy.Configs = []fixtures.StateFile{
+		{Name: "config.lua", Body: "config = {}\n"},
+		{Name: "tes3mp-server-default.cfg", Body: "[General]\n"},
+		{Name: "banlist.json", Body: "{}\n"},
+	}
+	legacy.Write(t, filepath.Join(root, "backups", "state", legacy.Name))
+
+	code, _, stdout, stderr := runStateDeployCommand(t, root,
+		systemd.New(activeRunner(t)), "--archive", legacy.Name)
+	if code != int(ops.ExitArchiveInvalid) {
+		t.Fatalf("exit = %d, want %d; stdout=%q stderr=%q",
+			code, ops.ExitArchiveInvalid, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "unexpected config file") {
+		t.Fatalf("stdout = %q, want invalid config error", stdout)
+	}
+	assertNoStateDeployLeftovers(t, root)
 }
 
 func TestRunStateDeployRestartsServer(t *testing.T) {

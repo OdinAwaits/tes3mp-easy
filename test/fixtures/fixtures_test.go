@@ -108,7 +108,8 @@ func TestStateFixtures(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ValidateStateReader: %v", err)
 		}
-		if info.Current.Name != manifest.Name || info.Players != 0 {
+		if info.Current.Name != manifest.Name || info.Players != 0 ||
+			info.ConfigFiles != 1 {
 			t.Fatalf("info = %+v", info)
 		}
 	})

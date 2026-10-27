@@ -20,8 +20,6 @@ type stateDeployTx struct {
 	worldOld      string
 	configsOld    string
 
-	hasConfigs bool
-
 	playersMoved     bool
 	worldMoved       bool
 	configsMoved     []string
@@ -90,11 +88,9 @@ func (tx *stateDeployTx) stage(archivePath string) error {
 	if err := stateDeployExtractFunc(archivePath, tx.stagingDir); err != nil {
 		return err
 	}
-	if tx.hasConfigs {
-		if err := atomicfile.SyncDir(
-			filepath.Join(tx.stagingDir, "configs")); err != nil {
-			return err
-		}
+	if err := atomicfile.SyncDir(
+		filepath.Join(tx.stagingDir, "configs")); err != nil {
+		return err
 	}
 	for _, dir := range []string{tx.playersOld, tx.worldOld, tx.configsOld} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -143,10 +139,8 @@ func (tx *stateDeployTx) switchDirs() error {
 	if err != nil {
 		return fmt.Errorf("install world: %w", err)
 	}
-	if tx.hasConfigs {
-		if err := tx.switchConfigs(); err != nil {
-			return err
-		}
+	if err := tx.switchConfigs(); err != nil {
+		return err
 	}
 
 	return nil
@@ -155,13 +149,12 @@ func (tx *stateDeployTx) switchDirs() error {
 func stateConfigNames() []string {
 	return []string{
 		"config.lua",
-		"tes3mp-server-default.cfg",
-		"banlist.json",
 	}
 }
 
-// switchConfigs replaces only the three state config files. customScripts.lua
-// and any unrelated files in configs/ stay untouched.
+// switchConfigs replaces only configs/config.lua. The server config
+// (tes3mp-server-default.cfg), banlist.json, customScripts.lua and any
+// unrelated files in configs/ stay untouched.
 func (tx *stateDeployTx) switchConfigs() error {
 	for _, name := range stateConfigNames() {
 		staged := filepath.Join(tx.stagingDir, "configs", name)

@@ -502,8 +502,9 @@ sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
 
 ## 7. Состояния: создать и восстановить
 
-State содержит игроков, мир и три конфига; моды — отдельный неизменяемый пакет,
-на который state ссылается через `current.txt`.
+State содержит игроков, мир и `config.lua`; моды — отдельный неизменяемый пакет,
+на который state ссылается через `current.txt`. Пароль сервера
+(`tes3mp-server-default.cfg`) и `banlist.json` в state не входят.
 
 Создать вручную:
 
@@ -535,14 +536,15 @@ sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
 `state deploy --latest` берёт самый новый state. Перед восстановлением ops
 создаёт `state-predeploy-*` и останавливает сервер. После успеха сервер
 запускается, если работал до операции. При ошибке возвращаются старые
-`players/`, `world/`, `configs/` и `customScripts.lua`.
+`players/`, `world/`, `config.lua`; `tes3mp-server-default.cfg`, `banlist.json`
+и `customScripts.lua` не затрагиваются.
 
 Если `current.txt` состояния не совпадает с активным пакетом, ops вернёт
 `archive_invalid`. Сначала выполните `mods deploy --archive <mods_archive>`,
 затем повторите `state deploy`. Автоматической подстановки другого пакета нет.
 
-Если state старый и не содержит `configs/`, восстановятся только `players/` и
-`world/`; конфиги останутся текущими.
+State без `configs/config.lua` или с `tes3mp-server-default.cfg`/`banlist.json`
+не принимается: `archive_invalid`. Создайте новый state текущей версией.
 
 ## 8. Retention и диск
 
@@ -898,8 +900,8 @@ State ссылается на пакет модов через свой `current
      --root /tes3mp-easy --json mods deploy --archive <mods_archive>
    ```
 
-   Затем повторите `state deploy`. State без `configs/` восстановит только
-   `players/` и `world/`.
+   Затем повторите `state deploy`. State без `configs/config.lua` или с
+   cfg/banlist отклоняется как `archive_invalid`.
 
 5. Запустите игру и таймеры, проверьте:
 

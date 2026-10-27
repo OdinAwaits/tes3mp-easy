@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Saagilat/tes3mp-easy/internal/ops"
+	"github.com/Saagilat/tes3mp-easy/test/fixtures"
 )
 
 type backupsCall struct {
@@ -453,6 +454,37 @@ func TestPublicBackupsPage(t *testing.T) {
 	}
 }
 
+func TestPublicStateBackupsPage(t *testing.T) {
+	env := newPublicTestEnv(t)
+	env.ops.backups = Backups{
+		Type: "state",
+		Items: []BackupItem{{
+			Name: "state-manual-2026-10-23_11-00-00.tar.gz", Size: 4096,
+			Mtime: "2026-10-23T11:00:00Z",
+		}},
+	}
+
+	rec := panelRequest(t, env.handler, http.MethodGet,
+		"/backups?type=state", nil, nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /backups?type=state = %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(env.ops.backupsCalls) != 1 ||
+		env.ops.backupsCalls[0].typ != "state" {
+		t.Fatalf("BackupsList calls = %+v", env.ops.backupsCalls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"state-manual-2026-10-23_11-00-00.tar.gz",
+		"/backups/state/state-manual-2026-10-23_11-00-00.tar.gz",
+		"Состояния", "Моды", "aria-current=\"page\"",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("state backups page does not contain %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestPublicBackupsDefaultsAndValidation(t *testing.T) {
 	env := newPublicTestEnv(t)
 	env.ops.backups = Backups{Type: "mods", Items: []BackupItem{}}
@@ -475,7 +507,6 @@ func TestPublicBackupsDefaultsAndValidation(t *testing.T) {
 		path string
 	}{
 		{path: "/backups?type=unknown"},
-		{path: "/backups?type=state"},
 		{path: "/backups?type=mods&limit=0"},
 		{path: "/backups?type=mods&limit=501"},
 		{path: "/backups?type=mods&limit=nope"},
@@ -562,6 +593,58 @@ func TestPublicBackupDownload(t *testing.T) {
 		if strings.Contains(rec.Body.String(), "secret") {
 			t.Fatalf("%s leaked an outside file", path)
 		}
+	}
+}
+
+func TestPublicStateDownload(t *testing.T) {
+	env := newPublicTestEnv(t)
+	modsDir := filepath.Join(env.cfg.Root, "backups", "mods")
+	manifest := fixtures.DefaultMods().Install(t, modsDir)
+
+	state := fixtures.FullState(manifest)
+	state.Name = "state-manual-2026-10-23_11-00-00.tar.gz"
+	target := writeTestBackup(t, env.cfg.Root, "state", state.Name, state.Bytes(t))
+	want, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := panelRequest(t, env.handler, http.MethodGet,
+		"/backups/state/"+state.Name, nil, nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET state backup = %d: %s", rec.Code, rec.Body.String())
+	}
+	assertSecurityHeaders(t, rec.Header())
+	if got := rec.Header().Get("Content-Type"); got != "application/gzip" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if rec.Body.String() != string(want) {
+		t.Fatal("state archive body changed")
+	}
+
+	legacy := fixtures.FullState(manifest)
+	legacy.Name = "state-manual-2026-10-23_12-00-00.tar.gz"
+	legacy.Configs = []fixtures.StateFile{
+		{Name: "config.lua", Body: "config = {}\n"},
+		{Name: "tes3mp-server-default.cfg", Body: "[General]\npassword = x\n"},
+		{Name: "banlist.json", Body: "{}\n"},
+	}
+	legacyTarget := writeTestBackup(t, env.cfg.Root, "state", legacy.Name,
+		legacy.Bytes(t))
+	legacyBody, err := os.ReadFile(legacyTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec = panelRequest(t, env.handler, http.MethodGet,
+		"/backups/state/"+legacy.Name, nil, nil, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("legacy state download = %d, want 404", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "password") {
+		t.Fatal("legacy state download leaked the server config")
+	}
+	if strings.Contains(rec.Body.String(), string(legacyBody)) {
+		t.Fatal("legacy state download served the archive")
 	}
 }
 

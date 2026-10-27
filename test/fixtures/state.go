@@ -49,10 +49,15 @@ type StateArchive struct {
 var fixtureWorldDirs = []string{"cell", "world", "map", "recordstore", "custom"}
 
 // DefaultState returns the empty but valid state archive for the given mods
-// manifest: players/ and all five world/<name>/ directories, both metadata
-// files, and no state files.
+// manifest: players/, all five world/<name>/ directories, both metadata files,
+// configs/config.lua, and no player or world files.
 func DefaultState(mods ModsManifest) StateArchive {
-	return StateArchive{Mods: mods}
+	return StateArchive{
+		Mods: mods,
+		Configs: []StateFile{{
+			Name: "config.lua", Body: "config = {}\n",
+		}},
+	}
 }
 
 // FullState returns a state archive with one synthetic player and one file in

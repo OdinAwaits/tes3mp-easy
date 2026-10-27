@@ -41,6 +41,8 @@ func stateEntries(current Current) []fixtureEntry {
 	entries := []fixtureEntry{
 		{name: "players/", typ: tar.TypeDir},
 		{name: "world/", typ: tar.TypeDir},
+		{name: "configs/", typ: tar.TypeDir},
+		{name: "configs/config.lua", body: "config = {}\n"},
 	}
 	for _, name := range stateWorldDirs {
 		entries = append(entries, fixtureEntry{
@@ -101,6 +103,9 @@ func TestValidateStateAcceptsEmptyArchive(t *testing.T) {
 	if info.Players != 0 || info.WorldFiles != 0 {
 		t.Fatalf("info = %+v, want no state files", info)
 	}
+	if info.ConfigFiles != 1 {
+		t.Fatalf("config files = %d, want 1", info.ConfigFiles)
+	}
 	if len(info.RequiredDataFiles) != len(baseRequiredEntries()) {
 		t.Fatalf("required entries = %d, want %d",
 			len(info.RequiredDataFiles), len(baseRequiredEntries()))
@@ -134,6 +139,7 @@ func TestValidateStateAcceptsImplicitDirectories(t *testing.T) {
 		{name: "world/map/map.json", body: "{}"},
 		{name: "world/recordstore/recordstore.json", body: "{}"},
 		{name: "world/custom/custom.json", body: "{}"},
+		{name: "configs/config.lua", body: "config = {}\n"},
 		{name: requiredDataFilesName, body: requiredJSON(baseRequiredEntries()...)},
 		{name: currentFileName, body: currentLine(current.SHA256, current.Name)},
 	}
@@ -178,6 +184,25 @@ func TestValidateStateRejectsInvalidLayout(t *testing.T) {
 			name:    "missing players",
 			entries: withoutEntry(base, "players/"),
 			want:    "players",
+		},
+		{
+			name:    "missing config",
+			entries: withoutEntry(base, "configs/config.lua"),
+			want:    "configs/config.lua",
+		},
+		{
+			name: "server config is not state data",
+			entries: append(cloneEntries(base), fixtureEntry{
+				name: "configs/tes3mp-server-default.cfg", body: "[General]\n",
+			}),
+			want: "unexpected config file",
+		},
+		{
+			name: "banlist is not state data",
+			entries: append(cloneEntries(base), fixtureEntry{
+				name: "configs/banlist.json", body: "{}\n",
+			}),
+			want: "unexpected config file",
 		},
 		{
 			name:    "missing world",

@@ -143,8 +143,6 @@ func TestWriteStateDeterministicLayout(t *testing.T) {
 		currentFileName,
 		"configs/",
 		"configs/config.lua",
-		"configs/tes3mp-server-default.cfg",
-		"configs/banlist.json",
 		requiredDataFilesName,
 		"players/",
 		"players/a.json",
@@ -176,6 +174,29 @@ func TestWriteStateDeterministicLayout(t *testing.T) {
 	second := writeStateFixtureArchive(t, fixture)
 	if !bytes.Equal(data, second) {
 		t.Fatal("two writes with identical mtimes produced different archives")
+	}
+}
+
+func TestWriteStateExcludesServerConfigs(t *testing.T) {
+	fixture := newStateWriteFixture(t)
+	for _, name := range []string{
+		"tes3mp-server-default.cfg", "banlist.json", "customScripts.lua",
+	} {
+		writeStateFixtureFile(t, fixture.source.ConfigsDir, name, "secret\n")
+	}
+
+	data := writeStateFixtureArchive(t, fixture)
+	for _, header := range stateArchiveHeaders(t, data) {
+		switch header.Name {
+		case "configs/tes3mp-server-default.cfg", "configs/banlist.json",
+			"configs/customScripts.lua":
+			t.Fatalf("state archive contains %s", header.Name)
+		}
+	}
+	if info, err := ValidateStateReader(bytes.NewReader(data), fixture.modsDir); err != nil {
+		t.Fatalf("ValidateStateReader: %v", err)
+	} else if info.ConfigFiles != 1 {
+		t.Fatalf("config files = %d, want 1", info.ConfigFiles)
 	}
 }
 
