@@ -1,5 +1,5 @@
 [Unit]
-Description=TES3MP Easy state backup
+Description=TES3MP Easy world checkpoint
 Documentation=https://github.com/Saagilat/tes3mp-easy
 # Before M2 the timer is already active while the ops binary does not exist.
 # A condition (rather than a failing ExecStart) keeps the timer healthy and
@@ -11,7 +11,7 @@ Type=oneshot
 User=tes3mp
 Group=tes3mp
 WorkingDirectory=/tes3mp-easy
-ExecStart=/opt/tes3mp-easy/bin/tes3mp-easy-ops --root /tes3mp-easy --json backups create --type state --if-running
+ExecStart=/opt/tes3mp-easy/bin/tes3mp-easy-ops --root /tes3mp-easy --json checkpoint create --if-running
 TimeoutStartSec=9min
 Environment=GOMAXPROCS=1
 Environment=GOMEMLIMIT=64MiB

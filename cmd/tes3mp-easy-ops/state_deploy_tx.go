@@ -101,6 +101,57 @@ func (tx *stateDeployTx) stage(archivePath string) error {
 	return nil
 }
 
+// stageDir fills the transaction from an already extracted players/ and world/
+// tree, for snapshot and checkpoint restores. It moves entries inside the same
+// .staging filesystem, so no extra copy is needed.
+func (tx *stateDeployTx) stageDir(source string) error {
+	if err := os.MkdirAll(tx.stagingParent, 0o700); err != nil {
+		return err
+	}
+	if err := optionalDir(tx.stagingParent); err != nil {
+		return err
+	}
+	if err := os.Mkdir(tx.stagingDir, 0o700); err != nil {
+		return err
+	}
+	for _, name := range []string{"players", "world"} {
+		src := filepath.Join(source, name)
+		exists, err := dirExists(src)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("%s: directory is missing", src)
+		}
+		dst := filepath.Join(tx.stagingDir, name)
+		if err := os.Mkdir(dst, 0o700); err != nil {
+			return err
+		}
+		if _, err := moveDirEntries(src, dst); err != nil {
+			return err
+		}
+	}
+	for _, dir := range []string{tx.playersOld, tx.worldOld} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+		if err := atomicfile.SyncDir(dir); err != nil {
+			return err
+		}
+	}
+	for _, dir := range []string{
+		filepath.Join(tx.stagingDir, "players"),
+		filepath.Join(tx.stagingDir, "world"),
+		filepath.Join(tx.stagingDir, "old"),
+		tx.stagingDir,
+	} {
+		if err := atomicfile.SyncDir(dir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (tx *stateDeployTx) switchDirs() error {
 	// The data root is root:root 0755, and ops runs as tes3mp. Renaming the
 	// players/ and world/ directories themselves would need write permission on

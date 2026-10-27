@@ -189,6 +189,18 @@ func opsSuccessResponse(args []string) []byte {
 		return []byte(`{"ok":true,"data":{"type":"mods","current":"mods-current.tar.gz","items":[{"name":"mods-current.tar.gz","size":42,"mtime":"2026-10-23T10:00:00Z","current":true}],"next_before":null}}`)
 	case strings.HasPrefix(key, "backups create"):
 		return []byte(`{"ok":true,"data":{"archive":"state-manual.tar.gz","size":77,"sha256":"abc","skipped":false,"pruned":[],"warnings":[]}}`)
+	case strings.HasPrefix(key, "snapshot list"):
+		return []byte(`{"ok":true,"data":{"items":[{"name":"snapshot-2026-10-27_16-40-00.tar.gz","size":2048,"mtime":"2026-10-27T16:40:00Z","reason":"manual","label":null,"mods_sha256":"abc","state_sha256":"def","used_by":1,"protected":true}],"next_before":null}}`)
+	case strings.HasPrefix(key, "checkpoint list"):
+		return []byte(`{"ok":true,"data":{"items":[{"name":"checkpoint-2026-10-27_16-45-00.tar.gz","size":1024,"mtime":"2026-10-27T16:45:00Z","label":null,"reason":"timer","pinned":false,"players":2,"base":{"name":"snapshot-2026-10-27_16-40-00.tar.gz","sha256":"abc","available":true}}],"next_before":null}}`)
+	case strings.HasPrefix(key, "snapshot create"):
+		return []byte(`{"ok":true,"data":{"archive":"snapshot-2026-10-27_16-40-00.tar.gz","size":2048,"sha256":"abc","reason":"manual","label":null,"mods_archive":"mods-current.tar.gz","warnings":[]}}`)
+	case strings.HasPrefix(key, "checkpoint create"):
+		return []byte(`{"ok":true,"data":{"archive":"checkpoint-2026-10-27_16-45-00.tar.gz","size":1024,"sha256":"def","reason":"manual","label":null,"base":{"name":"snapshot-2026-10-27_16-40-00.tar.gz","sha256":"abc","mods_sha256":"123"},"players":2,"skipped":false,"warnings":[]}}`)
+	case strings.HasPrefix(key, "snapshot restore"):
+		return []byte(`{"ok":true,"data":{"archive":"snapshot-2026-10-27_16-40-00.tar.gz","mods_archive":null,"base_switched":false,"predeploy_checkpoint":"checkpoint-predeploy-2026-10-27_17-00-00.tar.gz","restarted":true}}`)
+	case strings.HasPrefix(key, "checkpoint restore"):
+		return []byte(`{"ok":true,"data":{"archive":"checkpoint-2026-10-27_16-45-00.tar.gz","base":{"name":"snapshot-2026-10-27_16-40-00.tar.gz","sha256":"abc"},"base_deployed":false,"base_missing":false,"mods_archive":null,"missing_plugins":[],"predeploy_checkpoint":"checkpoint-predeploy-2026-10-27_17-00-00.tar.gz","restarted":true}}`)
 	case strings.HasPrefix(key, "mods import"):
 		return []byte(`{"ok":true,"data":{"archive":"mods-import.tar.gz","sha256":"def","plugins":3,"scripts":1,"pruned":[],"warnings":[]}}`)
 	case strings.HasPrefix(key, "mods deploy"):
@@ -228,6 +240,33 @@ func TestOpsClientCommands(t *testing.T) {
 	if err != nil || backup.Archive != "state-manual.tar.gz" || backup.Size != 77 ||
 		backup.SHA256 != "abc" || backup.Skipped {
 		t.Fatalf("BackupCreate = %+v, %v", backup, err)
+	}
+	snapshots, err := client.SnapshotsList(ctx, 50, "snapshot-before.tar.gz")
+	if err != nil || len(snapshots.Items) != 1 || snapshots.Items[0].UsedBy != 1 ||
+		!snapshots.Items[0].Protected {
+		t.Fatalf("SnapshotsList = %+v, %v", snapshots, err)
+	}
+	checkpoints, err := client.CheckpointsList(ctx, 50, "")
+	if err != nil || len(checkpoints.Items) != 1 ||
+		!checkpoints.Items[0].Base.Available {
+		t.Fatalf("CheckpointsList = %+v, %v", checkpoints, err)
+	}
+	createdSnapshot, err := client.SnapshotCreate(ctx)
+	if err != nil || createdSnapshot.Archive != "snapshot-2026-10-27_16-40-00.tar.gz" {
+		t.Fatalf("SnapshotCreate = %+v, %v", createdSnapshot, err)
+	}
+	createdCheckpoint, err := client.CheckpointCreate(ctx)
+	if err != nil || createdCheckpoint.Base == nil || createdCheckpoint.Players != 2 {
+		t.Fatalf("CheckpointCreate = %+v, %v", createdCheckpoint, err)
+	}
+	snapshotRestore, err := client.SnapshotRestore(ctx, "snapshot-2026-10-27_16-40-00.tar.gz")
+	if err != nil || !snapshotRestore.Restarted || snapshotRestore.ModsArchive != nil {
+		t.Fatalf("SnapshotRestore = %+v, %v", snapshotRestore, err)
+	}
+	checkpointRestore, err := client.CheckpointRestore(ctx,
+		"checkpoint-2026-10-27_16-45-00.tar.gz")
+	if err != nil || !checkpointRestore.Restarted || checkpointRestore.BaseMissing {
+		t.Fatalf("CheckpointRestore = %+v, %v", checkpointRestore, err)
 	}
 	imported, err := client.ModsImport(ctx, "/tmp/upload")
 	if err != nil || imported.Plugins != 3 || imported.Scripts != 1 {
@@ -295,28 +334,40 @@ func TestOpsClientCommands(t *testing.T) {
 	assertOpsCall(t, calls[3], client.binary, withRoot(
 		"backups", "create", "--type", "state", "--manual")...)
 	assertOpsCall(t, calls[4], client.binary, withRoot(
-		"mods", "import", "--file", "/tmp/upload")...)
-	assertOpsCall(t, calls[5], client.binary, withRoot("mods", "deploy", "--current")...)
+		"snapshot", "list", "--limit", "50", "--before", "snapshot-before.tar.gz")...)
+	assertOpsCall(t, calls[5], client.binary, withRoot(
+		"checkpoint", "list", "--limit", "50")...)
 	assertOpsCall(t, calls[6], client.binary, withRoot(
-		"mods", "deploy", "--archive", "mods-explicit.tar.gz")...)
-	assertOpsCall(t, calls[7], client.binary, withRoot("mods", "deploy", "--latest")...)
-	assertOpsCall(t, calls[8], client.binary, withRoot("state", "deploy", "--latest")...)
+		"snapshot", "create", "--reason", "manual")...)
+	assertOpsCall(t, calls[7], client.binary, withRoot(
+		"checkpoint", "create", "--reason", "manual")...)
+	assertOpsCall(t, calls[8], client.binary, withRoot(
+		"snapshot", "restore", "--archive", "snapshot-2026-10-27_16-40-00.tar.gz")...)
 	assertOpsCall(t, calls[9], client.binary, withRoot(
-		"state", "deploy", "--archive", "state-explicit.tar.gz")...)
+		"checkpoint", "restore", "--archive", "checkpoint-2026-10-27_16-45-00.tar.gz")...)
 	assertOpsCall(t, calls[10], client.binary, withRoot(
+		"mods", "import", "--file", "/tmp/upload")...)
+	assertOpsCall(t, calls[11], client.binary, withRoot("mods", "deploy", "--current")...)
+	assertOpsCall(t, calls[12], client.binary, withRoot(
+		"mods", "deploy", "--archive", "mods-explicit.tar.gz")...)
+	assertOpsCall(t, calls[13], client.binary, withRoot("mods", "deploy", "--latest")...)
+	assertOpsCall(t, calls[14], client.binary, withRoot("state", "deploy", "--latest")...)
+	assertOpsCall(t, calls[15], client.binary, withRoot(
+		"state", "deploy", "--archive", "state-explicit.tar.gz")...)
+	assertOpsCall(t, calls[16], client.binary, withRoot(
 		"staff", "set", "--player", "John Doe", "--rank", "2")...)
-	assertOpsCall(t, calls[11], client.binary, withRoot("config", "get", "--file", "server")...)
-	assertOpsCall(t, calls[12], client.binary, withRoot("config", "get", "--file", "config")...)
-	assertOpsCall(t, calls[13], client.binary, withRoot(
+	assertOpsCall(t, calls[17], client.binary, withRoot("config", "get", "--file", "server")...)
+	assertOpsCall(t, calls[18], client.binary, withRoot("config", "get", "--file", "config")...)
+	assertOpsCall(t, calls[19], client.binary, withRoot(
 		"config", "set", "--file", "config", "--key", "hostname",
 		"--value", "Morrowind with friends")...)
-	assertOpsCall(t, calls[14], client.binary, withRoot(
+	assertOpsCall(t, calls[20], client.binary, withRoot(
 		"config", "set", "--file", "config", "--key", "loginTime", "--value", "60")...)
-	assertOpsCall(t, calls[15], client.binary, withRoot(
+	assertOpsCall(t, calls[21], client.binary, withRoot(
 		"config", "set", "--file", "config", "--key", "enabled", "--value", "true")...)
-	assertOpsCall(t, calls[16], client.binary, withRoot("start")...)
-	assertOpsCall(t, calls[17], client.binary, withRoot("stop")...)
-	assertOpsCall(t, calls[18], client.binary, withRoot("restart")...)
+	assertOpsCall(t, calls[22], client.binary, withRoot("start")...)
+	assertOpsCall(t, calls[23], client.binary, withRoot("stop")...)
+	assertOpsCall(t, calls[24], client.binary, withRoot("restart")...)
 }
 
 func assertOpsCall(t *testing.T, call opsCall, name string, args ...string) {

@@ -67,6 +67,104 @@ type Backup struct {
 	Warnings []string `json:"warnings"`
 }
 
+// Snapshot is the decoded `data` object of `ops snapshot create`.
+type Snapshot struct {
+	Archive     string   `json:"archive"`
+	Size        int64    `json:"size"`
+	SHA256      string   `json:"sha256"`
+	Reason      string   `json:"reason"`
+	Label       *string  `json:"label"`
+	ModsArchive string   `json:"mods_archive"`
+	Warnings    []string `json:"warnings"`
+}
+
+// SnapshotItem is one row of `ops snapshot list`.
+type SnapshotItem struct {
+	Name        string  `json:"name"`
+	Size        int64   `json:"size"`
+	Mtime       string  `json:"mtime"`
+	Reason      string  `json:"reason"`
+	Label       *string `json:"label"`
+	ModsSHA256  string  `json:"mods_sha256"`
+	StateSHA256 string  `json:"state_sha256"`
+	UsedBy      int     `json:"used_by"`
+	Protected   bool    `json:"protected"`
+}
+
+// SnapshotList is the decoded `data` object of `ops snapshot list`.
+type SnapshotList struct {
+	Items      []SnapshotItem `json:"items"`
+	NextBefore *string        `json:"next_before"`
+}
+
+// CheckpointBase is the base reference of a checkpoint.
+type CheckpointBase struct {
+	Name       string `json:"name"`
+	SHA256     string `json:"sha256"`
+	ModsSHA256 string `json:"mods_sha256"`
+}
+
+// Checkpoint is the decoded `data` object of `ops checkpoint create`.
+type Checkpoint struct {
+	Archive  string          `json:"archive"`
+	Size     int64           `json:"size"`
+	SHA256   string          `json:"sha256"`
+	Reason   string          `json:"reason"`
+	Label    *string         `json:"label"`
+	Base     *CheckpointBase `json:"base"`
+	Players  int             `json:"players"`
+	Skipped  bool            `json:"skipped"`
+	Warnings []string        `json:"warnings"`
+}
+
+// CheckpointBaseItem is the base reference in `ops checkpoint list`.
+type CheckpointBaseItem struct {
+	Name      string `json:"name"`
+	SHA256    string `json:"sha256"`
+	Available bool   `json:"available"`
+}
+
+// CheckpointItem is one row of `ops checkpoint list`.
+type CheckpointItem struct {
+	Name    string             `json:"name"`
+	Size    int64              `json:"size"`
+	Mtime   string             `json:"mtime"`
+	Label   *string            `json:"label"`
+	Reason  string             `json:"reason"`
+	Pinned  bool               `json:"pinned"`
+	Players int                `json:"players"`
+	Base    CheckpointBaseItem `json:"base"`
+}
+
+// CheckpointList is the decoded `data` object of `ops checkpoint list`.
+type CheckpointList struct {
+	Items      []CheckpointItem `json:"items"`
+	NextBefore *string          `json:"next_before"`
+}
+
+// RestoreResult combines `snapshot restore` and `checkpoint restore` data.
+type RestoreResult struct {
+	Archive             string   `json:"archive"`
+	ModsArchive         *string  `json:"mods_archive"`
+	BaseSwitched        bool     `json:"base_switched"`
+	BaseDeployed        bool     `json:"base_deployed"`
+	BaseMissing         bool     `json:"base_missing"`
+	MissingPlugins      []string `json:"missing_plugins"`
+	PredeployCheckpoint string   `json:"predeploy_checkpoint"`
+	Restarted           bool     `json:"restarted"`
+}
+
+// RestorePointOps is the newer snapshot/checkpoint surface. It is separate
+// from Ops so older test doubles and callers keep compiling.
+type RestorePointOps interface {
+	SnapshotsList(ctx context.Context, limit int, before string) (SnapshotList, error)
+	SnapshotCreate(ctx context.Context) (Snapshot, error)
+	CheckpointsList(ctx context.Context, limit int, before string) (CheckpointList, error)
+	CheckpointCreate(ctx context.Context) (Checkpoint, error)
+	SnapshotRestore(ctx context.Context, name string) (RestoreResult, error)
+	CheckpointRestore(ctx context.Context, name string) (RestoreResult, error)
+}
+
 // ImportResult is the decoded `data` object of `ops mods import`.
 type ImportResult struct {
 	Archive  string   `json:"archive"`
@@ -742,6 +840,135 @@ func (c *OpsClient) BackupCreate(ctx context.Context, typ string, manual bool) (
 	data.Pruned = nonNilStrings(data.Pruned)
 	data.Warnings = nonNilStrings(data.Warnings)
 	return data, nil
+}
+
+// SnapshotsList reads snapshot metadata.
+func (c *OpsClient) SnapshotsList(ctx context.Context, limit int, before string,
+) (SnapshotList, error) {
+	args, err := restorePointListArgs("snapshot list", limit, before)
+	if err != nil {
+		return SnapshotList{}, err
+	}
+	raw, err := c.call(ctx, c.readTimeout, "snapshot list", args...)
+	if err != nil {
+		return SnapshotList{}, err
+	}
+	var data SnapshotList
+	if err := c.decodeData("snapshot list", raw, &data); err != nil {
+		return SnapshotList{}, err
+	}
+	if data.Items == nil {
+		data.Items = []SnapshotItem{}
+	}
+	return data, nil
+}
+
+// SnapshotCreate creates a full snapshot with reason manual.
+func (c *OpsClient) SnapshotCreate(ctx context.Context) (Snapshot, error) {
+	raw, err := c.call(ctx, c.longMutationTimeout, "snapshot create",
+		"snapshot", "create", "--reason", "manual")
+	if err != nil {
+		return Snapshot{}, err
+	}
+	var data Snapshot
+	if err := c.decodeData("snapshot create", raw, &data); err != nil {
+		return Snapshot{}, err
+	}
+	data.Warnings = nonNilStrings(data.Warnings)
+	return data, nil
+}
+
+// CheckpointsList reads checkpoint metadata.
+func (c *OpsClient) CheckpointsList(ctx context.Context, limit int, before string,
+) (CheckpointList, error) {
+	args, err := restorePointListArgs("checkpoint list", limit, before)
+	if err != nil {
+		return CheckpointList{}, err
+	}
+	raw, err := c.call(ctx, c.readTimeout, "checkpoint list", args...)
+	if err != nil {
+		return CheckpointList{}, err
+	}
+	var data CheckpointList
+	if err := c.decodeData("checkpoint list", raw, &data); err != nil {
+		return CheckpointList{}, err
+	}
+	if data.Items == nil {
+		data.Items = []CheckpointItem{}
+	}
+	return data, nil
+}
+
+// CheckpointCreate creates a world checkpoint with reason manual.
+func (c *OpsClient) CheckpointCreate(ctx context.Context) (Checkpoint, error) {
+	raw, err := c.call(ctx, c.longMutationTimeout, "checkpoint create",
+		"checkpoint", "create", "--reason", "manual")
+	if err != nil {
+		return Checkpoint{}, err
+	}
+	var data Checkpoint
+	if err := c.decodeData("checkpoint create", raw, &data); err != nil {
+		return Checkpoint{}, err
+	}
+	data.Warnings = nonNilStrings(data.Warnings)
+	return data, nil
+}
+
+// SnapshotRestore restores state, mods and configs from a snapshot.
+func (c *OpsClient) SnapshotRestore(ctx context.Context, name string,
+) (RestoreResult, error) {
+	if name == "" {
+		return RestoreResult{}, opsArgumentError("snapshot restore",
+			"archive name is required")
+	}
+	raw, err := c.call(ctx, c.longMutationTimeout, "snapshot restore",
+		"snapshot", "restore", "--archive", name)
+	if err != nil {
+		return RestoreResult{}, err
+	}
+	var data RestoreResult
+	if err := c.decodeData("snapshot restore", raw, &data); err != nil {
+		return RestoreResult{}, err
+	}
+	data.MissingPlugins = nonNilStrings(data.MissingPlugins)
+	return data, nil
+}
+
+// CheckpointRestore restores players/ and world/ from a checkpoint.
+func (c *OpsClient) CheckpointRestore(ctx context.Context, name string,
+) (RestoreResult, error) {
+	if name == "" {
+		return RestoreResult{}, opsArgumentError("checkpoint restore",
+			"archive name is required")
+	}
+	raw, err := c.call(ctx, c.longMutationTimeout, "checkpoint restore",
+		"checkpoint", "restore", "--archive", name)
+	if err != nil {
+		return RestoreResult{}, err
+	}
+	var data RestoreResult
+	if err := c.decodeData("checkpoint restore", raw, &data); err != nil {
+		return RestoreResult{}, err
+	}
+	data.MissingPlugins = nonNilStrings(data.MissingPlugins)
+	return data, nil
+}
+
+func restorePointListArgs(command string, limit int, before string) ([]string, error) {
+	if limit < 0 {
+		return nil, opsArgumentError(command, "limit must not be negative")
+	}
+	if limit > 500 {
+		return nil, opsArgumentError(command, "limit must not exceed 500")
+	}
+	parts := []string{"--limit", strconv.Itoa(limit)}
+	if before != "" {
+		parts = append(parts, "--before", before)
+	}
+	if strings.HasPrefix(command, "snapshot") {
+		return append([]string{"snapshot", "list"}, parts...), nil
+	}
+	return append([]string{"checkpoint", "list"}, parts...), nil
 }
 
 // ModsImport validates and stores an uploaded mods archive.

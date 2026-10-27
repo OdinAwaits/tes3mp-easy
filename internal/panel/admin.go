@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Saagilat/tes3mp-easy/internal/archive"
+	"github.com/Saagilat/tes3mp-easy/internal/restorepoint"
 )
 
 const (
@@ -705,6 +706,12 @@ func adminBackupItemFrom(item BackupItem) adminBackupItem {
 
 func archiveClass(name string) string {
 	switch {
+	case strings.HasPrefix(name, "checkpoint-predeploy-"):
+		return "checkpoint-predeploy"
+	case strings.HasPrefix(name, "checkpoint-"):
+		return "checkpoint"
+	case strings.HasPrefix(name, "snapshot-"):
+		return "snapshot"
 	case strings.HasPrefix(name, "state-manual-"):
 		return "state-manual"
 	case strings.HasPrefix(name, "state-predeploy-"):
@@ -1074,6 +1081,9 @@ func (h *panelHandler) statePageData(r *http.Request, session sessionState,
 	if h.ops == nil {
 		return data, errOpsUnavailable
 	}
+	if rp, ok := h.ops.(RestorePointOps); ok {
+		return h.restorePointPageData(r, data, rp, before, limit)
+	}
 	backups, err := h.ops.BackupsList(r.Context(), "state", limit, before)
 	if err != nil {
 		return data, err
@@ -1101,6 +1111,94 @@ func (h *panelHandler) statePageData(r *http.Request, session sessionState,
 		data.NextURL = "/admin/restore-points?" + values.Encode()
 	}
 	return data, nil
+}
+
+func (h *panelHandler) restorePointPageData(r *http.Request,
+	data adminStatePageData, rp RestorePointOps, before string, limit int,
+) (adminStatePageData, error) {
+	snapshotBefore, checkpointBefore := "", ""
+	switch {
+	case strings.HasPrefix(before, "snapshot-"):
+		snapshotBefore = before
+	case strings.HasPrefix(before, "checkpoint-"):
+		checkpointBefore = before
+	}
+
+	var snapshots SnapshotList
+	var checkpoints CheckpointList
+	var err error
+	switch {
+	case snapshotBefore != "":
+		snapshots, err = rp.SnapshotsList(r.Context(), limit, snapshotBefore)
+	case checkpointBefore != "":
+		checkpoints, err = rp.CheckpointsList(r.Context(), limit, checkpointBefore)
+	default:
+		snapshots, err = rp.SnapshotsList(r.Context(), limit, "")
+		if err == nil {
+			checkpoints, err = rp.CheckpointsList(r.Context(), limit, "")
+		}
+	}
+	if err != nil {
+		return data, err
+	}
+
+	snapItem := adminBackupGroup{Label: "Снапшоты"}
+	for _, item := range snapshots.Items {
+		mtime, label := backupTime(item.Mtime)
+		snapItem.Items = append(snapItem.Items, adminBackupItem{
+			Name:       item.Name,
+			Size:       item.Size,
+			SizeLabel:  humanSize(item.Size),
+			Mtime:      mtime,
+			MtimeLabel: label,
+			Class:      "snapshot",
+		})
+	}
+	regular := adminBackupGroup{Label: "Чекпоинты"}
+	predeploy := adminBackupGroup{Label: "Predeploy-чекпоинты"}
+	for _, item := range checkpoints.Items {
+		mtime, label := backupTime(item.Mtime)
+		row := adminBackupItem{
+			Name:       item.Name,
+			Size:       item.Size,
+			SizeLabel:  humanSize(item.Size),
+			Mtime:      mtime,
+			MtimeLabel: label,
+			Class:      "checkpoint",
+		}
+		if item.Reason == "predeploy" {
+			row.Class = "checkpoint-predeploy"
+			predeploy.Items = append(predeploy.Items, row)
+		} else {
+			regular.Items = append(regular.Items, row)
+		}
+	}
+	for _, group := range []adminBackupGroup{regular, predeploy, snapItem} {
+		if len(group.Items) > 0 {
+			data.Groups = append(data.Groups, group)
+		}
+	}
+	data.Empty = len(data.Groups) == 0
+	switch {
+	case checkpointBefore != "" && checkpoints.NextBefore != nil:
+		data.NextURL = restorePointNextURL(*checkpoints.NextBefore, limit)
+	case snapshotBefore != "" && snapshots.NextBefore != nil:
+		data.NextURL = restorePointNextURL(*snapshots.NextBefore, limit)
+	case checkpointBefore == "" && snapshotBefore == "" &&
+		checkpoints.NextBefore != nil && len(snapshots.Items) == 0:
+		data.NextURL = restorePointNextURL(*checkpoints.NextBefore, limit)
+	case checkpointBefore == "" && snapshotBefore == "" &&
+		snapshots.NextBefore != nil && len(checkpoints.Items) == 0:
+		data.NextURL = restorePointNextURL(*snapshots.NextBefore, limit)
+	}
+	return data, nil
+}
+
+func restorePointNextURL(before string, limit int) string {
+	values := url.Values{}
+	values.Set("before", before)
+	values.Set("limit", strconv.Itoa(limit))
+	return "/admin/restore-points?" + values.Encode()
 }
 
 func (h *panelHandler) redirectToRestorePoints(w http.ResponseWriter, r *http.Request) {
@@ -1169,17 +1267,49 @@ func (h *panelHandler) handleStateCreate(w http.ResponseWriter, r *http.Request,
 	case strings.Contains(r.URL.Path, "/snapshot/"):
 		action = "snapshot.create"
 	}
-	backup, err := h.ops.BackupCreate(r.Context(), "state", true)
-	if err != nil {
-		status, message, field := adminFailure(err)
-		h.logger.Printf("audit: action=%s result=error code=%s",
-			action, adminErrorCode(err))
-		h.renderStateFailure(w, r, session, status, message, field)
-		return
+	var archive string
+	rp, hasRestorePoints := h.ops.(RestorePointOps)
+	switch {
+	case hasRestorePoints && action == "checkpoint.create":
+		result, err := rp.CheckpointCreate(r.Context())
+		if err != nil {
+			h.renderStateOpsFailure(w, r, session, action, err)
+			return
+		}
+		archive = result.Archive
+	case hasRestorePoints && action == "snapshot.create":
+		result, err := rp.SnapshotCreate(r.Context())
+		if err != nil {
+			h.renderStateOpsFailure(w, r, session, action, err)
+			return
+		}
+		archive = result.Archive
+	case hasRestorePoints:
+		result, err := rp.CheckpointCreate(r.Context())
+		if err != nil {
+			h.renderStateOpsFailure(w, r, session, action, err)
+			return
+		}
+		archive = result.Archive
+	default:
+		backup, err := h.ops.BackupCreate(r.Context(), "state", true)
+		if err != nil {
+			h.renderStateOpsFailure(w, r, session, action, err)
+			return
+		}
+		archive = backup.Archive
 	}
-	h.logger.Printf("audit: action=%s archive=%s result=ok",
-		action, backup.Archive)
+	h.logger.Printf("audit: action=%s archive=%s result=ok", action, archive)
 	http.Redirect(w, r, "/admin/restore-points?ok=backup_created", http.StatusSeeOther)
+}
+
+func (h *panelHandler) renderStateOpsFailure(w http.ResponseWriter,
+	r *http.Request, session sessionState, action string, err error,
+) {
+	status, message, field := adminFailure(err)
+	h.logger.Printf("audit: action=%s result=error code=%s",
+		action, adminErrorCode(err))
+	h.renderStateFailure(w, r, session, status, message, field)
 }
 
 func (h *panelHandler) handleStateDeploy(w http.ResponseWriter, r *http.Request,
@@ -1200,21 +1330,59 @@ func (h *panelHandler) handleStateDeploy(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	name := r.PostForm.Get("archive")
-	if !safeArchiveName(name) || archive.ValidateStateArchiveName(name) != nil {
+	if !safeArchiveName(name) {
 		h.renderStateFailure(w, r, session, http.StatusBadRequest,
-			"Некорректное имя state-архива.", "archive")
+			"Некорректное имя архива.", "archive")
 		return
 	}
-	result, err := h.ops.StateDeploy(r.Context(), name)
-	if err != nil {
-		status, message, field := adminFailure(err)
-		h.logger.Printf("audit: action=state.deploy archive=%s result=error code=%s",
-			name, adminErrorCode(err))
-		h.renderStateFailure(w, r, session, status, message, field)
-		return
+	rp, hasRestorePoints := h.ops.(RestorePointOps)
+	var archiveName string
+	var restarted bool
+	action := "state.deploy"
+	if hasRestorePoints {
+		parsed, err := restorepoint.ParseName(name)
+		if err != nil {
+			h.renderStateFailure(w, r, session, http.StatusBadRequest,
+				"Некорректное имя точки отката.", "archive")
+			return
+		}
+		var result RestoreResult
+		var restoreErr error
+		if parsed.Kind == restorepoint.KindSnapshot {
+			action = "snapshot.restore"
+			result, restoreErr = rp.SnapshotRestore(r.Context(), name)
+		} else {
+			action = "checkpoint.restore"
+			result, restoreErr = rp.CheckpointRestore(r.Context(), name)
+		}
+		if restoreErr != nil {
+			h.logger.Printf("audit: action=%s archive=%s result=error code=%s",
+				action, name, adminErrorCode(restoreErr))
+			status, message, field := adminFailure(restoreErr)
+			h.renderStateFailure(w, r, session, status, message, field)
+			return
+		}
+		archiveName = result.Archive
+		restarted = result.Restarted
+	} else {
+		if archive.ValidateStateArchiveName(name) != nil {
+			h.renderStateFailure(w, r, session, http.StatusBadRequest,
+				"Некорректное имя state-архива.", "archive")
+			return
+		}
+		result, err := h.ops.StateDeploy(r.Context(), name)
+		if err != nil {
+			h.logger.Printf("audit: action=state.deploy archive=%s result=error code=%s",
+				name, adminErrorCode(err))
+			status, message, field := adminFailure(err)
+			h.renderStateFailure(w, r, session, status, message, field)
+			return
+		}
+		archiveName = result.Archive
+		restarted = result.Restarted
 	}
-	h.logger.Printf("audit: action=state.deploy archive=%s result=ok restarted=%t",
-		result.Archive, result.Restarted)
+	h.logger.Printf("audit: action=%s archive=%s result=ok restarted=%t",
+		action, archiveName, restarted)
 	http.Redirect(w, r, "/admin/restore-points?ok=state_deployed", http.StatusSeeOther)
 }
 
