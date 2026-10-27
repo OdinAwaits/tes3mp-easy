@@ -150,8 +150,8 @@ Bootstrap устанавливает `tes3mp.service`, `tes3mp-easy-backup.timer
 - `panel-data/tls/` — `0700`, файлы `0600`;
 - `panel-data/acme/` — `0700`, `account.key` — `0600`;
 - `panel-data/uploads/` — `tes3mp-panel:tes3mp 2770`, файлы `0640`; группа
-  `tes3mp` должна иметь write, иначе `ops` не сможет сделать rename upload в
-  `backups/mods/`;
+  `tes3mp` должна иметь write, иначе `ops` не сможет перенести upload в
+  `backups/mods/` и удалить исходный файл;
 - `.locks/`, `.staging/` — `tes3mp:tes3mp 0700`;
 - `.config/openmw/`, `.local/share/openmw/` — `tes3mp:tes3mp 0700`: это
   `$HOME/.config/openmw` и `$HOME/.local/share/openmw` для prelaunch-скрипта;
@@ -159,9 +159,9 @@ Bootstrap устанавливает `tes3mp.service`, `tes3mp-easy-backup.timer
   `ProtectSystem=strict`.
 
 `tes3mp-panel` входит в группу `tes3mp` для чтения `backups/`, `players/` и
-`mods/`; `uploads/` — узкое исключение с group-write, нужное для rename.
-Панель не имеет Unix-прав писать в игровые каталоги; `ops`, запущенный от
-`tes3mp`, имеет.
+`mods/`; `uploads/` — узкое исключение с group-write, нужное для переноса
+upload. Панель не имеет Unix-прав писать в игровые каталоги; `ops`, запущенный
+от `tes3mp`, имеет.
 
 Sudoers — два узких правила:
 
@@ -257,9 +257,14 @@ CRC-списками) и пустым `scripts/`; `current.txt` указывае
 не перезаписывая данные.
 
 `panel-data/uploads` — единственное место, куда панель пишет пользовательские
-файлы. После успешного `ops mods import` панель удаляет временный файл.
-Uploads и `backups/` обязаны быть на одной файловой системе: `mods import`
-делает rename, а не копирование. Это проверяет `doctor`.
+файлы. После успешного `ops mods import` панель удаляет временный файл, если он
+ещё существует. Uploads и `backups/` обязаны быть на одной файловой системе:
+`mods import` делает rename, а при `EXDEV` — атомарное копирование. Это
+проверяет `doctor`.
+
+`EXDEV` возможен и при одинаковом `stat.Dev`: systemd реализует
+`ReadWritePaths` отдельными bind mounts, а Linux запрещает rename между
+точками монтирования. Поэтому одной проверки `st_dev` недостаточно.
 
 Системные файлы:
 
@@ -306,6 +311,7 @@ Uploads и `backups/` обязаны быть на одной файловой �
   panel стримит в panel-data/uploads/<uuid>.tar.gz (MaxBytesReader, 512 MiB)
   panel ──sudo -u tes3mp──► ops mods import --file ... --json
   ops проверяет архив, CRC, пути; rename в backups/mods/mods-*.tar.gz
+  (при EXDEV из-за bind mount — атомарное копирование)
   panel показывает список и предлагает Deploy
 
 Браузер ──POST /admin/mods/deploy──► panel

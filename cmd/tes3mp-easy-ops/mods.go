@@ -52,12 +52,13 @@ type modsImportData struct {
 	Warnings []string `json:"warnings"`
 }
 
-// These hooks keep the command testable without changing archive limits or
-// creating a second filesystem in a unit test.
+// These hooks keep the command testable without changing archive limits,
+// mounting a second filesystem or reproducing a systemd mount namespace.
 var (
 	modsImportNowFunc          = func() time.Time { return time.Now().UTC() }
 	modsImportMaxCompressed    = archive.MaxCompressedSize
 	modsImportDeviceOfPathFunc = deviceOfPath
+	modsImportRenameFunc       = os.Rename
 )
 
 func runMods(opts options, args []string, client *systemd.Client,
@@ -244,12 +245,8 @@ func importModsLocked(req modsImportRequest) (modsImportResult, *ops.Error) {
 	}
 
 	target := filepath.Join(modsDir, name)
-	if err := os.Rename(req.file, target); err != nil {
-		return modsImportResult{}, modsImportError("rename upload", err)
-	}
-	if err := atomicfile.SyncDir(modsDir); err != nil {
-		return modsImportResult{}, modsImportError("sync backup directory",
-			errors.Join(err, os.Rename(target, req.file)))
+	if err := publishModsUpload(req.file, target); err != nil {
+		return modsImportResult{}, modsImportError("publish upload", err)
 	}
 
 	retained, retentionErr := retention.Apply(cfg)
@@ -261,6 +258,83 @@ func importModsLocked(req modsImportRequest) (modsImportResult, *ops.Error) {
 	result.pruned = append(result.pruned, retained.Pruned...)
 	result.warnings = append(result.warnings, retained.Warnings...)
 	return result, nil
+}
+
+// publishModsUpload moves a validated upload into backups/mods. Rename is the
+// fast path. It can return EXDEV even when both paths share st_dev: systemd
+// implements ReadWritePaths as separate bind mounts, and Linux forbids rename
+// across mount points. In that case copy into a .part file in the destination
+// directory, fsync, and rename within that directory.
+func publishModsUpload(src, target string) error {
+	dir := filepath.Dir(target)
+	err := modsImportRenameFunc(src, target)
+	if err == nil {
+		if syncErr := atomicfile.SyncDir(dir); syncErr != nil {
+			return errors.Join(
+				fmt.Errorf("sync backup directory: %w", syncErr),
+				modsImportRenameFunc(target, src),
+			)
+		}
+		return nil
+	}
+	if !errors.Is(err, syscall.EXDEV) {
+		return fmt.Errorf("rename upload: %w", err)
+	}
+
+	if copyErr := copyModsUpload(src, target); copyErr != nil {
+		return fmt.Errorf("rename upload: %v; copy fallback: %w", err, copyErr)
+	}
+	if removeErr := os.Remove(src); removeErr != nil {
+		return errors.Join(
+			fmt.Errorf("remove upload after copy: %w", removeErr),
+			removeModsTarget(target),
+			atomicfile.SyncDir(dir),
+		)
+	}
+	return nil
+}
+
+// copyModsUpload writes target through atomicfile so a crash cannot expose a
+// partial backup. The caller removes src only after the destination is durable.
+func copyModsUpload(src, target string) error {
+	input, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open upload: %w", err)
+	}
+	writer, err := atomicfile.New(target, 0o640)
+	if err != nil {
+		return errors.Join(fmt.Errorf("create backup: %w", err), input.Close())
+	}
+	_, copyErr := io.Copy(writer, input)
+	closeErr := input.Close()
+	if copyErr != nil {
+		return errors.Join(
+			fmt.Errorf("copy upload: %w", copyErr),
+			closeErr,
+			writer.Abort(),
+		)
+	}
+	if closeErr != nil {
+		return errors.Join(
+			fmt.Errorf("close upload: %w", closeErr),
+			writer.Abort(),
+		)
+	}
+	if err := writer.Commit(); err != nil {
+		return errors.Join(
+			fmt.Errorf("commit backup: %w", err),
+			removeModsTarget(target),
+			atomicfile.SyncDir(filepath.Dir(target)),
+		)
+	}
+	return nil
+}
+
+func removeModsTarget(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove backup %s: %w", path, err)
+	}
+	return nil
 }
 
 // prepareModsDestination creates backups/mods for a real import. A dry run

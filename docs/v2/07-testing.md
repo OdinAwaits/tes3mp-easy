@@ -137,7 +137,8 @@ predeploy-лимиты, защиту текущего mods-архива и за�
 - `backups list/create`: пагинация, фильтры, dry-run, невалидный
   `current.txt`, `locked`, `no_space`;
 - `mods import`: валидный архив, битый gzip, отсутствующий upload, lock,
-  dry-run, cross-filesystem;
+  dry-run, cross-filesystem, `EXDEV` copy fallback (успех и ошибка копирования),
+  non-`EXDEV` rename error;
 - `mods deploy`: `--current`/`--latest`/`--archive`, `--no-restart`, отсутствие
   метаданных, неверные цели, `service_unavailable`, rollback;
 - `state deploy`: успех, `--no-restart`, ошибки архива, rollback распаковки,

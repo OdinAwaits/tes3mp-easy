@@ -181,7 +181,9 @@ internal/
 - `cgroup` — `MemoryHigh`/`MemoryMax` трёх service-юнитов совпадают с §3
   `02-architecture.md` (`384M/448M`, `48M/64M`, `48M/64M`);
 - `filesystems` — `panel-data/uploads` и `backups/` имеют одинаковый
-  `stat.Dev`, иначе `mods import` не сможет сделать rename;
+  `stat.Dev`; при разных устройствах `mods import` вернёт `invalid_argument`.
+  Отдельные bind mounts внутри одного устройства проходят проверку, а
+  `EXDEV` обрабатывается копированием;
 - `budgets` — `backups/state` не больше 1 GiB, `backups/mods` не больше
   512 MiB; превышение — `warn`, не `error`;
 - `current` — `backups/mods/current.txt` канонический, указывает на
@@ -330,7 +332,9 @@ Ops не доверяет ни имени, ни содержимому.
 Проверки:
 
 - upload и `backups/mods` на одной файловой системе (`stat.Dev`), иначе
-  `invalid_argument`;
+  `invalid_argument`; одинаковый `st_dev` не гарантирует один mount point:
+  systemd `ReadWritePaths` создаёт отдельные bind mounts, поэтому `EXDEV`
+  обрабатывается атомарным копированием;
 - gzip и tar читаются потоково, размер в пределах 512 MiB, записей ≤ 50 000,
   распаковано ≤ 1 GiB;
 - нет абсолютных путей, `..`, symlink, hardlink, устройств, NUL;
@@ -347,9 +351,13 @@ Ops не доверяет ни имени, ни содержимому.
 - нет дубликатов имён.
 
 При успехе архив переименовывается в
-`backups/mods/mods-YYYY-MM-DD_HH-MM-SS.tar.gz`; копирования между файловыми
-системами нет. `current.txt` **не** меняется. При ошибке исходный upload не
-удаляется: панель сама решает, когда чистить `panel-data/uploads`.
+`backups/mods/mods-YYYY-MM-DD_HH-MM-SS.tar.gz`. Если `rename` возвращает
+`EXDEV` (upload и `backups/mods` — разные bind mounts), ops копирует upload в
+`.part` в `backups/mods`, делает `fsync`, переименовывает `.part` в целевое имя
+и удаляет исходный upload. Копирования между разными файловыми системами нет:
+такой случай отсекает проверка `stat.Dev`. `current.txt` **не** меняется. При
+ошибке исходный upload не удаляется: панель сама решает, когда чистить
+`panel-data/uploads`.
 
 ```json
 {
@@ -550,8 +558,8 @@ bootstrap создаёт `mods-init-*`, пишет канонический `cur
 - `io.LimitReader` на gzip/tar и на каждый файл; счётчики записей и
   распакованного размера.
 - Временный файл в целевом каталоге; `fsync` файла и каталога; `rename`.
-- `mods import` делает rename upload → `backups/mods/`; cross-filesystem
-  копирования нет.
+- `mods import` делает rename upload → `backups/mods/`; при `EXDEV` между
+  bind mounts — атомарное копирование через `.part` + `rename`.
 - `state` пишется прямо из `players/` и `world/`, без staging-копии.
 - `tar` детерминированный: сортировка путей, mtime из файлов, uid/gid 0, без
   лишних заголовков. Байт-в-байт совпадение с GNU tar не цель.

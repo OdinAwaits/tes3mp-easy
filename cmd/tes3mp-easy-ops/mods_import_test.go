@@ -45,6 +45,16 @@ func fixModsImportNow(t *testing.T, at time.Time) {
 	t.Cleanup(func() { modsImportNowFunc = old })
 }
 
+func failModsImportRename(t *testing.T, err error) {
+	t.Helper()
+
+	old := modsImportRenameFunc
+	modsImportRenameFunc = func(oldpath, newpath string) error {
+		return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: err}
+	}
+	t.Cleanup(func() { modsImportRenameFunc = old })
+}
+
 func writeModsUpload(t *testing.T, root string,
 	mods fixtures.ModsArchive,
 ) (string, []byte) {
@@ -188,6 +198,95 @@ func TestRunModsImportSuccess(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".locks", "ops.lock")); err != nil {
 		t.Fatalf("ops lock was not created: %v", err)
+	}
+}
+
+func TestRunModsImportFallsBackToCopyOnEXDEV(t *testing.T) {
+	root := modsImportRoot(t)
+	fixModsImportNow(t, modsImportTestNow)
+	modsDir := filepath.Join(root, "backups", "mods")
+	mods := fixtures.ScriptedMods()
+	upload, body := writeModsUpload(t, root, mods)
+	failModsImportRename(t, syscall.EXDEV)
+
+	code, data, stdout, stderr := runModsImportCommand(t, root, "--file", upload)
+	if code != int(ops.ExitOK) {
+		t.Fatalf("exit = %d, want 0; stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if data.SHA256 != fixtures.SHA256Hex(body) {
+		t.Fatalf("sha256 = %s, want %s", data.SHA256, fixtures.SHA256Hex(body))
+	}
+	if _, err := os.Stat(upload); !os.IsNotExist(err) {
+		t.Fatalf("upload still exists after copy fallback: %v", err)
+	}
+
+	target := filepath.Join(modsDir, data.Archive)
+	copied, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read copied archive: %v", err)
+	}
+	if !bytes.Equal(copied, body) {
+		t.Fatalf("copied archive differs from upload: got %d bytes, want %d",
+			len(copied), len(body))
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o640 {
+		t.Fatalf("archive mode = %o, want 640", mode)
+	}
+	if _, err := archive.ValidateModsFile(target); err != nil {
+		t.Fatalf("ValidateModsFile: %v", err)
+	}
+	if _, err := os.Stat(target + ".part"); !os.IsNotExist(err) {
+		t.Fatalf(".part exists after copy fallback: %v", err)
+	}
+}
+
+func TestRunModsImportCopyFallbackFailureKeepsUpload(t *testing.T) {
+	root := modsImportRoot(t)
+	fixModsImportNow(t, modsImportTestNow)
+	modsDir := filepath.Join(root, "backups", "mods")
+	upload, _ := writeModsUpload(t, root, fixtures.DefaultMods())
+	failModsImportRename(t, syscall.EXDEV)
+
+	target := filepath.Join(modsDir, fixtures.ModsName(modsImportTestNow))
+	if err := os.Mkdir(target+".part", 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, stdout, _ := runModsImportCommand(t, root, "--file", upload)
+	if code != int(ops.ExitInternal) {
+		t.Fatalf("exit = %d, want 1; stdout=%q", code, stdout)
+	}
+	assertJSONError(t, stdout, ops.ExitInternal, "copy fallback")
+	if _, err := os.Stat(upload); err != nil {
+		t.Fatalf("upload was removed after fallback failure: %v", err)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("final archive exists after fallback failure: %v", err)
+	}
+}
+
+func TestRunModsImportRenameFailureKeepsUpload(t *testing.T) {
+	root := modsImportRoot(t)
+	fixModsImportNow(t, modsImportTestNow)
+	modsDir := filepath.Join(root, "backups", "mods")
+	upload, _ := writeModsUpload(t, root, fixtures.DefaultMods())
+	failModsImportRename(t, syscall.EPERM)
+
+	code, _, stdout, _ := runModsImportCommand(t, root, "--file", upload)
+	if code != int(ops.ExitInternal) {
+		t.Fatalf("exit = %d, want 1; stdout=%q", code, stdout)
+	}
+	assertJSONError(t, stdout, ops.ExitInternal, "rename upload")
+	if _, err := os.Stat(upload); err != nil {
+		t.Fatalf("upload was removed after rename failure: %v", err)
+	}
+	target := filepath.Join(modsDir, fixtures.ModsName(modsImportTestNow))
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatalf("archive exists after rename failure: %v", err)
 	}
 }
 

@@ -370,7 +370,7 @@ POST /admin/mods/upload (multipart, max 512 MiB)
   файл создаётся 0600, после записи получает 0640 (группа tes3mp)
   panel ──sudo -u tes3mp──► ops mods import --file ... --json
   при успехе: удалить upload, если он ещё существует
-              (ops переименовал его в backups/mods/)
+              (ops перенёс его в backups/mods/ — rename или копирование)
   при ошибке: удалить upload и показать причину (ops уже вернул детали)
 ```
 
@@ -378,8 +378,13 @@ POST /admin/mods/upload (multipart, max 512 MiB)
 `r.MultipartReader` для потокового чтения части, без `ParseMultipartForm` и
 без `io.ReadAll` всего файла. Имя исходного файла не используется как путь;
 на диске — UUID. `panel-data/uploads` и `/tes3mp-easy/backups` должны быть на
-одной файловой системе; `doctor` проверяет это, а `mods import` возвращает
-`invalid_argument`, если это не так.
+одной файловой системе; `doctor` проверяет `stat.Dev`, а `mods import`
+возвращает `invalid_argument`, если устройства разные.
+
+Одинаковый `st_dev` не гарантирует один mount point: systemd создаёт отдельные
+bind mounts для `ReadWritePaths`, и `rename` между ними возвращает `EXDEV`.
+`mods import` в этом случае копирует upload в `.part` в `backups/mods`,
+делает `fsync`, переименовывает `.part` в целевое имя и удаляет upload.
 
 Деплой:
 
@@ -550,8 +555,8 @@ panel-data/
 
 `uploads/` — единственное место, куда панель пишет пользовательские файлы.
 Файлы называются UUID, а не исходным именем. После успешного импорта ops
-переименовывает upload в `backups/mods/`, и панель не пытается удалить уже
-несуществующий путь.
+переносит upload в `backups/mods/` (rename или атомарное копирование при
+`EXDEV`), и панель не пытается удалить уже несуществующий путь.
 
 ## 16. Безопасность
 
