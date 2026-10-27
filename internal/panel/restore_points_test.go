@@ -195,7 +195,7 @@ func TestRestorePointsPinAndDelete(t *testing.T) {
 	}
 
 	rec = env.request(t, http.MethodPost, "/admin/restore-points/delete",
-		url.Values{"archive": {pinned}, "confirm": {pinned}})
+		url.Values{"archive": {pinned}, "confirm": {pinned}, "force": {"1"}})
 	if rec.Code != http.StatusOK || len(rp.removals) != 1 ||
 		rp.removals[0] != "checkpoint:"+pinned || rp.removalForce[0] {
 		t.Fatalf("checkpoint delete = %d removals=%v force=%v",
@@ -215,24 +215,50 @@ func TestRestorePointsPinAndDelete(t *testing.T) {
 }
 
 func TestRestorePointsDeleteExplainsArchiveInUse(t *testing.T) {
-	rp := &fakeRestorePointAdminOps{
-		fakeAdminOps: &fakeAdminOps{},
-		removeErr: &OpsError{
-			Exit:    ops.ExitArchiveInUse,
-			Code:    ops.CodeArchiveInUse,
-			Message: "restore point is in use: pinned",
+	tests := []struct {
+		name    string
+		archive string
+		want    string
+		notWant string
+	}{
+		{
+			name:    "pinned checkpoint",
+			archive: "checkpoint-2026-10-27_16-45-00.tar.gz",
+			want:    "Снимите закрепление",
+			notWant: "Удалить вместе с базой",
+		},
+		{
+			name:    "snapshot base",
+			archive: "snapshot-2026-10-27_16-40-00.tar.gz",
+			want:    "Удалить вместе с базой",
+			notWant: "Снимите закрепление",
 		},
 	}
-	env := newRestorePointAdminEnv(t, rp)
-	name := "checkpoint-2026-10-27_16-45-00.tar.gz"
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rp := &fakeRestorePointAdminOps{
+				fakeAdminOps: &fakeAdminOps{},
+				removeErr: &OpsError{
+					Exit:    ops.ExitArchiveInUse,
+					Code:    ops.CodeArchiveInUse,
+					Message: "restore point is in use",
+				},
+			}
+			env := newRestorePointAdminEnv(t, rp)
 
-	rec := env.request(t, http.MethodPost, "/admin/restore-points/delete",
-		url.Values{"archive": {name}, "confirm": {name}})
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("delete in use = %d: %s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "Снимите закрепление") {
-		t.Fatalf("in-use page has no hint:\n%s", rec.Body.String())
+			rec := env.request(t, http.MethodPost, "/admin/restore-points/delete",
+				url.Values{"archive": {tt.archive}, "confirm": {tt.archive}})
+			if rec.Code != http.StatusConflict {
+				t.Fatalf("delete in use = %d: %s", rec.Code, rec.Body.String())
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body, tt.want) {
+				t.Fatalf("in-use page does not contain %q:\n%s", tt.want, body)
+			}
+			if strings.Contains(body, tt.notWant) {
+				t.Fatalf("in-use page contains %q:\n%s", tt.notWant, body)
+			}
+		})
 	}
 }
 

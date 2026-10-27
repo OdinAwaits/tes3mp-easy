@@ -1542,7 +1542,12 @@ func (h *panelHandler) handleStateDelete(w http.ResponseWriter, r *http.Request,
 			action, name, force, adminErrorCode(err))
 		status, message, field := adminFailure(err)
 		if adminErrorCode(err) == ops.CodeArchiveInUse {
-			message += " Снимите закрепление или повторите с «Удалить вместе с базой»."
+			if parsed.Kind == restorepoint.KindSnapshot {
+				message += " Если это база чекпоинтов, повторите с «Удалить вместе с базой»;" +
+					" последний снапшот удалить нельзя."
+			} else {
+				message += " Снимите закрепление и повторите удаление."
+			}
 		}
 		h.renderStateFailure(w, r, session, status, message, field)
 		return

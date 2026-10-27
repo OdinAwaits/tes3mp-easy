@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Saagilat/tes3mp-easy/internal/ops"
@@ -275,7 +276,6 @@ func TestSnapshotRestoreStateAndConfigs(t *testing.T) {
 	}
 }
 
-
 func TestRestorePointRemoveProtection(t *testing.T) {
 	root := restorePointRoot(t)
 
@@ -360,6 +360,37 @@ func TestRestorePointRemoveProtection(t *testing.T) {
 	}
 }
 
+func TestCheckpointRemovePredeploy(t *testing.T) {
+	root := restorePointRoot(t)
+	code, _, stdout, stderr := runJSON(t, root, "snapshot", "create")
+	if code != int(ops.ExitOK) {
+		t.Fatalf("snapshot exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	code, raw, stdout, stderr := runJSON(t, root,
+		"checkpoint", "create", "--reason", "predeploy")
+	if code != int(ops.ExitOK) {
+		t.Fatalf("predeploy exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	predeploy := decodeData[checkpointCreateData](t, raw)
+	if !strings.HasPrefix(predeploy.Archive, "checkpoint-predeploy-") {
+		t.Fatalf("predeploy archive = %q", predeploy.Archive)
+	}
+
+	code, raw, stdout, stderr = runJSON(t, root,
+		"checkpoint", "rm", predeploy.Archive)
+	if code != int(ops.ExitOK) {
+		t.Fatalf("rm predeploy exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	removed := decodeData[restorepoint.RemoveResult](t, raw)
+	if len(removed.Removed) != 1 || removed.Removed[0] != predeploy.Archive {
+		t.Fatalf("rm predeploy result = %+v", removed)
+	}
+	if _, err := os.Stat(filepath.Join(
+		restorepoint.Dir(root, restorepoint.KindCheckpoint),
+		predeploy.Archive)); !os.IsNotExist(err) {
+		t.Fatalf("predeploy archive still exists: %v", err)
+	}
+}
 
 func TestRetentionKeepsDocumentedLimits(t *testing.T) {
 	root := restorePointRoot(t)
