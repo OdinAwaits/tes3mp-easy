@@ -381,10 +381,13 @@ POST /admin/mods/upload (multipart, max 512 MiB)
 одной файловой системе; `doctor` проверяет `stat.Dev`, а `mods import`
 возвращает `invalid_argument`, если устройства разные.
 
-Одинаковый `st_dev` не гарантирует один mount point: systemd создаёт отдельные
-bind mounts для `ReadWritePaths`, и `rename` между ними возвращает `EXDEV`.
-`mods import` в этом случае копирует upload в `.part` в `backups/mods`,
-делает `fsync`, переименовывает `.part` в целевое имя и удаляет upload.
+Panel unit использует один `ReadWritePaths=/tes3mp-easy`, поэтому uploads,
+`backups/`, `.staging` и `mods/` находятся на одном mount и `rename` работает
+без копирования. Для нестандартных unit-файлов `mods import` сохраняет
+fallback: при `EXDEV` копирует upload в `.part` в `backups/mods`, делает
+`fsync`, переименовывает `.part` в целевое имя и удаляет upload. Для
+`mods deploy` и `state deploy` такого fallback нет: granular-пути в panel unit
+недопустимы.
 
 Деплой:
 
@@ -555,8 +558,9 @@ panel-data/
 
 `uploads/` — единственное место, куда панель пишет пользовательские файлы.
 Файлы называются UUID, а не исходным именем. После успешного импорта ops
-переносит upload в `backups/mods/` (rename или атомарное копирование при
-`EXDEV`), и панель не пытается удалить уже несуществующий путь.
+переносит upload в `backups/mods/` (rename в общем `/tes3mp-easy` mount или
+атомарное копирование при `EXDEV`), и панель не пытается удалить уже
+несуществующий путь.
 
 ## 16. Безопасность
 

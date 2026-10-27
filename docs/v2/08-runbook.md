@@ -52,7 +52,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/in
 Конкретную версию можно закрепить:
 
 ```bash
-TES3MP_EASY_VERSION=0.1.12 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
+TES3MP_EASY_VERSION=0.1.13 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
 ```
 
 Ручной путь, если архив нужно скачать заранее:
@@ -61,7 +61,7 @@ TES3MP_EASY_VERSION=0.1.12 bash <(curl -Ls https://raw.githubusercontent.com/Saa
    собранный `dist/tes3mp-easy-<version>-linux-amd64.tar.gz`):
 
    ```bash
-   VERSION=0.1.12
+   VERSION=0.1.13
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz"
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
    sha256sum -c "tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
@@ -72,7 +72,7 @@ TES3MP_EASY_VERSION=0.1.12 bash <(curl -Ls https://raw.githubusercontent.com/Saa
    Локальная сборка релиза:
 
    ```bash
-   go run ./cmd/tes3mp-easy-pack --version 0.1.12
+   go run ./cmd/tes3mp-easy-pack --version 0.1.13
    ```
 
 2. Проверьте хост без изменений:
@@ -361,6 +361,18 @@ sudo cat /tes3mp-easy/panel-data/initial-password.txt
      --root /tes3mp-easy --json doctor
    curl -kfsS --noproxy '*' https://127.0.0.1/healthz
    ```
+
+   В namespace панели `.staging` и `mods/` должны быть на одном mount:
+
+   ```bash
+   panel_pid=$(systemctl show -p MainPID --value tes3mp-panel.service)
+   sudo nsenter -t "$panel_pid" -m -- findmnt -no TARGET -T /tes3mp-easy/mods
+   sudo nsenter -t "$panel_pid" -m -- findmnt -no TARGET -T /tes3mp-easy/.staging
+   ```
+
+   Обе команды должны вывести `/tes3mp-easy`. Если выводятся подкаталоги,
+   в unit остались granular-пути `ReadWritePaths`, и deploy снова упадёт с
+   `EXDEV`.
 
 ### 5.2. Из исходников (developer/emergency)
 

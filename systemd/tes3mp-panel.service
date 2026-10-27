@@ -28,9 +28,10 @@ NoNewPrivileges=no
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/tes3mp-easy/panel-data
-ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/mods
-ReadWritePaths=/tes3mp-easy/backups /tes3mp-easy/configs /tes3mp-easy/.locks /tes3mp-easy/.staging
+# One mount is required for the deploy transactions: `ops` runs in this unit's
+# namespace and renames `.staging/mods-*` into `mods/`, `players/` and `world/`.
+# Separate ReadWritePaths bind mounts make rename(2) fail with EXDEV.
+ReadWritePaths=/tes3mp-easy
 
 [Install]
 WantedBy=multi-user.target

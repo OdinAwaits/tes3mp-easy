@@ -96,12 +96,12 @@ ops дополнительно пропускает бэкап, если игр�
   переключают пользователя, `CAP_AUDIT_WRITE` пишет audit-запись, а
   `CAP_SYS_RESOURCE` позволяет sudo применить PAM-лимиты без предупреждений;
 - `ProtectSystem=strict`, `PrivateTmp=yes`, `ProtectHome=yes`;
-- `ReadWritePaths=/tes3mp-easy/panel-data`;
-- `ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/mods`;
-- `ReadWritePaths=/tes3mp-easy/backups /tes3mp-easy/configs /tes3mp-easy/.locks /tes3mp-easy/.staging`;
-  эти пути нужны дочернему `ops`, который панель запускает через `sudo`:
-  mount namespace с `ProtectSystem=strict` наследуется, а Unix-права не дают
-  панели писать туда напрямую;
+- `ReadWritePaths=/tes3mp-easy` — один bind mount, который нужен дочернему
+  `ops`, запускаемому через `sudo`: mount namespace с `ProtectSystem=strict`
+  наследуется, а Unix-права не дают панели писать в игровые каталоги напрямую.
+  Один mount обязателен для deploy-транзакций: при отдельных
+  `ReadWritePaths` для `.staging` и `mods/`, `players/`, `world/` Linux
+  возвращает `EXDEV` на `rename` между ними. Не добавляйте granular-пути;
 - `NoNewPrivileges=no` — иначе не сработает узкий `sudo`; граница безопасности —
   не этот флаг, а точные правила sudoers и root-helper;
 - `Restart=on-failure`, `RestartSec=60s`, `StartLimitBurst=2`: падение ACME не
@@ -262,9 +262,14 @@ CRC-списками) и пустым `scripts/`; `current.txt` указывае
 `mods import` делает rename, а при `EXDEV` — атомарное копирование. Это
 проверяет `doctor`.
 
-`EXDEV` возможен и при одинаковом `stat.Dev`: systemd реализует
-`ReadWritePaths` отдельными bind mounts, а Linux запрещает rename между
-точками монтирования. Поэтому одной проверки `st_dev` недостаточно.
+`EXDEV` возможен и при одинаковом `stat.Dev`: systemd реализует каждую строку
+`ReadWritePaths` отдельным bind mount, а Linux запрещает rename между точками
+монтирования. Поэтому одной проверки `st_dev` недостаточно. Панель запускает
+`ops` в своём namespace, и для неё используется ровно один
+`ReadWritePaths=/tes3mp-easy`: тогда `.staging`, `mods/`, `players/`, `world/`
+и `backups/` находятся на одном mount, а deploy-транзакции могут делать
+атомарный `rename`. Granular-пути в panel unit ломают `mods deploy` и
+`state deploy`.
 
 Системные файлы:
 
@@ -311,7 +316,7 @@ CRC-списками) и пустым `scripts/`; `current.txt` указывае
   panel стримит в panel-data/uploads/<uuid>.tar.gz (MaxBytesReader, 512 MiB)
   panel ──sudo -u tes3mp──► ops mods import --file ... --json
   ops проверяет архив, CRC, пути; rename в backups/mods/mods-*.tar.gz
-  (при EXDEV из-за bind mount — атомарное копирование)
+  (штатный panel unit — один mount; при EXDEV — атомарное копирование)
   panel показывает список и предлагает Deploy
 
 Браузер ──POST /admin/mods/deploy──► panel
@@ -320,6 +325,11 @@ CRC-списками) и пустым `scripts/`; `current.txt` указывае
   меняет mods/, генерирует customScripts.lua и current.txt, запускает tes3mp,
   если он работал до операции (и не указан --no-restart)
 ```
+
+`mods deploy` и `state deploy` подменяют каталоги через `rename`. Панель
+запускает `ops` в своём namespace, поэтому `.staging` и целевые каталоги
+обязаны быть на одном mount — это обеспечивает единственный
+`ReadWritePaths=/tes3mp-easy`.
 
 ### State-бэкап и восстановление
 

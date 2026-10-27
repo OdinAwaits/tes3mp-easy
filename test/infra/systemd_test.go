@@ -55,9 +55,7 @@ func TestSystemdAssetsContainRequiredSettings(t *testing.T) {
 				"AmbientCapabilities=CAP_NET_BIND_SERVICE",
 				"CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_SYS_RESOURCE",
 				"NoNewPrivileges=no",
-				"ReadWritePaths=/tes3mp-easy/panel-data",
-				"ReadWritePaths=/tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/mods",
-				"ReadWritePaths=/tes3mp-easy/backups /tes3mp-easy/configs /tes3mp-easy/.locks /tes3mp-easy/.staging",
+				"ReadWritePaths=/tes3mp-easy",
 			},
 		},
 		{
@@ -120,6 +118,23 @@ func TestSystemdAssetsContainRequiredSettings(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestPanelUnitUsesOneWritableMount(t *testing.T) {
+	data, err := os.ReadFile(projectPath(t, "systemd", "tes3mp-panel.service"))
+	if err != nil {
+		t.Fatalf("read panel unit: %v", err)
+	}
+
+	var paths []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "ReadWritePaths=") {
+			paths = append(paths, line)
+		}
+	}
+	if len(paths) != 1 || paths[0] != "ReadWritePaths=/tes3mp-easy" {
+		t.Fatalf("panel unit must expose exactly one writable root, got %q", paths)
 	}
 }
 

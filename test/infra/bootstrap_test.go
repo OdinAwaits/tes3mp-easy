@@ -973,7 +973,7 @@ func TestBootstrapPreflightPassesAndInstalls(t *testing.T) {
 	assertContains(t, string(sudoers), "tes3mp ALL=(root) NOPASSWD: /usr/local/libexec/tes3mp-easy-rootctl start")
 
 	assertInstalledFile(t, h, "etc/systemd/system/tes3mp.service", "MemoryMax=448M", "OOMScoreAdjust=-500")
-	assertInstalledFile(t, h, "etc/systemd/system/tes3mp-panel.service", "CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_SYS_RESOURCE", "NoNewPrivileges=no")
+	assertInstalledFile(t, h, "etc/systemd/system/tes3mp-panel.service", "CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_SYS_RESOURCE", "NoNewPrivileges=no", "ReadWritePaths=/tes3mp-easy")
 	assertInstalledFile(t, h, "etc/systemd/system/tes3mp-easy-backup.service", "Type=oneshot", "TimeoutStartSec=9min", "Nice=19", "ConditionPathExists=/opt/tes3mp-easy/bin/tes3mp-easy-ops")
 	assertInstalledFile(t, h, "etc/systemd/system/tes3mp-easy-backup.timer", "OnUnitActiveSec=5min", "AccuracySec=30s")
 	assertInstalledFile(t, h, "etc/systemd/journald.conf.d/tes3mp-easy.conf", "SystemMaxUse=100M", "RuntimeMaxUse=32M")

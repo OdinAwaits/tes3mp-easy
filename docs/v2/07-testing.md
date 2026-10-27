@@ -59,6 +59,8 @@ OS-матрица: Debian 12 и Ubuntu 24.04, x86_64, systemd. Другие ОС
   дерево;
 - установку четырёх unit-файлов, journald drop-in и sysctl drop-in с режимами
   `0644`, их содержимое и порядок «verify до install»;
+- ровно один `ReadWritePaths=/tes3mp-easy` в panel unit: granular-пути ломают
+  `rename` между `.staging` и `mods/`/`players/`/`world/`;
 - допустимость отсутствующего `ExecStart` для ops/panel (бинарники ставятся
   отдельно) и отказ на любую другую ошибку `systemd-analyze verify`;
 - `ConditionPathExists` у backup service: таймер не запускает backup с

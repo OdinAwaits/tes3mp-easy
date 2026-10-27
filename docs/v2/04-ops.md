@@ -182,8 +182,9 @@ internal/
   `02-architecture.md` (`384M/448M`, `48M/64M`, `48M/64M`);
 - `filesystems` — `panel-data/uploads` и `backups/` имеют одинаковый
   `stat.Dev`; при разных устройствах `mods import` вернёт `invalid_argument`.
-  Отдельные bind mounts внутри одного устройства проходят проверку, а
-  `EXDEV` обрабатывается копированием;
+  Отдельные bind mounts внутри одного устройства проходят проверку, поэтому
+  panel unit использует один `ReadWritePaths=/tes3mp-easy`; `EXDEV` при
+  импорте дополнительно обрабатывается копированием;
 - `budgets` — `backups/state` не больше 1 GiB, `backups/mods` не больше
   512 MiB; превышение — `warn`, не `error`;
 - `current` — `backups/mods/current.txt` канонический, указывает на
@@ -332,8 +333,8 @@ Ops не доверяет ни имени, ни содержимому.
 Проверки:
 
 - upload и `backups/mods` на одной файловой системе (`stat.Dev`), иначе
-  `invalid_argument`; одинаковый `st_dev` не гарантирует один mount point:
-  systemd `ReadWritePaths` создаёт отдельные bind mounts, поэтому `EXDEV`
+  `invalid_argument`; panel unit держит их в одном `ReadWritePaths=/tes3mp-easy`.
+  Для совместимости с нестандартными unit-файлами `EXDEV` всё равно
   обрабатывается атомарным копированием;
 - gzip и tar читаются потоково, размер в пределах 512 MiB, записей ≤ 50 000,
   распаковано ≤ 1 GiB;
@@ -351,10 +352,11 @@ Ops не доверяет ни имени, ни содержимому.
 - нет дубликатов имён.
 
 При успехе архив переименовывается в
-`backups/mods/mods-YYYY-MM-DD_HH-MM-SS.tar.gz`. Если `rename` возвращает
-`EXDEV` (upload и `backups/mods` — разные bind mounts), ops копирует upload в
-`.part` в `backups/mods`, делает `fsync`, переименовывает `.part` в целевое имя
-и удаляет исходный upload. Копирования между разными файловыми системами нет:
+`backups/mods/mods-YYYY-MM-DD_HH-MM-SS.tar.gz`. В штатном panel unit upload и
+`backups/mods` находятся на одном mount. Если `rename` всё же возвращает
+`EXDEV` (нестандартный unit), ops копирует upload в `.part` в `backups/mods`,
+делает `fsync`, переименовывает `.part` в целевое имя и удаляет исходный
+upload. Копирования между разными файловыми системами нет:
 такой случай отсекает проверка `stat.Dev`. `current.txt` **не** меняется. При
 ошибке исходный upload не удаляется: панель сама решает, когда чистить
 `panel-data/uploads`.
@@ -401,6 +403,10 @@ Ops не доверяет ни имени, ни содержимому.
     `--no-restart`.
 12. Удалить `.old-*` и staging.
 
+Renames на шагах 8–10 выполняются в namespace панели, где
+`ReadWritePaths=/tes3mp-easy` даёт один mount для `.staging` и `mods/`.
+Granular-пути в unit вернули бы `EXDEV`; транзакция в этом случае откатилась бы.
+
 Если шаг 8–11 упал: вернуть старые `mods/`, старый `current.txt`, старый
 `customScripts.lua`, запустить сервер, если он работал до операции и не указан
 `--no-restart`, и вернуть ошибку. Это не «автоматический откат вообще всего», а
@@ -437,6 +443,10 @@ Ops не доверяет ни имени, ни содержимому.
     `--no-restart`.
 11. При успехе удалить `.old-*`; при ошибке вернуть старые каталоги и
     запустить сервер, если он работал до операции и не указан `--no-restart`.
+
+Шаги 8–9 требуют, чтобы `.staging`, `players/` и `world/` были на одном mount.
+Это обеспечивает `ReadWritePaths=/tes3mp-easy` в panel unit; при granular-путях
+`rename` вернёт `EXDEV` и ops откатит транзакцию.
 
 `requiredDataFiles.json` и `current.txt` из архива должны соответствовать
 модам, с которыми делался бэкап. Ops не подменяет моды:
