@@ -17,7 +17,7 @@
       <a href="#" aria-current="page">Обзор</a>
       <a href="#">Логи</a>
       <a href="#">Моды</a>
-      <a href="restore-points.html">Точки отката</a>
+      <a href="state.html">Состояния</a>
       <a href="config-form.html">Настройки</a>
       <a href="#">Staff</a>
       <a href="#">Пароль</a>
@@ -59,21 +59,19 @@
       <section class="card">
         <h2>Таймеры и проверки</h2>
         <dl class="meta-list">
-          <dt>Чекпоинт</dt>
+          <dt>State backup</dt>
           <dd>16:30 UTC · следующий 16:45</dd>
-          <dt>Guard</dt>
-          <dd>16:41 UTC · свободно 480 MiB</dd>
           <dt>doctor</dt>
           <dd><span class="badge" data-status="warn">disk</span> <span class="badge" data-status="ok">memory</span> <span class="badge" data-status="ok">cgroup</span></dd>
         </dl>
-        <p class="muted">disk: свободно меньше 512 MiB — новые архивы не создаются до освобождения места. Сервер guard не останавливал.</p>
+        <p class="muted">disk: свободно 700 MiB — меньше 1 GiB. Мутации работают; при свободных &lt;512 MiB панель заблокирует изменения, игра продолжит работать.</p>
         <div class="actions">
-          <a class="button button--secondary" href="restore-points.html#checkpoints">Точки отката</a>
+          <a class="button button--secondary" href="state.html">Состояния</a>
         </div>
       </section>
     </div>
 
-    <p class="notice">Свободно 480 MiB — меньше порога 512 MiB. Retention продолжает работу, но новый чекпоинт вернёт <code>no_space</code>, пока место не освободится.</p>
+    <p class="notice">Свободно 700 MiB — это зона предупреждения (512 MiB–1 GiB). Retention и новые state-архивы работают; при остатке &lt;512 MiB <code>backups create</code> вернёт <code>no_space</code>, а сервер продолжит работать.</p>
 
     <section class="card">
       <div class="page-subhead">
@@ -107,7 +105,7 @@
           <span class="metric-meta">swap использовано</span>
         </div>
         <div class="metric">
-          <span class="metric-value">480 MiB</span>
+          <span class="metric-value">700 MiB</span>
           <span class="metric-meta">свободно на диске</span>
         </div>
       </div>
@@ -149,9 +147,9 @@
       </svg>
 
       <h3>Свободно на диске</h3>
-      <p class="metric-meta">Объём 7 GiB; порог guard 256 MiB — у нижнего края шкалы.</p>
+      <p class="metric-meta">Объём 7 GiB; пороги doctor: warn 1 GiB, error 512 MiB.</p>
       <svg class="chart" viewBox="0 0 600 170" role="img" aria-labelledby="disk-title">
-        <title id="disk-title">Свободное место за последний час: снизилось с 5.2 GiB до 480 MiB</title>
+        <title id="disk-title">Свободное место за последний час: снизилось с 5.2 GiB до 700 MiB</title>
         <line class="chart-grid" x1="40" y1="20" x2="590" y2="20"></line>
         <line class="chart-grid" x1="40" y1="75" x2="590" y2="75"></line>
         <line class="chart-grid" x1="40" y1="130" x2="590" y2="130"></line>
@@ -170,12 +168,11 @@
     <div class="grid">
       <section class="card">
         <h2>Последние события</h2>
-        <div class="log-panel">16:41:05 panel: action=guard.run free=503316480 result=ok
-16:30:00 panel: action=checkpoint.create archive=checkpoint-2026-10-27_16-30-00.tar.gz result=ok
+        <div class="log-panel">16:30:00 panel: action=state.create archive=state-2026-10-27_16-30-00.tar.gz result=ok
 16:12:44 panel: action=server.restart result=ok actor=admin
 15:58:10 panel: action=mods.deploy archive=mods-2026-10-27_15-57-00.tar.gz result=ok
-15:45:00 panel: action=checkpoint.create archive=checkpoint-2026-10-27_15-45-00.tar.gz result=ok
-15:30:00 panel: action=checkpoint.create archive=checkpoint-2026-10-27_15-30-00.tar.gz result=ok</div>
+15:45:00 panel: action=state.create archive=state-2026-10-27_15-45-00.tar.gz result=ok
+15:30:00 panel: action=state.create archive=state-2026-10-27_15-30-00.tar.gz result=ok</div>
         <div class="actions">
           <a class="button button--secondary" href="#">Открыть логи</a>
           <span class="muted">Аудит без паролей и содержимого файлов</span>
@@ -185,10 +182,9 @@
       <section class="card">
         <h2>Быстрые действия</h2>
         <div class="actions">
-          <button class="button button--primary" type="button">Создать чекпоинт</button>
-          <button class="button button--secondary" type="button">Создать снапшот</button>
+          <button class="button button--primary" type="button">Создать состояние</button>
           <a class="button button--ghost" href="#">Загрузить моды</a>
-          <a class="button button--ghost" href="restore-points.html">Восстановить</a>
+          <a class="button button--ghost" href="state.html">Восстановить</a>
         </div>
         <p class="muted">Мутации блокируются, пока <code>doctor</code> в статусе <code>error</code>. Метрики на это не влияют.</p>
       </section>

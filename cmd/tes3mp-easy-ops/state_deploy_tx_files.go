@@ -9,7 +9,7 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/atomicfile"
 )
 
-// rollback restores the previous players/ and world/ contents. It is
+// rollback restores the previous players/, world/ and configs/ contents. It is
 // idempotent and only touches paths that this transaction moved or installed.
 func (tx *stateDeployTx) rollback() error {
 	var errs []error
@@ -20,6 +20,15 @@ func (tx *stateDeployTx) rollback() error {
 	for _, name := range tx.installedWorld {
 		errs = append(errs,
 			os.RemoveAll(filepath.Join(tx.worldDir, name)))
+	}
+	for _, name := range tx.installedConfigs {
+		errs = append(errs,
+			os.Remove(filepath.Join(tx.configsDir, name)))
+	}
+	for _, name := range tx.configsMoved {
+		errs = append(errs, stateDeployRenameFunc(
+			filepath.Join(tx.configsOld, name),
+			filepath.Join(tx.configsDir, name)))
 	}
 	if tx.playersMoved {
 		_, err := moveDirEntries(tx.playersOld, tx.playersDir)
@@ -32,6 +41,7 @@ func (tx *stateDeployTx) rollback() error {
 	errs = append(errs, os.RemoveAll(tx.stagingDir))
 	errs = append(errs, atomicfile.SyncDir(tx.playersDir))
 	errs = append(errs, atomicfile.SyncDir(tx.worldDir))
+	errs = append(errs, atomicfile.SyncDir(tx.configsDir))
 	errs = append(errs, atomicfile.SyncDir(tx.stagingParent))
 	return errors.Join(ignoreNotExist(errs...)...)
 }
@@ -45,6 +55,7 @@ func (tx *stateDeployTx) commit() []string {
 	for _, dir := range []string{
 		tx.playersDir,
 		tx.worldDir,
+		tx.configsDir,
 		tx.stagingParent,
 	} {
 		if err := atomicfile.SyncDir(dir); err != nil {

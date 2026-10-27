@@ -123,10 +123,9 @@ TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| GET | `/` | Имя сервера, статус, текущие моды, ссылки на бэкапы, вход |
-| GET | `/backups` | Публичный список чекпоинтов и архивов модов |
+| GET | `/` | Имя сервера, статус, текущие моды, ссылки на архивы модов, вход |
+| GET | `/backups` | Публичный список архивов модов |
 | GET | `/backups/mods/<name>` | Скачать архив модов |
-| GET | `/backups/checkpoints/<name>` | Скачать чекпоинт (только мир) |
 | GET | `/api/v1/server` | Информация для клиента (без пароля) |
 | GET | `/api/v1/mods/current` | Метаданные текущего архива модов |
 | GET | `/api/v1/mods/current/archive` | Текущий архив модов |
@@ -169,19 +168,19 @@ symlink и каталоги не отдаются. `/api/v1/server` берёт `
 | POST | `/admin/mods/upload` | Загрузить архив |
 | POST | `/admin/mods/deploy` | Задеплоить |
 | POST | `/admin/mods/rollback` | Задеплоить предыдущий |
-| GET | `/admin/restore-points` | Чекпоинты и снапшоты |
-| POST | `/admin/restore-points/checkpoint/create` | Создать чекпоинт сейчас |
-| POST | `/admin/restore-points/snapshot/create` | Создать снапшот сейчас |
-| POST | `/admin/restore-points/restore` | Восстановить чекпоинт или снапшот |
-| POST | `/admin/restore-points/pin` | Закрепить/открепить чекпоинт |
-| POST | `/admin/restore-points/delete` | Удалить чекпоинт или снапшот |
+| GET | `/admin/mods/download/<name>` | Скачать выбранный пакет модов |
+| GET | `/admin/state` | Состояния и их пакеты модов |
+| POST | `/admin/state/create` | Создать state сейчас |
+| POST | `/admin/state/deploy` | Восстановить state |
+| GET | `/admin/state/download/<name>` | Скачать state |
+| GET | `/admin/restore-points` | `301` на `/admin/state` |
 | GET | `/admin/config` | Формы настроек |
 | POST | `/admin/config/server\|config\|banlist` | Сохранить всю форму настроек |
 | GET | `/admin/staff` | Игроки и ранги |
 | POST | `/admin/staff/<player>` | Сменить ранг |
 | GET/POST | `/admin/password` | Сменить пароль |
 | GET | `/api/v1/admin/logs?tail=200` | Логи для автообновления |
-| GET | `/api/v1/admin/status` | Статус сервера, backup- и guard-таймеров для автообновления |
+| GET | `/api/v1/admin/status` | Статус сервера и backup-таймера для автообновления |
 | GET | `/api/v1/admin/metrics?window=1h\|6h\|24h` | RAM/CPU/диск для графиков дашборда |
 
 Все админские GET требуют сессию, а POST — ещё и CSRF. Дашборд и страница логов
@@ -251,42 +250,33 @@ symlink и каталоги не отдаются. `/api/v1/server` берёт `
 - сравнение хеша — штатный `argon2` verify, без утечки времени;
 - логирование неудачных попыток без пароля.
 
-## 6. Публичные бэкапы
+## 6. Публичные архивы модов
 
-Публично могут отдаваться только чекпоинты и архивы модов. Снапшоты и история
-конфигов содержат `configs/` с паролем сервера и `banlist.json`, поэтому
-доступны только из админки.
-
-Список пагинируется через ops, а не через чтение каталога панелью:
+Публично отдаются только пакеты модов. State-архивы содержат
+`tes3mp-server-default.cfg` с паролем и `banlist.json`, поэтому доступны только
+после входа в панель.
 
 ```text
-GET /backups?type=checkpoints&before=<name>
-  panel ──sudo -u tes3mp──► ops checkpoint list --limit 200 --before <name> --json
+GET /backups
+  panel ──sudo -u tes3mp──► ops backups list --type mods --limit 200 --json
   panel группирует items по дням/неделям/месяцам для отображения
 ```
 
-- `limit` по умолчанию 200, максимум 500; `next_before` из ответа становится
-  ссылкой «показать более старые»;
-- без `type` страница открывает `checkpoints`; `type=mods` показывает архивы
-  модов через `ops backups list --type mods`; переключатель — обычные ссылки,
-  без изменения данных; `type=snapshots|configs` на публичном маршруте — 404;
-- чекпоинты и их скачивание доступны только при `public_state_download=true`;
-  при выключенном флаге `/backups` без `type`, `/backups?type=checkpoints` и
-  `/backups/checkpoints/<name>` отвечают `404`, а архивы модов остаются
-  публичными;
+- `limit` по умолчанию 200, максимум 500; `next_before` становится ссылкой
+  «показать более старые»;
+- `type` отсутствует или равен `mods`; `type=state` и неизвестные значения
+  возвращают `400`;
 - `before` проверяется как безопасное имя `.tar.gz` до вызова ops;
-- группировка только визуальная: контракт списка остаётся плоским; свежие
-  архивы группируются по дням, старше 7 дней — по ISO-неделям, старше года —
-  по месяцам;
-- метаданные берём у ops, чтобы не дублировать сортировку и определение
-  `current`;
-- скачивание — прямое чтение файла:
+- группировка только визуальная: контракт списка остаётся плоским;
+- текущий архив модов помечен, но скачивается как обычный.
+
+Скачивание:
 
 ```text
-GET /backups/checkpoints/<name>
+GET /backups/mods/<name>
   name = filepath.Base(name)
-  if name != original || !strings.HasSuffix(name, ".tar.gz") → 404
-  file = backups/checkpoints/<name>
+  name должен быть mods-*.tar.gz или mods-init-*.tar.gz
+  file = backups/mods/<name>
   http.ServeContent(w, r, name, mtime, file)
 ```
 
@@ -295,16 +285,7 @@ GET /backups/checkpoints/<name>
 - `Content-Type: application/gzip`,
   `Content-Disposition: attachment; filename="..."`;
 - rate limit 60 скачиваний в минуту на IP;
-- чекпоинт с `available=false` скачивается так же: архив цел, отсутствует
-  только база, поэтому публичная страница показывает его с пометкой
-  «база удалена»;
-- текущий архив модов помечен в списке, но скачивается так же;
-- удаления и переименования через публичные маршруты нет.
-
-Почему публично: это осознанное решение из целей. Архивы модов публичны всегда,
-чекпоинты включаются флагом `public_state_download`; отдельного режима с токеном
-нет. Публичная страница показывает только имя, размер, дату и тип; путей и логов
-там нет.
+- symlink и каталоги не отдаются.
 
 ## 7. Интеграция с ops
 
@@ -317,24 +298,18 @@ type Ops interface {
     Logs(ctx context.Context, tail int) ([]string, error)
     Doctor(ctx context.Context) (Doctor, error)
     BackupsList(ctx context.Context, typ string, limit int, before string) (Backups, error)
-    SnapshotCreate(ctx context.Context) (Snapshot, error)
-    SnapshotRestore(ctx context.Context, name string) (RestoreResult, error)
-    CheckpointCreate(ctx context.Context, label string) (Checkpoint, error)
-    CheckpointsList(ctx context.Context, limit int, before string) (Checkpoints, error)
-    CheckpointRestore(ctx context.Context, name string, acceptMismatch bool) (RestoreResult, error)
-    CheckpointPin(ctx context.Context, name string, pinned bool) error
-    ArchiveDelete(ctx context.Context, typ, name string, force bool) (DeleteResult, error)
+    BackupCreate(ctx context.Context, typ string, manual bool) (Backup, error)
     ModsImport(ctx context.Context, path string) (ImportResult, error)
-    ModsDeploy(ctx context.Context, ref string, allowRemoval bool) (DeployResult, error)
+    ModsDeploy(ctx context.Context, ref string) (DeployResult, error)
+    StateDeploy(ctx context.Context, name string) (DeployResult, error)
     StaffSet(ctx context.Context, player string, rank int) error
     ConfigGet(ctx context.Context, file string) (map[string]any, error)
-    ConfigSetMany(ctx context.Context, file string, values map[string]any) (ConfigResult, error)
-    ConfigRestore(ctx context.Context, ref string) (ConfigRestoreResult, error)
+    ConfigSet(ctx context.Context, file, key string, value any) error
 }
 ```
 
-`ConfigSetMany` всегда передаёт полный набор изменённых полей формы: панель
-считает diff на клиенте и отправляет только его, но одной командой.
+`ConfigSet` вызывается для каждого изменённого поля формы: панель считает diff
+на клиенте и отправляет только его.
 
 Production-реализация:
 
@@ -349,10 +324,7 @@ sudo -n -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
 - таймауты — по таблице `03-contracts.md` §8: чтение 5 с, короткие мутации
   2 мин, импорт/деплой/восстановление 30 мин;
 - одновременно может идти только одна мутация: ops lock, панель показывает
-  «операция уже выполняется» при `locked`;
-- `start`/`restart` дополнительно снимают маркер `guard.json`; при уровне
-  `stop` панель сначала показывает подтверждение «места мало, guard остановит
-  сервер снова».
+  «операция уже выполняется» при `locked`.
 
 `internal/panel/ops.go` реализует это: `OpsClient` с фиксированным
 argv, `OpsError` с exit code и envelope, `OpsHTTPStatus` для обработчиков.
@@ -370,9 +342,8 @@ JSON-объект или мусор после envelope считаются `inte
 | `invalid_argument` / `unsafe_path` | 400 | «Проверьте имя/путь» |
 | `not_found` | 404 | «Архив не найден» |
 | `locked` | 409 | «Другая операция выполняется» |
-| `plugin_in_use` | 409 | «Плагин нужен точке отката»: предложить чекбокс `--allow-plugin-removal` |
-| `archive_in_use` | 409 | «Архив защищён»: закреплён, активен или единственная база |
-| `no_space` | 507 | «Мало места, удалите старые точки или скопируйте их на другую машину» |
+| `archive_in_use` | 409 | Зарезервированный код; текущая панель не удаляет архивы |
+| `no_space` | 507 | «Мало места, запустите retention или скопируйте архивы на другую машину» |
 | `service_unavailable` | 503 | «systemd, journald или unit недоступен» |
 | `archive_invalid` | 422 | Конкретная причина: CRC, путь, старый формат, обязательный файл |
 | `config_invalid` | 422 | Ошибка рядом с полем |
@@ -419,63 +390,58 @@ Panel unit использует один `ReadWritePaths=/tes3mp-easy`, поэт
 без копирования. Для нестандартных unit-файлов `mods import` сохраняет
 fallback: при `EXDEV` копирует upload в `.part` в `backups/mods`, делает
 `fsync`, переименовывает `.part` в целевое имя и удаляет upload. Для
-`mods deploy`, `snapshot restore` и `checkpoint restore` такого fallback нет:
-granular-пути в panel unit
-недопустимы.
+`mods deploy` и `state deploy` такого fallback нет:
+granular-пути в panel unit недопустимы.
 
 Деплой:
 
-- подтверждение с предупреждением «сервер будет перезапущен, если он запущен» и
-  списком изменений: `added` / `removed` / `changed` (плагины и скрипты) из
-  ответа `mods deploy`;
-- если ops вернул `plugin_in_use`, панель показывает, какие точки отката
-  потеряют моды, и чекбокс «Всё равно удалить плагин». Повторный запрос идёт с
-  `--allow-plugin-removal`; без чекбокса кнопка не активна;
 - `ops mods deploy --archive <name> --json`;
 - панель показывает прогресс-заглушку (операция синхронная, но может занять
   минуты), затем результат; после успеха перечитывает `current`, `mods_sha256`
-  и список точек отката (deploy создал снапшот и predeploy-чекпоинт).
+  и список состояний (deploy создал `state-predeploy-*`).
+- Моды-пакеты неизменяемы: состояние просто требует свой пакет, отдельного
+  удаления плагинов из активного набора нет.
 
 Rollback — это не отдельная магия, а `mods deploy --archive <предыдущий>`.
 Список уже отсортирован, панель знает соседний архив.
 
-## 10. Точки отката
+## 10. Состояния
 
-Страница `/admin/restore-points` заменяет старую `/admin/state`; запрос
-`GET /admin/state` отвечает `301` на новый адрес, чтобы не ломать закладки.
+Страница `/admin/state`; `GET /admin/restore-points` отвечает `301` на неё для
+старых закладок.
 
-- блок «Чекпоинты»: имя, дата, размер, база, ярлык, `pinned`;
-- блок «Снапшоты»: имя, дата, размер, причина (`manual`, `mods`, `base`),
-  число ссылающихся чекпоинтов;
-- блок «Predeploy-чекпоинты»: отдельная группа, без закрепления;
-- пагинация через `next_before`, чтобы страница не тянула тысячи записей;
-- кнопка «Создать чекпоинт сейчас» → `ops checkpoint create --label "вручную"`;
-- кнопка «Создать снапшот сейчас» → `ops snapshot create --reason manual`,
-  с предупреждением, что архив включает `mods/` и `configs/`;
-- кнопка «Восстановить» → `ops checkpoint restore` или `ops snapshot restore`;
-- предупреждение в шапке: текущие `players/` и `world/` будут заменены; если
-  сервер был запущен, он перезапустится, иначе останется остановленным;
-- если `available=false`, у строки бейдж «База удалена», а рядом чекбокс
-  «Только мир, оставить текущие моды» (`--accept-mod-mismatch`); без чекбокса
-  кнопка восстановления не активна;
-- для снапшота страница предупреждает, что `configs/` тоже будут заменены.
+Каждая строка показывает:
 
-Закрепление и удаление:
+- имя state, размер и дату;
+- `mods_archive` из `current.txt` состояния и `mods_available`;
+- активен ли этот пакет (`mods_archive == backups/mods/current.txt`);
+- «Скачать состояние» и «Скачать моды»;
+- «Задеплоить моды», если пакет есть, но не активен;
+- «Восстановить», активную только когда пакет состояния активен и доступен.
 
-- «Закрепить»/«Открепить» → `ops checkpoint pin|unpin`; закреплённые строки
-  помечены и не удаляются retention; predeploy-чекпоинты не закрепляются,
-  потому что `checkpoint pin` принимает только обычные `checkpoint-*`;
-- «Удалить» требует ввести имя архива целиком — без этого кнопка не активна;
-- `archive_in_use` для закреплённого чекпоинта предлагает снять закрепление;
-  для базы снапшотов доступен чекбокс «Удалить вместе с базой» (`--force`),
-  после чего её чекпоинты получают бейдж «База удалена»; последний снапшот
-  удалить нельзя;
-- `POST /admin/restore-points/delete` → `ops checkpoint rm` или
-  `ops snapshot rm`;
-- retention после удаления не запускается, панель просто перечитывает список.
+Пагинация — через `next_before` из `ops backups list --type state`.
 
-Панель не даёт удалить историю «одним кликом» и не подставляет шаблон имени:
-случайное удаление единственной копии — основная опасность ручного `rm`.
+Создание:
+
+- «Создать состояние» → `ops backups create --type state --manual`;
+- state включает `players/`, `world/`, три конфига и ссылку на текущий пакет
+  модов; `customScripts.lua` не включается.
+
+Восстановление — два шага без автоподстановки:
+
+1. если пакет состояния не активен, «Задеплоить моды» вызывает
+   `ops mods deploy --archive <mods_archive>`;
+2. «Восстановить» вызывает `ops state deploy --archive <state>`.
+
+Ограничения:
+
+- state-архивы не публикуются: только `/admin/state/download/<name>` после
+  входа;
+- отдельного удаления и истории конфигов нет;
+- состояние без `configs/` валидно: `state deploy` восстанавливает только
+  `players/` и `world/` и возвращает warning, что конфиги не изменены;
+- перед восстановлением ops создаёт `state-predeploy-*` и перезапускает
+  сервер, если он работал.
 
 ## 11. Конфиги
 
@@ -488,7 +454,8 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
 - `maximumPlayers` (int, 1..64, по умолчанию 8);
 - `password` (string, пусто = без пароля);
 - `logLevel` (0..4);
-- `[MasterServer] enabled` (bool).
+- `[MasterServer] enabled` (bool). Bootstrap выключает его на свежей установке;
+  админ включает вручную.
 
 ### `config` — `config.lua`
 
@@ -506,8 +473,9 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
   `shareReputation` (bool);
 - `enforceDataFiles` (bool).
 
-Таблицы (`gameSettings`, `vrSettings`, `defaultTimeTable`, списки) read-only:
-показываем, но не редактируем.
+Таблицы (`gameSettings`, `vrSettings`, `defaultTimeTable`, списки) не
+показываются в форме и не редактируются: `config get` может вернуть их в
+`read_only`, но панель этот блок не выводит.
 
 ### `banlist` — `banlist.json`
 
@@ -518,9 +486,8 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
 ### Как сохраняем
 
 - Форма отправляется целиком: `POST /admin/config/<file>` с CSRF и всеми
-  полями. Панель читает `ops config get`, считает diff на клиенте и отправляет
-  только изменённые ключи: одним batch-вызовом, а при его отсутствии —
-  отдельным `ops config set --key <k> --value <v>` на каждый ключ.
+  полями. Панель читает `ops config get`, сравнивает значения и передаёт в ops
+  только изменённые ключи отдельным `ops config set --key <k> --value <v>`.
 - Если diff пуст, кнопка неактивна и рядом написано «Изменений нет»; запрос не
   уходит.
 - Ops проверяет ключи, типы и диапазоны до записи; при `config_invalid`
@@ -545,25 +512,23 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
 ## 13. Статус, логи и ресурсы
 
 - Дашборд опрашивает `GET /api/v1/admin/status` каждые 5 секунд (fetch +
-  обновление DOM); панель собирает ответ из трёх `ops status --unit ... --json`
-  для `tes3mp.service`, `tes3mp-easy-backup.timer` и
-  `tes3mp-easy-guard.timer`. WebSocket/SSE не используются.
+  обновление DOM); панель собирает ответ из двух `ops status --unit ... --json`
+  для `tes3mp.service` и `tes3mp-easy-backup.timer`. WebSocket/SSE не
+  используются.
 - Логи: `GET /api/v1/admin/logs?tail=200`, автообновление раз в 5 секунд; кнопка
   «Пауза». Источник — journald через ops.
 - Если `ops status` вернул `service_unavailable`, показываем красный баннер и
   не пытаемся изображать «running».
-- Если таймер `tes3mp-easy-backup.timer` неактивен, показываем предупреждение
-  «чекпоинты не идут» и кнопку «Создать чекпоинт сейчас». Неактивный
-  `tes3mp-easy-guard.timer` — отдельное предупреждение: защита от переполнения
-  диска выключена.
-- Дашборд раз в минуту вызывает `ops doctor --json` и показывает `warn`/`error`
-  отдельным баннером; `error` не блокирует вход, но блокирует мутации, которые
-  заведомо не смогут пройти (например, нет места).
-- Баннер по `disk`: `warn` — «мало места: новые точки не создаются», `error` или
-  `guard.json` уровня `stop` — «сервер остановлен guard-ом: мало места» с
-  кнопкой «Освободить место» (ссылка на `/admin/restore-points`) и «Запустить
-  сервер» (с подтверждением, что guard остановит его снова, если место не
-  освободилось).
+- Неактивный `tes3mp-easy-backup.timer` показывает предупреждение
+  «Автобэкапы не идут» и кнопку «Создать состояние сейчас».
+- Дашборд вызывает `ops doctor --json` и показывает карточку «Таймеры и
+  проверки»: статус каждого чека и сообщение. Ответ кэшируется на минуту;
+  `error` не блокирует вход, но блокирует мутации, которые заведомо не смогут
+  пройти (например, нет места).
+- Проверка `disk`: `warn` (512 MiB–1 GiB) предупреждает о скором дефиците,
+  `error` (<512 MiB) блокирует мутации. Сообщение проверки видно в карточке
+  «Таймеры и проверки», рядом есть ссылка «Состояния». Автоматической остановки
+  сервера нет; состояние игры не меняется.
 - Собственные логи панели идут в journald с префиксом `panel:`; отдельного
   `panel.log` нет. Аудит действий: `action=mods.deploy archive=... result=ok`,
   без паролей, сессионных ID и содержимого файлов.
@@ -693,9 +658,9 @@ panel-data/
 
 ## 16. Безопасность
 
-- Панель не отдаёт файлы по произвольному пути: только `backups/mods/<name>`
-  и `backups/checkpoints/<name>` после `filepath.Base` и проверки суффикса.
-  Снапшоты не имеют публичных маршрутов: в них лежит
+- Панель не отдаёт файлы по произвольному пути: публично только
+  `backups/mods/<name>` после `filepath.Base` и проверки имени; state-архивы —
+  только через `/admin/state/download/<name>` после входа. В state лежит
   `configs/tes3mp-server-default.cfg` с паролем сервера.
 - Нет file manager, web terminal, raw editor.
 - Все формы — CSRF.
@@ -724,7 +689,7 @@ panel-data/
 | Загрузка модов | лимит 512 MiB, UUID-имя, `MultipartReader`, вызов fake ops, очистка upload |
 | Ошибки ops | каждый `error.code` → ожидаемый HTTP и текст |
 | Конфиги | валидация, повторное чтение, diff формы целиком, `config_invalid` |
-| Точки отката | чекпоинт/снапшот, `available=false`, pin, удаление с подтверждением имени |
+| Состояния | state + mods_available, кнопки deploy/restore, state без configs, приватное скачивание |
 | Метрики | fixture `memory.current`/`cpu.stat`/`/proc/meminfo`/`/proc/stat`, CPU %, `null` без cgroup, окна и бакеты, `available=false`, SVG без `style=` |
 | Staff | список из `players/*.json`, вызов `ops staff set` |
 | Lifecycle и TLS | конфиг env/flags, ACME fake-obtainer (IP SAN, shortlived profile, wrong IP, renewal window, отказ продления, замена legacy self-signed), `files` pair, TLS ≥ 1.2, `/healthz`, HSTS, bind rollback, `SIGTERM` |

@@ -43,10 +43,8 @@ best-effort и не входят в поддерживаемую конфигу�
 |---|---|---|---|
 | `tes3mp.service` | VPS, systemd, UDP 25565 | Игровой сервер | `players/`, `world/`, `configs/banlist.json` во время игры |
 | `tes3mp-panel.service` | VPS, systemd, :443 (+ временный :80 для ACME) | HTTPS-панель, публичный API, админка | `panel-data/` |
-| `tes3mp-easy-backup.timer` | VPS, systemd | Запускает чекпоинт каждые 15 минут | — |
-| `tes3mp-easy-backup.service` | VPS, systemd, oneshot | Один запуск `ops checkpoint create --if-running` | через `ops` в `backups/` |
-| `tes3mp-easy-guard.timer` | VPS, systemd | Раз в 60 с проверяет свободное место | — |
-| `tes3mp-easy-guard.service` | VPS, systemd, oneshot | `ops guard`; при <256 MiB останавливает сервер через rootctl | `backups/guard.json` |
+| `tes3mp-easy-backup.timer` | VPS, systemd | Запускает state backup каждые 15 минут | — |
+| `tes3mp-easy-backup.service` | VPS, systemd, oneshot | Один запуск `ops backups create --type state --if-running` | через `ops` в `backups/` |
 | `tes3mp-easy-ops` | CLI, `/opt/tes3mp-easy/bin` | Все административные операции | `configs/`, `players/`, `world/`, `mods/`, `backups/`, `.locks/` |
 | `tes3mp-easy-rootctl` | root-helper, `/usr/local/libexec` | Фиксированные `start/stop/restart tes3mp.service` | — |
 | `tes3mp-easy-client` | ПК игрока | Мастер установки, моды, запуск | свою рабочую папку |
@@ -63,19 +61,11 @@ best-effort и не входят в поддерживаемую конфигу�
 | `tes3mp-panel.service` | `tes3mp-panel` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=64MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE`, bounding `CAP_SETUID`/`CAP_SETGID`/`CAP_AUDIT_WRITE`/`CAP_SYS_RESOURCE` для sudo, `EnvironmentFile=-/etc/tes3mp-easy/panel.env` |
 | `tes3mp-easy-backup.service` | `tes3mp` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=64MiB`, `Nice=19`, `IOSchedulingClass=idle`, `OOMScoreAdjust=+500` |
 | `tes3mp-easy-backup.timer` | — | — | `OnBootSec=2min`, `OnUnitActiveSec=15min`, `AccuracySec=30s` |
-| `tes3mp-easy-guard.service` | `tes3mp` | `MemoryHigh=16M`, `MemoryMax=32M` | `GOMAXPROCS=1`, `GOMEMLIMIT=32MiB`, `Nice=19`, `OOMScoreAdjust=+500` |
-| `tes3mp-easy-guard.timer` | — | — | `OnBootSec=1min`, `OnUnitActiveSec=60s`, `AccuracySec=5s` |
 
-`tes3mp-easy-backup.service` — `Type=oneshot` с `TimeoutStartSec=4min`.
+`tes3mp-easy-backup.service` — `Type=oneshot` с `TimeoutStartSec=9min`.
 Если предыдущий запуск ещё активен, systemd не запускает второй экземпляр;
 следующий тик произойдёт после завершения текущего. `--if-running` внутри
-ops дополнительно пропускает чекпоинт, если игра остановлена.
-
-`tes3mp-easy-guard.service` — `Type=oneshot` с `TimeoutStartSec=30s`. Он
-запускается как `tes3mp`, потому что единственная привилегированная операция —
-`rootctl stop` через уже настроенный sudoers. `ConditionPathExists` на
-`/opt/tes3mp-easy/bin/tes3mp-easy-ops` пропускает тики, пока бинарник не
-установлен.
+ops дополнительно пропускает state backup, если игра остановлена.
 
 `tes3mp.service`:
 
@@ -128,16 +118,15 @@ ops дополнительно пропускает чекпоинт, если �
 `tes3mp-easy-backup.service` не получает прав root и не управляет юнитами:
 ему достаточно прочитать состояние (`systemctl is-active`) и записать архив от
 пользователя `tes3mp`. Юнит запускает
-`tes3mp-easy-ops --root /tes3mp-easy --json checkpoint create --if-running`,
+`tes3mp-easy-ops --root /tes3mp-easy --json backups create --type state --if-running`,
 имеет `NoNewPrivileges=yes`, `UMask=0027` и пишет только в
 `backups/`, `.locks/` и `.staging/`. `ConditionPathExists` на
 `/opt/tes3mp-easy/bin/tes3mp-easy-ops` позволяет включить таймер до установки
 бинарника: срабатывания пропускаются, а первый тик после установки ops создаёт
-чекпоинт без ручного вмешательства.
+state backup без ручного вмешательства.
 
-Bootstrap устанавливает `tes3mp.service`, `tes3mp-easy-backup.timer`,
-`tes3mp-easy-guard.timer` и, если в релизном архиве есть
-`bin/tes3mp-easy-panel`, `tes3mp-panel.service`. Игра запускается через `start`,
+Bootstrap устанавливает `tes3mp.service`, `tes3mp-easy-backup.timer` и, если в
+релизном архиве есть `bin/tes3mp-easy-panel`, `tes3mp-panel.service`. Игра запускается через `start`,
 поэтому повторный bootstrap не отключает игроков. Панель перезапускается, чтобы
 подхватить заменённый бинарник; при первом релизе это создаёт
 `initial-password.txt`. Source-установка без `bin/` оставляет панель выключенной
@@ -229,17 +218,13 @@ rootctl.
 │   └── scripts/
 ├── backups/
 │   ├── mods/
-│   │   ├── current.txt
+│   │   ├── current.txt           # активный пакет модов
 │   │   ├── mods-init-*.tar.gz    # базовый архив, создаёт bootstrap
-│   │   └── mods-*.tar.gz
-│   ├── snapshots/                # полные точки: state/ + mods/ + configs/
-│   │   └── snapshot-*.tar.gz
-│   ├── checkpoints/              # точки мира, 15-минутный таймер
-│   │   ├── checkpoint-*.tar.gz
-│   │   ├── checkpoint-predeploy-*.tar.gz
-│   │   └── <name>.pin            # sidecar закрепления, не архив
-│   ├── legacy-state/             # старые state-* после обновления, readonly
-│   └── guard.json                # маркер guard: level, free, at; 0640
+│   │   └── mods-*.tar.gz         # неизменяемые пакеты
+│   ├── state/
+│   │   ├── state-*.tar.gz        # 15-минутный таймер
+│   │   ├── state-manual-*.tar.gz
+│   │   └── state-predeploy-*.tar.gz
 ├── panel-data/                   # tes3mp-panel:tes3mp
 │   ├── auth.json
 │   ├── initial-password.txt
@@ -286,15 +271,14 @@ CRC-списками) и пустым `scripts/`; `current.txt` указывае
 `ops` в своём namespace, и для неё используется ровно один
 `ReadWritePaths=/tes3mp-easy`: тогда `.staging`, `mods/`, `players/`, `world/`
 и `backups/` находятся на одном mount, а deploy-транзакции могут делать
-атомарный `rename`. Granular-пути в panel unit ломают `mods deploy`,
-`snapshot restore` и `checkpoint restore`.
+атомарный `rename`. Granular-пути в panel unit ломают `mods deploy` и
+`state deploy`.
 
 Системные файлы:
 
 - `/etc/systemd/system/tes3mp.service`;
 - `/etc/systemd/system/tes3mp-panel.service`;
 - `/etc/systemd/system/tes3mp-easy-backup.service` и `.timer`;
-- `/etc/systemd/system/tes3mp-easy-guard.service` и `.timer`;
 - `/etc/sudoers.d/tes3mp-easy`;
 - `/usr/local/libexec/tes3mp-easy-rootctl`;
 - `/etc/systemd/journald.conf.d/tes3mp-easy.conf` с `SystemMaxUse=100M`,
@@ -355,56 +339,69 @@ panel goroutine раз в 15 с
 
 Браузер ──POST /admin/mods/deploy──► panel
   panel ──sudo -u tes3mp──► ops mods deploy --archive ... --json
-  ops делает checkpoint-predeploy, останавливает tes3mp, распаковывает в staging,
-  меняет mods/, генерирует customScripts.lua и current.txt, создаёт snapshot-*,
-  запускает tes3mp, если он работал до операции (и не указан --no-restart)
+  ops делает state-predeploy, останавливает tes3mp, распаковывает в staging,
+  меняет mods/, генерирует customScripts.lua и current.txt,
+  запускает tes3mp, если он работал до операции (и не указан --no-restart),
+  затем выполняет full retention
+
+Браузер ──POST /admin/state/deploy──► panel
+  panel ──sudo -u tes3mp──► ops state deploy --archive ... --json
+  ops проверяет, что current.txt состояния совпадает с активным пакетом модов,
+  делает state-predeploy, останавливает tes3mp, распаковывает state в staging,
+  переносит players/, world/ и три файла configs/, запускает tes3mp
 ```
 
-`mods deploy`, `snapshot restore` и `checkpoint restore` подменяют содержимое
-каталогов через `rename`. Панель запускает `ops` в своём namespace, поэтому
-`.staging` и целевые каталоги обязаны быть на одном mount — это обеспечивает
-единственный `ReadWritePaths=/tes3mp-easy`. Восстановление не переименовывает
-сами `players/` и `world/`: корень принадлежит `root:root 0755`, а ops работает
-от `tes3mp`; он переносит верхнеуровневые записи внутри этих каталогов.
+`mods deploy` и `state deploy` подменяют содержимое каталогов через `rename`.
+Панель запускает `ops` в своём namespace, поэтому `.staging` и целевые каталоги
+обязаны быть на одном mount — это обеспечивает единственный
+`ReadWritePaths=/tes3mp-easy`. Восстановление не переименовывает сами
+`players/`, `world/` и `configs/`: корень принадлежит `root:root 0755`, а ops
+работает от `tes3mp`; он переносит верхнеуровневые записи и отдельные файлы
+внутри этих каталогов. `customScripts.lua` не входит в state и не меняется.
 
-### Snapshot, checkpoint и восстановление
+### State backup и восстановление
 
 ```text
 tes3mp-easy-backup.timer ──каждые 15 минут──► tes3mp-easy-backup.service
-  ops checkpoint create --if-running
-  lock → база (snapshot с текущим current.txt, иначе новый snapshot reason=base) →
-  проверка диска → потоковый tar.gz во временный файл → fsync → rename →
-  retention → JSON с archive/base/pruned/warnings
+  ops backups create --type state --if-running
+  lock → проверка диска → current.txt первым → configs/ → requiredDataFiles.json →
+  players/ + world/ → потоковый tar.gz во временный файл → fsync → rename →
+  state-only retention → JSON с archive/pruned/warnings
 
-Браузер ──POST /admin/restore-points/snapshot/create──► ops snapshot create
-  полный снимок: state/ + mods/ + configs/, дорогой; вручную, при deploy и
-  лениво как reason=base
+Браузер ──POST /admin/state/create──► ops backups create --type state --manual
+  тот же state-архив, ручное имя state-manual-*
 
-Браузер ──POST /admin/restore-points/restore──► ops checkpoint restore|snapshot restore
-  ops: lock → проверка архива и базы → checkpoint-predeploy → stop →
-       при необходимости mods базы → staging → перенос players/ и world/ →
-       start → при ошибке вернуть старое
+Браузер ──POST /admin/mods/deploy──► ops mods deploy --archive <mods_archive>
+  сначала активирует пакет, на который ссылается выбранное состояние
+
+Браузер ──POST /admin/state/deploy──► ops state deploy --archive <state>
+  ops: lock → проверка архива и активного пакета модов → state-predeploy →
+       stop → staging → players/ + world/ + configs/ → start →
+       при ошибке вернуть старое
 ```
 
-Снапшот нужен, когда меняется мод-пак: он хранит `mods/` целиком, потому что
-иначе старую точку нельзя воспроизвести. Чекпоинт хранит только мир и ссылается
-на снапшот по `sha256`, поэтому 96 чекпоинтов в сутки стоят ~15 МБ.
+State-архив не содержит модов: он ссылается на пакет через `current.txt`.
+Пакеты неизменяемы, поэтому старую точку можно воспроизвести только с тем
+пакетом, который записан в state. Панель не подставляет другой пакет: сначала
+«Задеплоить моды», затем «Восстановить».
 
-### Guard и нехватка места
+### Нехватка места
+
+Отдельного периодического процесса нет: место проверяют `doctor` и операции
+записи, которым нужен запас.
 
 ```text
-tes3mp-easy-guard.timer ──каждые 60 с──► tes3mp-easy-guard.service
-  ops guard: statfs → ≥512 MiB ok → 256–512 MiB warn → <256 MiB stop
-  warn/stop: backups/guard.json + journald
-  stop: rootctl stop tes3mp.service (без lock)
-  doctor читает guard.json и отдаёт error; панель показывает баннер
+doctor: statfs → ≥1 GiB ok → 512 MiB–1 GiB warn → <512 MiB error
+backups create: <1 GiB → full retention → <512 MiB → no_space
+mods deploy: резерв 512 MiB + распаковка → predeploy → <1 GiB → full retention
 ```
 
-`start`/`restart` удаляют `guard.json`: админ явно просит запуск. Если места
-всё ещё меньше 256 MiB, guard остановит сервер на следующем тике — устойчивого
-автозапуска после просадки диска нет. `guard` управляет только диском: RAM
-ограничена cgroup-лимитами, а её потребление видно на графике дашборда.
-Аварийной остановки по памяти нет. Удаление архивов — `rm` и retention.
+`doctor` в статусе `error` блокирует мутации в панели, но не останавливает игру:
+автоматической остановки по диску нет. Если места не хватает, админ вручную
+останавливает сервер, освобождает место через `backups prune`, `journalctl
+--vacuum-size` или `rm`, затем запускает сервер снова. RAM ограничена
+cgroup-лимитами, её потребление видно на графике дашборда; аварийной остановки
+по памяти тоже нет. Удаление архивов — `rm` и retention.
 
 ### Клиент игрока
 
@@ -449,17 +446,17 @@ tes3mp-easy-guard.timer ──каждые 60 с──► tes3mp-easy-guard.serv
 
 | Сбой | Поведение |
 |---|---|
-| Панель упала | `tes3mp.service`, таймер чекпоинтов и guard продолжают работать |
+| Панель упала | `tes3mp.service` и таймер state backup продолжают работать |
 | ACME не выпустил сертификат | Панель не открывает `:443`, пишет причину в journald; `bootstrap.sh` ждёт `/healthz` и завершается ошибкой |
-| Чекпоинт упал | Панель показывает предупреждение; ручной `checkpoint create` работает, следующий тик таймера повторяет попытку |
+| State backup упал | Панель показывает предупреждение; ручное создание работает, следующий тик таймера повторяет попытку |
 | systemd недоступен | Панель отдаёт 503 `service_unavailable`, не изображает «running» |
 | Кривой архив модов | `ops mods import` отклоняет до записи в `backups/mods/`; `mods deploy` — до подмены `mods/` |
-| Ошибка при восстановлении | `checkpoint restore` возвращает старые `players/` и `world/`; `snapshot restore` — ещё `mods/` и `configs/`; состояние сервера прежнее |
-| База чекпоинта удалена | Чекпоинт остаётся в списке с `available=false`; восстановление — только с `--accept-mod-mismatch` |
-| Мало места (<512 MiB) | Ops возвращает `no_space` на новых архивах; guard пишет `warn`, панель показывает баннер |
-| Мало места (<256 MiB) | Guard останавливает `tes3mp.service`, ставит маркер `stop`; автозапуска нет до `start`/`restart` |
-| Бюджет архивов превышен | Retention удаляет кандидатов, месячные и закреплённые не трогает, возвращает `warn` |
-| OOM-killer сработал | Guard по RAM не срабатывает: `Restart=on-failure` поднимает игру; всплеск виден на графике RAM, отдельного баннера и остановки нет |
+| Ошибка при восстановлении | `state deploy` возвращает старые `players/`, `world/`, `configs/` и `customScripts.lua`; состояние сервера прежнее |
+| Нет пакета модов для state | `state deploy` возвращает `archive_invalid`; панель предлагает сначала задеплоить указанный пакет |
+| Мало места (512 MiB–1 GiB) | `doctor` — `warn`; панель показывает предупреждение, `backups create` сначала запускает full retention |
+| Мало места (<512 MiB) | `doctor` — `error`, мутации в панели заблокированы; `backups create` и `mods deploy` возвращают `no_space`; игра продолжает работать |
+| Бюджет архивов превышен | Retention удаляет state-кандидатов и незащищённые mods, месячные представители остаются, возвращается `warn` |
+| OOM-killer сработал | Автоматической остановки по RAM нет: `Restart=on-failure` поднимает игру; всплеск виден на графике RAM, отдельного баннера и остановки нет |
 | cgroup недоступен | Метрики отдают `available=false`, поля игры `null`; системные RAM/CPU/диск, статус и управление работают |
 | Одновременные операции | `.locks/ops.lock`: вторая мутация ждёт или получает `locked` |
 | Питание/падение в момент записи | Временный файл + rename; недописанный архив не становится `current` |
@@ -478,7 +475,6 @@ tes3mp-easy-guard.timer ──каждые 60 с──► tes3mp-easy-guard.serv
 | `tes3mp.service` | 250–380 MiB | `MemoryHigh=384M`, `MemoryMax=448M` |
 | `tes3mp-panel.service` | 26–46 MiB | `MemoryHigh=48M`, `MemoryMax=64M` |
 | `tes3mp-easy-backup.service` | 15–40 MiB | `MemoryHigh=48M`, `MemoryMax=64M` |
-| `tes3mp-easy-guard.service` | 2–5 MiB | `MemoryHigh=16M`, `MemoryMax=32M` |
 | Page cache | по остатку | вытесняется |
 
 - `GOMAXPROCS=1` у панели и backup-сервиса: на одном vCPU больше не нужно.
@@ -486,7 +482,7 @@ tes3mp-easy-guard.timer ──каждые 60 с──► tes3mp-easy-guard.serv
   раздувать RSS.
 - Кольцевой буфер метрик занимает ~0.6 MiB (5760 сэмплов по 15 секунд за
   24 часа): это учтено в строке панели и не пишется на диск.
-- `tes3mp` получает `OOMScoreAdjust=-500`, панель, backup и guard — `+500`:
+- `tes3mp` получает `OOMScoreAdjust=-500`, панель и backup — `+500`:
   при нехватке памяти ядро убивает вспомогательные процессы, а не игру.
 - `vm.swappiness=10`: swap — страховка от OOM, а не рабочая память. Нехватка
   swap не блокирует установку: bootstrap создаёт `/swapfile` на 512 MiB, а
@@ -509,30 +505,29 @@ tes3mp-easy-guard.timer ──каждые 60 с──► tes3mp-easy-guard.serv
 | Живые `players/` + `world/` | 0.2 GiB | 0.5 GiB |
 | Живые `mods/` (распакованные) | 0.5 GiB | 1.0 GiB |
 | Staging/upload (пик — больший из двух) | 1.0 GiB | 1.0 GiB |
-| `backups/snapshots` | 0.3 GiB | 1.5 GiB |
-| `backups/checkpoints` | 0.05 GiB | 0.25 GiB |
+| `backups/state` | 0.3 GiB | 1.0 GiB |
 | `backups/mods` | 0.3 GiB | 0.5 GiB |
 | `panel-data` (auth, TLS) | 0.05 GiB | — |
 | journald | 0.1 GiB | 0.1 GiB |
 | Свободный резерв | 0.5 GiB | 0.5 GiB |
-| **Итого** | **~4.4 GiB** | **~6.8 GiB из 7** |
+| **Итого** | **~4.3 GiB** | **~6.0 GiB из 7** |
 
-- Бюджеты — верхние границы, а не ожидаемое потребление. Одновременно они не
-  достигаются: `snapshots` растут только при смене мод-пака, `checkpoints`
-  ограничены ~165 МБ за три года (672 горячих + 358 дневных + недельные и
-  месячные), `configs` — ~20 МБ.
+- Бюджеты — верхние границы, а не ожидаемое потребление. `state` растёт каждые
+  15 минут, но дневные/недельные/месячные представители ограничивают историю;
+  `mods` меняются только при импорте и защищаются ссылками из state.
 - Upload (512 MiB) и staging (1 GiB) не обязаны существовать одновременно:
   импорт заканчивается до деплоя, а upload удаляется после импорта.
-- `doctor` предупреждает при свободном месте меньше 512 MiB и считает ошибкой
-  меньше 256 MiB; те же пороги использует guard, который при 256 MiB
-  останавливает сервер.
-- Сжатые чекпоинты крошечные (типично ~150 KB), поэтому 256 MiB — это больше
-  трёх лет дневной истории. Месячные представители не удаляются по возрасту,
-  а закреплённые — никогда.
+- `doctor` предупреждает при свободном месте меньше 1 GiB и считает ошибкой
+  меньше 512 MiB. `backups create` требует резерв 512 MiB, `mods deploy` — тот
+  же резерв плюс место на распаковку и predeploy; иначе `no_space`; игру никто
+  автоматически не останавливает.
+- Сжатые state-архивы крошечные (типично ~150 KB + конфиги), поэтому 1 GiB —
+  это больше трёх лет разреженной истории. Месячные представители не удаляются
+  по возрасту.
 - Если бюджеты всё же превышены, retention включает pressure pruning; когда
-  защищённых точек больше, чем позволяет диск, `doctor` показывает `warn`, а
-  админ освобождает место через `snapshot rm` / `checkpoint rm` или копирует
-  историю на другую машину.
+  защищённых state больше, чем позволяет диск, `doctor` показывает `warn`, а
+  админ освобождает место через `backups prune` или копирует историю на другую
+  машину.
 - `mods import` не копирует между файловыми системами: upload и `backups/`
   должны быть на одном mount, иначе `doctor` — `error`, а импорт —
   `invalid_argument`.

@@ -32,7 +32,7 @@
 | Release | воспроизводимый tar.gz, `VERSION`, режимы файлов, sha256, отказ на symlink/неполный набор бинарников | `internal/release/**/*_test.go` |
 | Fault | битый архив, path traversal, lock, недоступный systemd, обрыв записи | `test/fault` |
 | Resource | cgroup 64 MiB, 512 MiB upload, потоковый tar/gzip | `test/resource` |
-| Fixtures | валидные и невалидные mods/snapshot/checkpoint-архивы, канонический `current.txt` | `test/fixtures` |
+| Fixtures | валидные и невалидные mods/state-архивы, канонический `current.txt` | `test/fixtures` |
 | Docs | ссылки, JSON-примеры, дублированные схемы, запрещённые имена | `test/docs` |
 
 OS-матрица: Debian 12 и Ubuntu 24.04, x86_64, systemd. Другие ОС — best-effort
@@ -63,11 +63,11 @@ OS-матрица: Debian 12 и Ubuntu 24.04, x86_64, systemd. Другие ОС
   `rename` между `.staging` и `mods/`/`players/`/`world/`;
 - допустимость отсутствующего `ExecStart` для ops/panel (бинарники ставятся
   отдельно) и отказ на любую другую ошибку `systemd-analyze verify`;
-- `ConditionPathExists` у backup и guard service: таймеры не запускают сервис
-  с отсутствующим `ExecStart` и не уходят в `failed`;
-- что bootstrap запускает `tes3mp.service`, `tes3mp-easy-backup.timer` и
-  `tes3mp-easy-guard.timer`, не запускает и не включает панель без `bin/`,
-  а повторный запуск использует `start`, а не `restart`;
+- `ConditionPathExists` у backup service: таймер не запускает сервис
+  с отсутствующим `ExecStart` и не уходит в `failed`;
+- что bootstrap запускает `tes3mp.service` и `tes3mp-easy-backup.timer`, не
+  запускает и не включает панель без `bin/`, а повторный запуск использует
+  `start`, а не `restart`;
 - что релизный `bin/` устанавливает оба бинарника с режимом `0755`, а
   неполный набор отвергается до записи;
 - что при наличии панели bootstrap включает её и использует `restart`, чтобы
@@ -109,7 +109,7 @@ exit 6, неверные `--unit`/`--tail` → exit 2 без вызова system
   небезопасные записи.
 - `WriteState` проверяет детерминированный layout, пустых игроков, лимиты,
   небезопасные записи и проброс `ENOSPC`.
-- Имена архивов проверяются по шаблонам `03-contracts.md` §6.8; коллизия
+- Имена архивов проверяются по шаблонам `03-contracts.md` §6.7; коллизия
   получает суффикс.
 
 ### 3.2. `current.txt`
@@ -136,29 +136,26 @@ predeploy-лимиты, защиту текущего mods-архива и за�
   содержимое проверок;
 - `status`/`logs`: коды, UTC, пустой хвост, ошибки systemd/journald;
 - `start`/`stop`/`restart`: успех, dry-run, ошибка, неверные аргументы, lock;
-- `backups list`: пагинация, фильтры, невалидный `current.txt`;
-- `snapshot create` / `checkpoint create`: dry-run, `locked`, `no_space`,
-  создание `mods-*` при расхождении `current.txt`;
+- `backups list`: пагинация, фильтры, невалидный `current.txt`, поля
+  `mods_archive`/`mods_available` у state;
+- `backups create`: state, `--if-running`, dry-run, `locked`, `no_space`,
+  отсутствующий конфиг (`archive_invalid`), state-only retention;
+- `backups prune`: dry-run, защита пакетов, указанных в state;
 - `mods import`: валидный архив, битый gzip, отсутствующий upload, lock,
   cross-filesystem, `EXDEV` copy fallback (успех и ошибка копирования),
   non-`EXDEV` rename error;
 - `mods deploy`: `--current`/`--latest`/`--archive`, `--no-restart`, отсутствие
   метаданных, неверные цели, `service_unavailable`, rollback; `configs/` —
   `0700`, `customScripts.lua` — `0600`, полный `doctor` после деплоя без ошибок;
-- `checkpoint`/`snapshot`: создание, `--if-running`, отсутствие базы (создаётся
-  `reason=base`), `available=false`, pin/unpin, `not_found` без
-  `--accept-mod-mismatch`;
-- `snapshot restore` и `checkpoint restore`: успех, `--no-restart`, ошибки
-  архива, rollback распаковки, lock, отсутствие переименований в data root
-  (ops работает без записи в `root:root 0755`);
-- `rm`: `--dry-run`, `archive_in_use` для закреплённого чекпоинта, последнего
-  снапшота и базы, атомарность пачки, `--force` для базы оставляет
-  `available=false`; `checkpoint rm` принимает `checkpoint-predeploy-*`;
-- `guard`: `ok`/`warn`/`stop`, маркер `guard.json`, отсутствие повторного
-  `stop`; `start` снимает маркер;
+- `state deploy`: успех, `--no-restart`, восстановление трёх конфигов и
+  сохранение `customScripts.lua`, несовпадение активного пакета модов,
+  state без `configs/`, ошибки архива, rollback, lock, отсутствие
+  переименований в data root (ops работает без записи в `root:root 0755`);
+- `doctor`: пороги `disk` (512 MiB — `error`, 1 GiB — `warn`) и `no_space`
+  в `backups create`/`mods deploy`;
 - `staff set`: успех, dry-run, отсутствующий игрок, небезопасный путь, пустой
   `settings`;
-- `config get/set`: таблицы только для чтения, dry-run, валидация, symlink,
+- `config get/set`: таблицы в `read_only`, dry-run, валидация, symlink,
   человекочитаемый вывод.
 
 ## 4. Панель
@@ -173,12 +170,12 @@ HTTPS-порту с fixture-парой в режиме `files`. Проверяю
 - auth: создание/reuse/corrupt `auth.json`, режимы `0600`, `reset-password`,
   первый вход с временным паролем, смена пароля, cookie-флаги, CSRF,
   rate limit;
-- публичные маршруты: `/`, `/backups`, скачивание mods/checkpoints, пагинация,
+- публичные маршруты: `/`, `/backups`, скачивание `mods`, пагинация,
   `/api/v1/server`, `/api/v1/mods/current`, `/api/v1/mods/current/archive`,
   path traversal, не-`.tar.gz`, отсутствующий файл, `Content-Disposition`;
-- старый адрес `/admin/state` отвечает `301` на `/admin/restore-points`;
-- админские маршруты: дашборд, статус, логи, таймеры, `doctor`, моды, точки
-  отката, конфиги, staff, upload;
+- `/admin/restore-points` отвечает `301` на `/admin/state`;
+- админские маршруты: дашборд, статус, логи, `doctor`, моды, состояния,
+  конфиги, staff, upload, приватное скачивание state;
 - метрики: парсинг fixture-файлов `memory.current`, `cpu.stat`, `/proc/meminfo`
   и `/proc/stat`, расчёт CPU % игры и системы и `null` при остановленном
   сервере или пропуске больше 45 секунд, окна 1 ч/6 ч/24 ч и бакеты (≤360
@@ -258,7 +255,7 @@ GUI-тесты не гоняются в CI: Fyne требует дисплея. 
 - **Лимиты архива.** Unit-тесты reader проверяют compressed, uncompressed и
   entries caps; `ExtractMods` завершается с `ErrLimit` на маленьком тестовом
   лимите.
-- **Обрыв на середине.** `test/fault` убивает `checkpoint create` через SIGKILL,
+- **Обрыв на середине.** `test/fault` убивает `backups create` через SIGKILL,
   когда `*.part` уже вырос: финального архива нет, `.part` остаётся, sha256
   живого мира не меняется, lock освобождён. Повторный запуск создаёт валидный
   архив.
@@ -267,15 +264,16 @@ GUI-тесты не гоняются в CI: Fyne требует дисплея. 
   timeout и `--dry-run`.
 - **Падение панели.** Сессии в памяти, после рестарта вход заново; публичные
   бэкапы, игра и таймер работают.
-- **Падение backup-сервиса.** Панель показывает предупреждение; ручной
-  `checkpoint create` работает; следующий тик таймера проходит.
-- **Пересечение timer-запусков.** Предыдущий `checkpoint create` ещё держит
+- **Падение backup-сервиса.** Панель показывает предупреждение; ручное
+  `backups create` работает; следующий тик таймера проходит.
+- **Пересечение timer-запусков.** Предыдущий `backups create` ещё держит
   lock; второй запуск не стартует или получает `locked`, но не плодит архивы.
-- **Бюджет превышен.** Retention не удаляет месячные и закреплённые; JSON
-  содержит `warnings`, `doctor` — `warn`.
-- **Guard сработал.** `statfs` < 256 MiB: `rootctl stop`, маркер `stop`;
-  повторный тик не вызывает `stop` второй раз, `doctor` — `error`; после
-  освобождения места `start` снимает маркер.
+- **Бюджет превышен.** Retention не удаляет месячные state и пакеты, указанные
+  в state; JSON содержит `warnings`, `doctor` — `warn`.
+- **Мало места.** `doctor` при свободных <512 MiB даёт `error`, панель
+  блокирует мутации; `backups create` и `mods deploy` возвращают `no_space`,
+  но `tes3mp.service` продолжает работать. После освобождения места `doctor`
+  снова проходит.
 - **Разные FS.** Upload и `backups/` на разных mount: `doctor` — `error`,
   `mods import` — `invalid_argument`, файлы не теряются.
 
@@ -290,7 +288,7 @@ GUI-тесты не гоняются в CI: Fyne требует дисплея. 
   Если cgroup read-only, тест не пропускается целиком: он логирует отсутствие
   MemoryMax и проверяет `GOMEMLIMIT` + RSS.
 - `mods import` получает потоковый tar.gz с несжимаемым плагином 510 MiB
-  (практически предел 512 MiB); `checkpoint create` — мир с файлом 500 MiB.
+  (практически предел 512 MiB); `backups create` — мир с файлом 500 MiB.
   Оба входа генерируются потоково, без буфера размером с архив.
 - Пик RSS дочернего процесса читается из `wait4`/`Rusage.Maxrss`, а не из
   `/proc` теста. Для каждой команды сравниваются маленький вход (8 MiB mods,
@@ -311,23 +309,23 @@ GUI-тесты не гоняются в CI: Fyne требует дисплея. 
    sudoers, rootctl, systemd, journald, sysctl, runtime и base mods. Затем
    `doctor` без ошибок → панель по HTTPS → первый пароль → смена пароля.
 2. **Автобэкап.** Таймер активен; через 15–20 минут появляется
-   `checkpoint-*`; `checkpoint list` показывает его; при остановленной игре
-   `--if-running` даёт `skipped`.
+   `state-*`; `backups list --type state` показывает его и `mods_archive`;
+   при остановленной игре `--if-running` даёт `skipped`.
 3. **Моды.** Загрузить архив → deploy → сервер перезапустился (если был
    запущен) → `doctor` без ошибок (особенно `ownership` и `configs`) → клиент
    видит `mods_sha256` и скачивает `mods-*`.
-4. **Точки отката.** Создать чекпоинт → изменить мир → восстановить →
-   состояние вернулось, сервер запущен, `checkpoint-predeploy-*` существует.
-   Закрепить чекпоинт → retention и `checkpoint rm` без `--force` его не
-   удаляют → снять закрепление. Удалить predeploy-чекпоинт из панели с
-   подтверждением имени. Удалить базу с `--force` → чекпоинты показывают
-   «База удалена» и восстанавливаются только с `--accept-mod-mismatch`.
-5. **Публичные бэкапы.** При `public_state_download=true` скачать
-   mods/checkpoints без логина; при `false` — `/backups` без `type` и
-   `/backups/checkpoints/<name>` отвечают 404, а `/backups?type=mods` работает.
-   Список не раскрывает пути и логи; пагинация работает на длинной истории.
-6. **Retention.** Синтетическая история на 5 лет: месячные живы, дневные и
-   недельные прорежены, бюджет не превышен.
+4. **Состояния.** Создать state → изменить мир и конфиг → восстановить → мир и
+   три конфига вернулись, `customScripts.lua` не изменился, сервер запущен,
+   `state-predeploy-*` существует. Проверить state со старым пакетом модов:
+   восстановление заблокировано, «Задеплоить моды» активирует пакет, затем
+   восстановление проходит. State без `configs/` меняет только мир.
+5. **Публичные архивы.** Без логина скачиваются только `mods`; `/backups` без
+   `type` показывает моды, `/backups/state/<name>` — 404. Админ скачивает state
+   только после входа. Список не раскрывает пути и логи; пагинация работает на
+   длинной истории.
+6. **Retention.** Синтетическая история на 5 лет: месячные state живы, дневные и
+   недельные прорежены, бюджет не превышен; пакет, указанный в state, не удалён;
+   после `backups prune` исчезают только незащищённые mods.
 7. **TLS.** Панель получает сертификат Let's Encrypt для публичного IP через
    HTTP-01; браузер не показывает предупреждение. После освобождения порта 80
    продление проходит в фоне без рестарта. `files` режим с готовой парой тоже
@@ -341,7 +339,7 @@ GUI-тесты не гоняются в CI: Fyne требует дисплея. 
     Installation показывает прогресс. Linux: Proton найден автоматически.
 11. **Битый `current.txt`.** API отдаёт `404 no_mods` → клиент показывает
     ошибку установки и не запускает vanilla-сервер молча.
-12. **Долгая история.** Большое число чекпоинтов: панель листает страницами,
+12. **Долгая история.** Большое число state-архивов: панель листает страницами,
     не строит одну гигантскую HTML-таблицу, память панели не растёт.
 13. **Метрики.** Дашборд показывает RAM/CPU игры и системы за 1 ч/6 ч/24 ч;
     после остановки сервера линия игры рвётся, после рестарта панели история
@@ -360,7 +358,7 @@ sudo ./test/e2e/release-smoke.sh /tmp/tes3mp-easy-<version>-linux-amd64
 Скрипт делает preflight, установку, проверяет бинарники, systemd-юниты и
 таймеры, `/etc/tes3mp-easy/panel.env`, SAN сертификата Let's Encrypt для
 публичного IP, отсутствие постоянного listener на `:80`, `doctor`, `/healthz`,
-ручной чекпоинт и таймер. Остальные сценарии требуют Morrowind/Proton и
+ручное создание state и таймер. Остальные сценарии требуют Morrowind/Proton и
 браузера, поэтому остаются ручными.
 
 ## 10. CI

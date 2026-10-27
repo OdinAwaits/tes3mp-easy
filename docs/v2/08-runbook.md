@@ -52,7 +52,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/in
 Конкретную версию можно закрепить:
 
 ```bash
-TES3MP_EASY_VERSION=0.1.16 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
+TES3MP_EASY_VERSION=0.2.0 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
 ```
 
 Ручной путь, если архив нужно скачать заранее:
@@ -61,7 +61,7 @@ TES3MP_EASY_VERSION=0.1.16 bash <(curl -Ls https://raw.githubusercontent.com/Saa
    собранный `dist/tes3mp-easy-<version>-linux-amd64.tar.gz`):
 
    ```bash
-   VERSION=0.1.16
+   VERSION=0.2.0
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz"
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
    sha256sum -c "tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
@@ -72,7 +72,7 @@ TES3MP_EASY_VERSION=0.1.16 bash <(curl -Ls https://raw.githubusercontent.com/Saa
    Локальная сборка релиза:
 
    ```bash
-   go run ./cmd/tes3mp-easy-pack --version 0.1.16
+   go run ./cmd/tes3mp-easy-pack --version 0.2.0
    ```
 
 2. Проверьте хост без изменений:
@@ -91,9 +91,8 @@ TES3MP_EASY_VERSION=0.1.16 bash <(curl -Ls https://raw.githubusercontent.com/Saa
    rootctl, sudoers, systemd-юниты, journald drop-in, sysctl, TES3MP 0.8.1,
    базовые конфиги и base mod-пак. Из каталога `bin/` он устанавливает
    `tes3mp-easy-ops` и `tes3mp-easy-panel` в `/opt/tes3mp-easy/bin`, затем
-   включает и запускает `tes3mp.service`, `tes3mp-easy-backup.timer`,
-   `tes3mp-easy-guard.timer` и `tes3mp-panel.service`. Исходники и Go на VPS
-   не нужны.
+   включает и запускает `tes3mp.service`, `tes3mp-easy-backup.timer` и
+   `tes3mp-panel.service`. Исходники и Go на VPS не нужны.
 
 4. Прочитайте временный пароль панели и войдите:
 
@@ -110,7 +109,6 @@ TES3MP_EASY_VERSION=0.1.16 bash <(curl -Ls https://raw.githubusercontent.com/Saa
    ```bash
    sudo systemctl status tes3mp.service --no-pager
    sudo systemctl status tes3mp-easy-backup.timer --no-pager
-   sudo systemctl status tes3mp-easy-guard.timer --no-pager
    sudo systemctl status tes3mp-panel.service --no-pager
    sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
      --root /tes3mp-easy --json doctor
@@ -152,9 +150,8 @@ TES3MP_EASY_VERSION=0.1.16 bash <(curl -Ls https://raw.githubusercontent.com/Saa
    `bootstrap.sh` выполняет preflight, ставит пользователей, группы, каталоги,
    rootctl, sudoers, systemd-юниты, journald drop-in, sysctl, TES3MP 0.8.1,
    базовые конфиги и base mod-пак, а затем включает и запускает
-   `tes3mp.service`, `tes3mp-easy-backup.timer` и
-   `tes3mp-easy-guard.timer`. Каталога `bin/` в git checkout нет, поэтому
-   панель остаётся выключенной до шага 3.
+   `tes3mp.service` и `tes3mp-easy-backup.timer`. Каталога `bin/` в git
+   checkout нет, поэтому панель остаётся выключенной до шага 3.
 
 Source bootstrap:
 
@@ -175,16 +172,15 @@ Source bootstrap:
 - создаёт `mods-init-*`, канонический `current.txt` и HOME-каталоги
   `.config/openmw`, `.local/share/openmw`;
 - ставит `tes3mp.service`, `tes3mp-panel.service`,
-  `tes3mp-easy-backup.service`, `tes3mp-easy-backup.timer`,
-  `tes3mp-easy-guard.service`, `tes3mp-easy-guard.timer`;
+  `tes3mp-easy-backup.service`, `tes3mp-easy-backup.timer`;
 - если рядом с `bootstrap.sh` есть `bin/`, ставит оба бинарника в
   `/opt/tes3mp-easy/bin` и проверяет, что они регулярные файлы;
 - ставит `/usr/local/libexec/tes3mp-easy-rootctl` и
   `/etc/sudoers.d/tes3mp-easy`;
 - настраивает journald (`SystemMaxUse=100M`, `RuntimeMaxUse=32M`) и
   `vm.swappiness=10`;
-- включает в автозагрузку и запускает `tes3mp.service`,
-  `tes3mp-easy-backup.timer` и `tes3mp-easy-guard.timer`, затем проверяет
+- включает в автозагрузку и запускает `tes3mp.service` и
+  `tes3mp-easy-backup.timer`, затем проверяет
   `is-active`; при наличии установленной панели определяет публичный IPv4,
   проверяет свободный `80/tcp`, пишет `/etc/tes3mp-easy/panel.env`, включает и
   перезапускает `tes3mp-panel.service` и ждёт HTTPS `/healthz` (включая первый
@@ -241,20 +237,19 @@ Source bootstrap:
    ```bash
    sudo systemctl status tes3mp.service --no-pager
    sudo systemctl status tes3mp-easy-backup.timer --no-pager
-   sudo systemctl status tes3mp-easy-guard.timer --no-pager
-   sudo systemctl list-timers tes3mp-easy-backup.timer tes3mp-easy-guard.timer
+   sudo systemctl list-timers tes3mp-easy-backup.timer
    sudo systemctl status tes3mp-panel.service --no-pager
    ```
 
-   Ожидаемо: сервер `active (running)`, оба таймера `active (waiting)`, панель
+   Ожидаемо: сервер `active (running)`, таймер `active (waiting)`, панель
    `active (running)` после шага 4. Если backup service был пропущен, проверьте,
    установлен ли `/opt/tes3mp-easy/bin/tes3mp-easy-ops`.
 
 ## 3. Первый запуск и проверка
 
-Bootstrap включает и запускает `tes3mp.service` и оба таймера. При установке
-из релизного архива он также запускает панель; при source-установке панель
-включается отдельно после установки её бинарника. Runtime можно проверить
+Bootstrap включает и запускает `tes3mp.service` и таймер автобэкапов. При
+установке из релизного архива он также запускает панель; при source-установке
+панель включается отдельно после установки её бинарника. Runtime можно проверить
 отдельно:
 
 ```bash
@@ -275,20 +270,18 @@ systemd-analyze verify /etc/systemd/system/tes3mp.service
 systemd-analyze verify /etc/systemd/system/tes3mp-panel.service
 systemd-analyze verify /etc/systemd/system/tes3mp-easy-backup.service
 systemd-analyze verify /etc/systemd/system/tes3mp-easy-backup.timer
-systemd-analyze verify /etc/systemd/system/tes3mp-easy-guard.service
-systemd-analyze verify /etc/systemd/system/tes3mp-easy-guard.timer
 systemctl cat tes3mp-easy-backup.timer
 ```
 
-`tes3mp.service`, backup service, guard service и панель проходят verify без
-ошибки об `ExecStart` после установки соответствующих бинарников. Если бинарник
-ещё не установлен, сообщение об отсутствующем `ExecStart` ожидаемо. Любые
+`tes3mp.service`, backup service и панель проходят verify без ошибки об
+`ExecStart` после установки соответствующих бинарников. Если бинарник ещё не
+установлен, сообщение об отсутствующем `ExecStart` ожидаемо. Любые
 синтаксические, dependency- или path-ошибки недопустимы. Ручной запуск, если
-сервер или таймеры были остановлены:
+сервер или таймер был остановлен:
 
 ```bash
 sudo systemctl start tes3mp.service
-sudo systemctl enable --now tes3mp-easy-backup.timer tes3mp-easy-guard.timer
+sudo systemctl enable --now tes3mp-easy-backup.timer
 ```
 
 Проверка текущего состояния:
@@ -298,8 +291,6 @@ systemctl is-active tes3mp.service
 systemctl is-enabled tes3mp.service
 systemctl is-active tes3mp-easy-backup.timer
 systemctl is-enabled tes3mp-easy-backup.timer
-systemctl is-active tes3mp-easy-guard.timer
-systemctl is-enabled tes3mp-easy-guard.timer
 journalctl -u tes3mp.service -n 50 --no-pager
 ```
 
@@ -307,8 +298,7 @@ journalctl -u tes3mp.service -n 50 --no-pager
 
 - `tes3mp.service` — `active` и `enabled`;
 - `tes3mp-easy-backup.timer` — `active` и `enabled`, следующий запуск через
-  15 минут; `tes3mp-easy-guard.timer` — `active` и `enabled`, следующий запуск
-  через минуту;
+  15 минут;
 - `journalctl -u tes3mp.service -n 50` показывает запуск сервера;
 - без установленного `ops` backup service пропускается по
   `ConditionPathExists`, без `failed`;
@@ -415,8 +405,7 @@ sudo cat /tes3mp-easy/panel-data/initial-password.txt
 3. Остановите панель и таймеры, затем замените бинарники:
 
    ```bash
-   sudo systemctl stop tes3mp-panel.service tes3mp-easy-backup.timer \
-     tes3mp-easy-guard.timer
+   sudo systemctl stop tes3mp-panel.service tes3mp-easy-backup.timer
    sudo install -o root -g root -m 0755 /tmp/tes3mp-easy-ops \
      /opt/tes3mp-easy/bin/tes3mp-easy-ops
    sudo install -o root -g root -m 0755 /tmp/tes3mp-easy-panel \
@@ -437,8 +426,7 @@ sudo cat /tes3mp-easy/panel-data/initial-password.txt
 5. Запустите панель и таймеры, проверьте:
 
    ```bash
-   sudo systemctl start tes3mp-panel.service tes3mp-easy-backup.timer \
-     tes3mp-easy-guard.timer
+   sudo systemctl start tes3mp-panel.service tes3mp-easy-backup.timer
    sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
      --root /tes3mp-easy --json doctor
    ```
@@ -502,152 +490,114 @@ sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
 ```
 
 `mods import` не включает моды, только кладёт архив. `mods deploy` делает
-`checkpoint-predeploy-*`, останавливает сервер, распаковывает в staging, меняет
-`mods/`, генерирует `customScripts.lua`, пишет `current.txt`, создаёт
-`snapshot-*` и запускает сервер, если он работал до операции. При ошибке
-возвращает старые файлы.
+`state-predeploy-*`, останавливает сервер, распаковывает в staging, меняет
+`mods/`, генерирует `customScripts.lua`, пишет `current.txt`, запускает сервер,
+если он работал до операции, и выполняет full retention. При ошибке возвращает
+старые файлы.
 
 Если `mods import` вернул `archive_invalid`, архив не попал в `backups/mods`:
 проверьте `plugins/requiredDataFiles.json`, CRC, пути и отсутствие базовых ESM
 в архиве, затем повторите импорт. Если упал `mods deploy`, ops вернул старые
 `mods/` и `current.txt`; сервер остаётся в прежнем состоянии.
 
-## 7. Точки отката: создать и восстановить
+## 7. Состояния: создать и восстановить
 
-Чекпоинт — только мир, снимается таймером каждые 15 минут. Снапшот — мир +
-моды + конфиги, создаётся при деплое модов, вручную и лениво как база
-чекпоинта.
+State содержит игроков, мир и три конфига; моды — отдельный неизменяемый пакет,
+на который state ссылается через `current.txt`.
 
 Создать вручную:
 
 ```bash
-# чекпоинт (мир), дешево
 sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-  --root /tes3mp-easy --json checkpoint create --label "перед ивентом"
-# снапшот (мир + моды + конфиги), дорого
-sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-  --root /tes3mp-easy --json snapshot create --reason manual
+  --root /tes3mp-easy --json backups create --type state --manual
 ```
 
-Списки:
+Список и текущий пакет:
 
 ```bash
 sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-  --root /tes3mp-easy --json checkpoint list --limit 20
-sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-  --root /tes3mp-easy --json snapshot list --limit 20
+  --root /tes3mp-easy --json backups list --type state --limit 20
+sudo cat /tes3mp-easy/backups/mods/current.txt
 ```
 
 Восстановить:
 
 ```bash
+# 1. Активировать пакет, который записан в state
 sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-  --root /tes3mp-easy --json checkpoint restore \
-  --archive checkpoint-2026-10-22_12-00-00.tar.gz
+  --root /tes3mp-easy --json mods deploy --archive mods-2026-10-22_12-00-00.tar.gz
+# 2. Восстановить state
 sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-  --root /tes3mp-easy --json snapshot restore --latest
+  --root /tes3mp-easy --json state deploy \
+  --archive state-2026-10-22_12-00-00.tar.gz
 ```
 
-Перед восстановлением ops создаёт `checkpoint-predeploy-*` и останавливает
-сервер. После успеха сервер запускается, если работал до операции. При ошибке
-`checkpoint restore` возвращает старые `players/` и `world/`;
-`snapshot restore` — ещё `mods/` и `configs/`; состояние сервера прежнее.
+`state deploy --latest` берёт самый новый state. Перед восстановлением ops
+создаёт `state-predeploy-*` и останавливает сервер. После успеха сервер
+запускается, если работал до операции. При ошибке возвращаются старые
+`players/`, `world/`, `configs/` и `customScripts.lua`.
 
-Если база чекпоинта удалена, `checkpoint list` показывает `available=false`, а
-восстановление возвращает:
+Если `current.txt` состояния не совпадает с активным пакетом, ops вернёт
+`archive_invalid`. Сначала выполните `mods deploy --archive <mods_archive>`,
+затем повторите `state deploy`. Автоматической подстановки другого пакета нет.
 
-```text
-error.code = not_found
-message: base snapshot-... is missing
-```
-
-Варианты: взять более новый чекпоинт с `available=true`, вернуть базу из
-офсайт-копии в `backups/snapshots/` (имя и `sha256` должны совпасть) или
-принять риск:
-
-```bash
-... checkpoint restore --archive checkpoint-... --accept-mod-mismatch
-```
-
-Мир встанет на текущие моды, `missing_plugins` перечислит всё, чего не хватает.
-«Дописать» базу нельзя: `sha256` проверяется.
-
-После такого восстановления `current.txt` не меняется: новые чекпоинты
-привяжутся к ближайшему снапшоту с текущим мод-паком. Если подходящего нет,
-первый `checkpoint create` (в течение 15 минут) создаст `snapshot-*` с
-`reason=base` — для этого нужно ≥512 MiB свободно, иначе чекпоинт вернёт
-`no_space` и повторит попытку на следующем тике.
-
-Закрепить и удалить:
-
-```bash
-... checkpoint pin   checkpoint-2026-10-22_12-00-00.tar.gz
-... checkpoint unpin checkpoint-2026-10-22_12-00-00.tar.gz
-... checkpoint rm    checkpoint-2026-10-22_12-00-00.tar.gz --dry-run
-... snapshot rm      snapshot-2026-10-20_10-00-00.tar.gz
-```
-
-Без `--force` защищённое имя даёт `archive_in_use` (exit 12): закреплён,
-последний снапшот или база, на которую ссылаются чекпоинты. Проверка идёт по
-всей пачке до удаления, так что при одном защищённом имени не удалится ничего.
-Последний снапшот не удаляется даже с `--force`; база, если она не последняя,
-с `--force` удаляется, её чекпоинты остаются с пометкой «база удалена».
+Если state старый и не содержит `configs/`, восстановятся только `players/` и
+`world/`; конфиги останутся текущими.
 
 ## 8. Retention и диск
 
 Проверить размеры:
 
 ```bash
-du -sh /tes3mp-easy/backups/snapshots /tes3mp-easy/backups/checkpoints \
-       /tes3mp-easy/backups/mods \
+du -sh /tes3mp-easy/backups/state /tes3mp-easy/backups/mods \
        /tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/mods
 df -h /tes3mp-easy
 ```
 
-Бюджеты: `snapshots` 1.5 GiB, `checkpoints` 256 MiB, `mods` 512 MiB,
-свободный резерв 512 MiB. `doctor` даёт `warn` при свободных
-256–512 MiB и `error` меньше 256 MiB.
+Бюджеты: `state` 1.0 GiB, `mods` 512 MiB, свободный резерв 512 MiB. `doctor`
+даёт `warn` при свободных 512 MiB–1 GiB и `error` меньше 512 MiB.
 
-Retention работает автоматически после `checkpoint create`, `snapshot create`
-и `mods import`:
+State-only retention работает после каждого state backup:
 
-- чекпоинты 0–7 дней — все;
+- 0–7 дней — все;
 - 7–365 дней — последний за UTC-день;
 - 1–3 года — последний за ISO-неделю;
 - старше 3 лет — последний за месяц, навсегда;
-- закреплённые — навсегда, predeploy — 2;
-- снапшоты: `manual` — 5, `mods`/`base` — 2, плюс все, на которые ссылается
-  хранимый чекпоинт;
-- `mods` — 5, `mods-init` — 2 новейших и текущий, если он старше.
+- ручные — 5 новейших, predeploy — 2 новейших.
 
-База защищена, пока на неё ссылается хранимый чекпоинт: мод-пак годовалой
-давности остаётся восстановимым. Если `backups/snapshots` выходит за бюджет,
-защита снимается только с самой старой базы. Её чекпоинты остаются, получают
-пометку «база удалена» и восстанавливаются только с
-`--accept-mod-mismatch`.
+Full retention работает на `mods import`, `mods deploy`, `backups prune` и при
+нехватке места:
 
-Месячные представители и закреплённые точки не удаляются автоматически
-никогда. Если бюджеты всё равно превышены, `doctor` показывает `warn`;
-освобождайте место через `rm` (`§7`), а не удалением файлов вслепую.
+- state-политика выше;
+- `mods` — 5 новейших, `mods-init` — 2 новейших и текущий;
+- все пакеты, указанные в `current.txt` любого state, защищены.
+
+Пакет годовалой давности остаётся восстановимым, пока на него ссылается state.
+После удаления state его пакет может быть удалён при следующем full retention.
+
+Месячные представители state не удаляются автоматически никогда. Если бюджеты
+всё равно превышены, `doctor` показывает `warn`; освобождайте место через
+`backups prune`, а не удалением файлов вслепую.
 
 Посмотреть, что съедает место:
 
 ```bash
 sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-  --root /tes3mp-easy --json checkpoint list --limit 20
-sudo du -h /tes3mp-easy/backups/checkpoints/*.tar.gz | sort -h | tail -20
-sudo du -h /tes3mp-easy/backups/snapshots/*.tar.gz | sort -h | tail -20
+  --root /tes3mp-easy --json backups list --type state --limit 20
+sudo du -h /tes3mp-easy/backups/state/*.tar.gz | sort -h | tail -20
+sudo du -h /tes3mp-easy/backups/mods/*.tar.gz | sort -h | tail -20
 ```
 
 ## 9. Мало места
 
-Guard проверяет диск каждые 60 секунд (`tes3mp-easy-guard.timer`):
+`doctor` проверяет свободное место:
 
-- ≥512 MiB — норма;
-- 256–512 MiB — `warn`: баннер в панели, новые архивы не создаются
-  (`no_space`), игра работает;
-- <256 MiB — `stop`: ops останавливает `tes3mp.service` и пишет
-  `backups/guard.json` с `{"level": "stop"}`.
+- ≥1 GiB — `ok`;
+- 512 MiB–1 GiB — `warn`: панель показывает предупреждение, игра работает;
+- <512 MiB — `error`: мутации в панели заблокированы, `backups create` и
+  `mods deploy` возвращают `no_space` (exit 5), игра продолжает работать.
+
+Автоматической остановки сервера по диску нет.
 
 1. Проверьте:
 
@@ -655,8 +605,8 @@ Guard проверяет диск каждые 60 секунд (`tes3mp-easy-gua
    df -h /tes3mp-easy
    du -sh /tes3mp-easy/* | sort -h
    sudo journalctl --disk-usage
-   cat /tes3mp-easy/backups/guard.json
-   sudo journalctl -u tes3mp-easy-guard.service -n 20
+   sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+     --root /tes3mp-easy --json doctor
    ```
 
 2. Остановите таймер, чтобы новые архивы не усугубляли ситуацию:
@@ -677,33 +627,30 @@ Guard проверяет диск каждые 60 секунд (`tes3mp-easy-gua
    `pgrep -a tes3mp-easy-ops`). Незавершённые `.part` удаляйте только после
    проверки, что `ops` не работает.
 
-4. Если места всё ещё нет, удаляйте точки явно, с проверкой плана:
+4. Если места всё ещё нет, запустите полный retention с планом:
 
    ```bash
    sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-     --root /tes3mp-easy --json checkpoint rm <name> --dry-run
+     --root /tes3mp-easy --json backups prune --dry-run
    sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-     --root /tes3mp-easy --json checkpoint rm <name>
+     --root /tes3mp-easy --json backups prune
    ```
 
-   Сначала удаляйте старые чекпоинты, затем самые старые незакреплённые
-   снапшоты. Снапшот, на который ссылаются чекпоинты, требует `--force`, после
-   чего эти чекпоинты станут невосстановимыми без `--accept-mod-mismatch`.
-   Последний снапшот не удаляется никогда. Месячные представители и
-   закреплённые точки — последними и только после копии на другую машину.
+   Full retention защищает пакеты, указанные в `current.txt` любого state.
+   State, на который вы рассчитываете, не удалится, если он новее/защищён
+   политикой. Месячные представители state остаются.
 
-5. Запустите таймер снова, снимите маркер и проверьте `doctor`:
+5. Запустите таймер и проверьте `doctor`:
 
    ```bash
    sudo systemctl start tes3mp-easy-backup.timer
    sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-     --root /tes3mp-easy --json start
-   sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
      --root /tes3mp-easy --json doctor
    ```
 
-   `start`/`restart` удаляют `guard.json`. Если свободно всё ещё меньше
-   256 MiB, guard остановит сервер на следующем тике.
+   Если вы останавливали игру вручную, запустите её отдельно:
+   `sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops --root /tes3mp-easy
+   --json start`.
 
 `no_space` от ops — это не повод удалять архивы вслепую. Сначала копия или
 `--dry-run`, потом удаление.
@@ -727,7 +674,7 @@ sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
 - нет `libluajit-5.1.so.2` → `ldconfig -p | grep luajit`, переустановите пакет;
 - битый `customScripts.lua` → проверьте `mods/scripts/` и пересоберите деплоем;
 - плагин/ESM, который не подходит к текущей сборке → верните предыдущий
-  `checkpoint-predeploy-*` или предыдущий `mods-*`;
+  `mods-*` и `state-predeploy-*`;
 - нехватка памяти → `dmesg | tail`, `systemctl show tes3mp.service -p MemoryCurrent`;
 - занят порт → `ss -lunp | grep 25565`.
 
@@ -742,12 +689,12 @@ sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
 
 ```bash
 sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-  --root /tes3mp-easy --json checkpoint restore --latest
+  --root /tes3mp-easy --json state deploy --latest
 ```
 
-Перед восстановлением ops сам делает `checkpoint-predeploy-*`, так что текущее
-состояние не теряется. Если `--latest` не подходит (нужна точка с другими
-модами), используйте `snapshot restore --latest`.
+Перед восстановлением ops сам делает `state-predeploy-*`, так что текущее
+состояние не теряется. Если state ссылается на другой пакет модов, сначала
+задеплойте его: `mods deploy --archive <mods_archive>`.
 
 ### 10.1. Клиент не подключается
 
@@ -829,8 +776,7 @@ sudo systemctl restart tes3mp-panel.service
 
 ```bash
 systemctl cat tes3mp.service tes3mp-panel.service \
-  tes3mp-easy-backup.service tes3mp-easy-backup.timer \
-  tes3mp-easy-guard.service tes3mp-easy-guard.timer
+  tes3mp-easy-backup.service tes3mp-easy-backup.timer
 sudo systemd-analyze verify /etc/systemd/system/tes3mp*.service \
   /etc/systemd/system/tes3mp-easy-*.service
 sudo /usr/local/libexec/tes3mp-easy-rootctl restart
@@ -896,10 +842,10 @@ sudo systemctl restart tes3mp-panel.service
 
 ## 14. Копия бэкапов на другую машину
 
-Копируйте весь `backups/`, кроме маркера guard и недописанных файлов:
+Копируйте весь `backups/`, кроме недописанных файлов:
 
 ```bash
-rsync -a --exclude "*.part" --exclude "guard.json" \
+rsync -a --exclude "*.part" \
   /tes3mp-easy/backups/ backup@offsite:/srv/tes3mp-easy-backups/
 ```
 
@@ -907,24 +853,23 @@ rsync -a --exclude "*.part" --exclude "guard.json" \
 
 ```bash
 ssh backup@offsite 'du -sh /srv/tes3mp-easy-backups/*'
-ssh backup@offsite 'tar -tzf /srv/tes3mp-easy-backups/checkpoints/<archive>.tar.gz | head'
-ssh backup@offsite 'tar -tzf /srv/tes3mp-easy-backups/snapshots/<archive>.tar.gz | head'
+ssh backup@offsite 'tar -tzf /srv/tes3mp-easy-backups/state/<archive>.tar.gz | head'
+ssh backup@offsite 'tar -tzf /srv/tes3mp-easy-backups/mods/<archive>.tar.gz | head'
 ```
 
-Чекпоинт ссылается на снапшот по `sha256`, поэтому `checkpoints/` и
-`snapshots/` копируются только вместе. `current.txt` и текущий
+State ссылается на пакет модов через свой `current.txt`, поэтому `state/` и
+`mods/` копируются только вместе. `backups/mods/current.txt` и текущий
 `mods-*.tar.gz` обязательны: по ним определяется активный мод-пак.
 
 ## 15. Восстановление на новой VPS
 
-1. Выполните §2.1 или §2.2, затем сразу остановите игру и таймер шагом 2.
+1. Выполните §2.1 или §2.2, затем сразу остановите игру и таймеры шагом 2.
    Панель можно оставить запущенной: до восстановления она показывает пустой
-   список, а после `checkpoint restore` данные появятся без перезапуска.
+   список, а после `state deploy` данные появятся без перезапуска.
 2. Остановите игру и таймеры:
 
    ```bash
-   sudo systemctl stop tes3mp.service tes3mp-easy-backup.timer \
-     tes3mp-easy-guard.timer
+   sudo systemctl stop tes3mp.service tes3mp-easy-backup.timer
    ```
 
 3. Скопируйте `backups/` с копии, сохранив `current.txt`:
@@ -935,39 +880,46 @@ ssh backup@offsite 'tar -tzf /srv/tes3mp-easy-backups/snapshots/<archive>.tar.gz
    sudo chown -R tes3mp:tes3mp /tes3mp-easy/backups
    ```
 
-4. Задеплойте текущий мод-пак, затем восстановите точку:
+4. Активируйте пакет модов, затем восстановите state:
 
    ```bash
    sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
      --root /tes3mp-easy --json mods deploy --current
    sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
-     --root /tes3mp-easy --json checkpoint restore --latest
+     --root /tes3mp-easy --json state deploy --latest
    ```
 
-   `snapshot restore --latest` тоже подходит, но он перезапишет и `configs/`.
-   Если база чекпоинта не попала в копию, ops вернёт `not_found`: восстановите
-   базу из офсайта (имя и `sha256` из `base` в манифесте) или используйте
-   `--accept-mod-mismatch` осознанно.
+   Если `state deploy` вернул `archive_invalid` из-за несовпадения пакета,
+   посмотрите `mods_archive` в `backups list --type state` и задеплойте именно
+   этот пакет:
+
+   ```bash
+   sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+     --root /tes3mp-easy --json mods deploy --archive <mods_archive>
+   ```
+
+   Затем повторите `state deploy`. State без `configs/` восстановит только
+   `players/` и `world/`.
 
 5. Запустите игру и таймеры, проверьте:
 
    ```bash
    sudo systemctl start tes3mp.service
-   sudo systemctl start tes3mp-easy-backup.timer tes3mp-easy-guard.timer
+   sudo systemctl start tes3mp-easy-backup.timer
    sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
      --root /tes3mp-easy --json doctor
    ```
 
-Если `checkpoint restore` говорит `not_found` из-за отсутствующей базы, сначала
-верните `snapshot-*` в `backups/snapshots/`, затем повторите. Мод-пак из
-`current.txt` уже развёрнут шагом 4, поэтому `mods deploy` базы не потребуется.
+Если нужного пакета модов нет в копии, восстановить state нельзя: ops не
+подставляет другой пакет. Верните `mods-*.tar.gz` из офсайта и повторите
+`mods deploy`.
 
 ## 16. Финальная проверка
 
 ```bash
 sudo systemctl is-active tes3mp.service tes3mp-panel.service \
-  tes3mp-easy-backup.timer tes3mp-easy-guard.timer
-sudo systemctl list-timers tes3mp-easy-backup.timer tes3mp-easy-guard.timer --no-pager
+  tes3mp-easy-backup.timer
+sudo systemctl list-timers tes3mp-easy-backup.timer --no-pager
 sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
   --root /tes3mp-easy --json doctor
 curl -fsS https://<IP>/healthz

@@ -250,12 +250,45 @@ func TestAdminDashboardShowsStatusDoctorAndTimer(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"Панель запущена", "работает", "stopped", "Автобэкапы не идут",
-		"disk", "свободно меньше 1 ГиБ", "Friends",
+		"Панель запущена", "работает", "Friends",
+		"State backup", "Автобэкапы не идут",
+		"свободно меньше 1 ГиБ",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard does not contain %q:\n%s", want, body)
 		}
+	}
+}
+
+func TestAdminArchiveDownloadRejectsSymlink(t *testing.T) {
+	tests := []struct {
+		typ  string
+		name string
+	}{
+		{typ: "state", name: "state-manual-2026-10-27_12-00-00.tar.gz"},
+		{typ: "mods", name: "mods-2026-10-27_12-00-00.tar.gz"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.typ, func(t *testing.T) {
+			env := newAdminTestEnv(t, nil)
+			dir := filepath.Join(env.cfg.Root, "backups", tt.typ)
+			if err := os.MkdirAll(dir, 0o750); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(t.TempDir(), "secret.tar.gz")
+			if err := os.WriteFile(target, []byte("secret"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, filepath.Join(dir, tt.name)); err != nil {
+				t.Fatal(err)
+			}
+			rec := env.request(t, http.MethodGet,
+				"/admin/"+tt.typ+"/download/"+tt.name, nil)
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("download symlink = %d, want 404: %s",
+					rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -580,14 +613,20 @@ func checkUploadsEmpty(t *testing.T, dataDir string) {
 
 func stateBackupsFixture() Backups {
 	next := "state-2026-10-20_12-00-00.tar.gz"
+	modsName := "mods-2026-10-23_12-00-00.tar.gz"
+	modsAvailable := true
+	missing := false
 	return Backups{
 		Type: "state",
 		Items: []BackupItem{
 			{Name: "state-manual-2026-10-23_12-00-00.tar.gz", Size: 100,
-				Mtime: "2026-10-23T12:00:00Z"},
+				Mtime: "2026-10-23T12:00:00Z", ModsArchive: &modsName,
+				ModsAvailable: &modsAvailable},
 			{Name: "state-predeploy-2026-10-22_12-00-00.tar.gz", Size: 200,
-				Mtime: "2026-10-22T12:00:00Z"},
-			{Name: next, Size: 300, Mtime: "2026-10-20T12:00:00Z"},
+				Mtime: "2026-10-22T12:00:00Z", ModsArchive: &modsName,
+				ModsAvailable: &missing},
+			{Name: next, Size: 300, Mtime: "2026-10-20T12:00:00Z",
+				ModsArchive: &modsName, ModsAvailable: &modsAvailable},
 		},
 		NextBefore: &next,
 	}
@@ -595,21 +634,19 @@ func stateBackupsFixture() Backups {
 
 func TestAdminStatePageGroupsAndValidatesInput(t *testing.T) {
 	env := newAdminTestEnv(t, &fakeAdminOps{
-		backups: map[string]Backups{"state": stateBackupsFixture()},
+		backups: map[string]Backups{
+			"state": stateBackupsFixture(),
+			"mods":  modsBackupsFixture(),
+		},
 	})
 	rec := env.request(t, http.MethodGet, "/admin/state", nil)
-	if rec.Code != http.StatusMovedPermanently ||
-		rec.Header().Get("Location") != "/admin/restore-points" {
-		t.Fatalf("GET /admin/state = %d %q", rec.Code, rec.Header().Get("Location"))
-	}
-
-	rec = env.request(t, http.MethodGet, "/admin/restore-points", nil)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /admin/restore-points = %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("GET /admin/state = %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
 		"state-manual", "state-predeploy", "Восстановить",
+		"Скачать состояние", "mods-2026-10-23_12-00-00.tar.gz",
 		"Показать более старые", "state-2026-10-20_12-00-00.tar.gz",
 	} {
 		if !strings.Contains(body, want) {
@@ -617,17 +654,24 @@ func TestAdminStatePageGroupsAndValidatesInput(t *testing.T) {
 		}
 	}
 
-	rec = env.request(t, http.MethodGet, "/admin/restore-points?before=../bad.tar.gz", nil)
+	rec = env.request(t, http.MethodGet, "/admin/restore-points", nil)
+	if rec.Code != http.StatusMovedPermanently ||
+		rec.Header().Get("Location") != "/admin/state" {
+		t.Fatalf("GET /admin/restore-points = %d %q", rec.Code,
+			rec.Header().Get("Location"))
+	}
+
+	rec = env.request(t, http.MethodGet, "/admin/state?before=../bad.tar.gz", nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("unsafe before = %d, want 400", rec.Code)
 	}
-	rec = env.request(t, http.MethodGet, "/admin/restore-points?limit=999", nil)
+	rec = env.request(t, http.MethodGet, "/admin/state?limit=999", nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("invalid limit = %d, want 400", rec.Code)
 	}
 
 	rec = env.request(t, http.MethodGet,
-		"/admin/restore-points?before=state-2026-10-20_12-00-00.tar.gz", nil)
+		"/admin/state?before=state-2026-10-20_12-00-00.tar.gz", nil)
 	if rec.Code != http.StatusOK ||
 		env.ops.lastBefore != "state-2026-10-20_12-00-00.tar.gz" {
 		t.Fatalf("before was not forwarded: %d %q", rec.Code, env.ops.lastBefore)
@@ -636,8 +680,11 @@ func TestAdminStatePageGroupsAndValidatesInput(t *testing.T) {
 
 func TestAdminStateCreateAndDeploy(t *testing.T) {
 	env := newAdminTestEnv(t, &fakeAdminOps{
-		backups: map[string]Backups{"state": stateBackupsFixture()},
-		backup:  Backup{Archive: "state-manual-2026-10-23_13-00-00.tar.gz"},
+		backups: map[string]Backups{
+			"state": stateBackupsFixture(),
+			"mods":  modsBackupsFixture(),
+		},
+		backup: Backup{Archive: "state-manual-2026-10-23_13-00-00.tar.gz"},
 	})
 	rec := env.request(t, http.MethodPost, "/admin/state/create", url.Values{})
 	if rec.Code != http.StatusSeeOther || !env.ops.created || !env.ops.manual {
@@ -711,8 +758,7 @@ func TestAdminConfigPageAndSave(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"Morrowind with friends", "loginTime", "gameSettings", "defaultTimeTable",
-		"playerNames", "Trouble Maker", "customScripts.lua",
+		"Morrowind with friends", "loginTime", "playerNames", "Trouble Maker",
 		`action="/admin/config/config"`, `action="/admin/config/banlist"`,
 	} {
 		if !strings.Contains(body, want) {

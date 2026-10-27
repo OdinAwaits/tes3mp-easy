@@ -1,5 +1,5 @@
 // Package retention implements the backup retention policy from
-// docs/v2/03-contracts.md §6.7. Build is a pure planner; Apply performs the
+// docs/v2/03-contracts.md §6.8. Build is a pure planner; Apply performs the
 // planned deletions and reports failures as warnings.
 package retention
 

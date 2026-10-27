@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Saagilat/tes3mp-easy/internal/archive"
+	"github.com/Saagilat/tes3mp-easy/test/fixtures"
 )
 
 var testNow = time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
@@ -587,5 +588,33 @@ func TestApplyRemovesPlannedArchives(t *testing.T) {
 				t.Fatalf("kept archive %s: %v", name, err)
 			}
 		}
+	}
+}
+
+func TestRetentionProtectsModsReferencedByStates(t *testing.T) {
+	stateDir := t.TempDir()
+	modsDir := t.TempDir()
+	var modsNames []string
+	for i := 1; i <= 7; i++ {
+		modsNames = append(modsNames, writeArchive(t, modsDir, archive.KindMods,
+			testNow.AddDate(0, 0, -i), 0, 1))
+	}
+	writeNamedFile(t, modsDir, "current.txt",
+		[]byte(strings.Repeat("a", 64)+" "+modsNames[0]+"\n"))
+
+	manifest := fixtures.ModsManifest{
+		Name:   modsNames[6],
+		SHA256: strings.Repeat("b", 64),
+	}
+	state := fixtures.FullState(manifest)
+	state.Name = archive.ArchiveName{
+		Kind: archive.KindStateAuto, Time: testNow.Add(-time.Hour),
+	}.String()
+	state.Write(t, filepath.Join(stateDir, state.Name))
+
+	plan := planFor(t, testConfig(stateDir, modsDir))
+	if !names(plan.Keep)[modsNames[6]] {
+		t.Fatalf("mods archive referenced by a state was pruned: %v",
+			names(plan.Prune))
 	}
 }

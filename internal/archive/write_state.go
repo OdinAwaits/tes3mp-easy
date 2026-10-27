@@ -17,11 +17,29 @@ import (
 // StateSource names the live files copied into a state archive. The metadata
 // files are read and validated before the first tar entry is written, so an
 // invalid current.txt never produces a partially valid archive.
+//
+// ConfigsDir is optional for tests and for restoring old archives, but state
+// creation always sets it. When set, the three state config files must exist.
 type StateSource struct {
 	PlayersDir        string
 	WorldDir          string
+	ConfigsDir        string
 	RequiredDataFiles string
 	CurrentFile       string
+}
+
+// stateConfigFiles is the fixed configuration set stored in a state archive.
+// customScripts.lua is generated from mods/scripts and deliberately excluded.
+var stateConfigFiles = []string{
+	"config.lua",
+	"tes3mp-server-default.cfg",
+	"banlist.json",
+}
+
+var stateConfigFileSet = map[string]struct{}{
+	"config.lua":                {},
+	"tes3mp-server-default.cfg": {},
+	"banlist.json":              {},
 }
 
 // StateStats describes a written state archive. Uncompressed follows the tar
@@ -43,15 +61,17 @@ type stateDirSource struct {
 	files []stateFileSource
 }
 
-// WriteState writes a state tar.gz archive from the live players/ and world/
-// trees. It validates the nested layout from docs/v2/03-contracts.md §6.2 and
-// writes entries in a deterministic order:
+// WriteState writes a state tar.gz archive from the live players/, world/ and
+// configs/ trees. It validates the nested layout from docs/v2/03-contracts.md
+// §6.2 and writes entries in a deterministic order:
 //
-//	players/, world/, world/<five fixed dirs>/, then both metadata files.
+//	current.txt, configs/, configs/<three fixed files>, requiredDataFiles.json,
+//	players/, world/, then the five world subdirectories.
 //
-// Files inside players/ and each world directory are sorted by name. Entries
-// never follow symlinks and nested directories are rejected. The caller owns
-// the destination file and its fsync/rename.
+// current.txt is first so retention can read the mods reference without
+// scanning the whole archive. Files inside players/ and each world directory
+// are sorted by name. Entries never follow symlinks and nested directories are
+// rejected. The caller owns the destination file and its fsync/rename.
 func WriteState(w io.Writer, src StateSource) (StateStats, error) {
 	if w == nil {
 		return StateStats{}, errors.New("archive: nil state destination")
@@ -80,6 +100,10 @@ func WriteState(w io.Writer, src StateSource) (StateStats, error) {
 	}
 	currentData = FormatCurrent(current)
 
+	configs, err := collectStateConfigs(src.ConfigsDir)
+	if err != nil {
+		return StateStats{}, err
+	}
 	dirs, err := collectStateDirectories(src)
 	if err != nil {
 		return StateStats{}, err
@@ -95,6 +119,38 @@ func WriteState(w io.Writer, src StateSource) (StateStats, error) {
 		return StateStats{}, writeErr
 	}
 
+	// current.txt is intentionally the first entry.
+	if err := addStateEntry(&stats, int64(len(currentData))); err != nil {
+		return fail(err)
+	}
+	if err := writeStateBytes(tw, currentFileName, currentData, currentInfo); err != nil {
+		return fail(fmt.Errorf("write %s: %w", currentFileName, err))
+	}
+	stats.Files++
+
+	if configs != nil {
+		if err := addStateEntry(&stats, 0); err != nil {
+			return fail(err)
+		}
+		if err := writeStateDir(tw, "configs/", configs.info); err != nil {
+			return fail(fmt.Errorf("write configs/: %w", err))
+		}
+		for _, file := range configs.files {
+			if err := writeStateFile(tw, file.name, file.path, &stats); err != nil {
+				return fail(err)
+			}
+		}
+	}
+
+	if err := addStateEntry(&stats, int64(len(requiredData))); err != nil {
+		return fail(err)
+	}
+	if err := writeStateBytes(tw, requiredDataFilesName, requiredData,
+		requiredInfo); err != nil {
+		return fail(fmt.Errorf("write %s: %w", requiredDataFilesName, err))
+	}
+	stats.Files++
+
 	for _, dir := range dirs {
 		if err := addStateEntry(&stats, 0); err != nil {
 			return fail(err)
@@ -107,24 +163,6 @@ func WriteState(w io.Writer, src StateSource) (StateStats, error) {
 				return fail(err)
 			}
 		}
-	}
-
-	metadata := []struct {
-		name string
-		data []byte
-		info fs.FileInfo
-	}{
-		{name: requiredDataFilesName, data: requiredData, info: requiredInfo},
-		{name: currentFileName, data: currentData, info: currentInfo},
-	}
-	for _, file := range metadata {
-		if err := addStateEntry(&stats, int64(len(file.data))); err != nil {
-			return fail(err)
-		}
-		if err := writeStateBytes(tw, file.name, file.data, file.info); err != nil {
-			return fail(fmt.Errorf("write %s: %w", file.name, err))
-		}
-		stats.Files++
 	}
 
 	// tar.Writer.Close writes the two zero blocks that terminate the stream.
@@ -157,6 +195,40 @@ func validateStateSource(src StateSource) error {
 	default:
 		return nil
 	}
+}
+
+type stateConfigSource struct {
+	info  fs.FileInfo
+	files []stateFileSource
+}
+
+func collectStateConfigs(dir string) (*stateConfigSource, error) {
+	if dir == "" {
+		return nil, nil
+	}
+	info, err := readStateDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	configs := &stateConfigSource{info: info}
+	for _, name := range stateConfigFiles {
+		path := filepath.Join(dir, name)
+		fileInfo, err := os.Lstat(path)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s: %w", ErrInvalid, path, err)
+		}
+		if fileInfo.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("%w: %s: symlink is not allowed", ErrInvalid, path)
+		}
+		if !fileInfo.Mode().IsRegular() {
+			return nil, fmt.Errorf("%w: %s: not a regular file", ErrInvalid, path)
+		}
+		configs.files = append(configs.files, stateFileSource{
+			name: "configs/" + name,
+			path: path,
+		})
+	}
+	return configs, nil
 }
 
 func readStateMetadata(path string, limit int64) ([]byte, fs.FileInfo, error) {

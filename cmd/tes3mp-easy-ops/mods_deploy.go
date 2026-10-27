@@ -475,6 +475,8 @@ func deployModsLocked(req modsDeployRequest,
 	}
 
 	result.warnings = append(result.warnings, tx.commit()...)
+	_, retentionWarnings := applyFullRetentionLocked(req.root, now, nil)
+	result.warnings = append(result.warnings, retentionWarnings...)
 	return result, nil
 }
 

@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Saagilat/tes3mp-easy/internal/restorepoint"
 	"github.com/Saagilat/tes3mp-easy/internal/retention"
 )
 
@@ -20,9 +19,6 @@ func checkBudgets(root string) Check {
 	}{
 		{"backups/state", retention.DefaultStateBudget, "1.0 GiB"},
 		{"backups/mods", retention.DefaultModsBudget, "512 MiB"},
-		{"backups/snapshots", restorepoint.DefaultSnapshotBudget, "1.5 GiB"},
-		{"backups/checkpoints", restorepoint.DefaultCheckpointBudget, "256 MiB"},
-		{"backups/configs", 32 << 20, "32 MiB"},
 	}
 
 	problems := make([]string, 0)

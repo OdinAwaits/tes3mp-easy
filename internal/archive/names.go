@@ -22,7 +22,7 @@ const (
 )
 
 // ArchiveKind is one of the archive naming schemes from
-// docs/v2/03-contracts.md §6.6.
+// docs/v2/03-contracts.md §6.7.
 type ArchiveKind uint8
 
 const (
@@ -193,7 +193,7 @@ func ValidateArchiveName(name string) error {
 }
 
 // ValidateModsArchiveName checks the mods archive naming rules from
-// docs/v2/03-contracts.md §6.6. Collision suffixes such as "-01" are accepted.
+// docs/v2/03-contracts.md §6.7. Collision suffixes such as "-01" are accepted.
 func ValidateModsArchiveName(name string) error {
 	parsed, err := ParseArchiveName(name)
 	if err != nil {
@@ -207,7 +207,7 @@ func ValidateModsArchiveName(name string) error {
 }
 
 // ValidateStateArchiveName checks the state archive naming rules from
-// docs/v2/03-contracts.md §6.6. Collision suffixes such as "-01" are accepted.
+// docs/v2/03-contracts.md §6.7. Collision suffixes such as "-01" are accepted.
 func ValidateStateArchiveName(name string) error {
 	parsed, err := ParseArchiveName(name)
 	if err != nil {

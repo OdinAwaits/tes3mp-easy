@@ -65,7 +65,7 @@ func TestSystemdAssetsContainRequiredSettings(t *testing.T) {
 				"Type=oneshot",
 				"User=tes3mp",
 				"ConditionPathExists=/opt/tes3mp-easy/bin/tes3mp-easy-ops",
-				"ExecStart=/opt/tes3mp-easy/bin/tes3mp-easy-ops --root /tes3mp-easy --json checkpoint create --if-running",
+				"ExecStart=/opt/tes3mp-easy/bin/tes3mp-easy-ops --root /tes3mp-easy --json backups create --type state --if-running",
 				"TimeoutStartSec=9min",
 				"Environment=GOMAXPROCS=1",
 				"Environment=GOMEMLIMIT=64MiB",

@@ -28,6 +28,7 @@ func backupCreateRoot(t *testing.T) (string, fixtures.ModsManifest) {
 	for _, dir := range []string{
 		"players",
 		"world",
+		"configs",
 		"mods/plugins",
 		"backups/mods",
 		"backups/state",
@@ -41,6 +42,10 @@ func backupCreateRoot(t *testing.T) (string, fixtures.ModsManifest) {
 		if err := os.MkdirAll(filepath.Join(root, "world", name), 0o750); err != nil {
 			t.Fatalf("create world/%s: %v", name, err)
 		}
+	}
+	fixtures.WriteConfigs(t, filepath.Join(root, "configs"))
+	if err := os.Chmod(filepath.Join(root, "configs"), 0o700); err != nil {
+		t.Fatalf("chmod configs: %v", err)
 	}
 
 	mods := fixtures.DefaultModsInit()
@@ -185,6 +190,28 @@ func TestRunBackupsCreateManualAndRetention(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(stateDir, name)); !os.IsNotExist(err) {
 			t.Fatalf("old archive %s still exists: %v", name, err)
 		}
+	}
+}
+
+func TestRunBackupsPruneJSON(t *testing.T) {
+	root, _ := backupCreateRoot(t)
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--root", root, "--json", "backups", "prune"},
+		&stdout, &stderr)
+	if code != int(ops.ExitOK) {
+		t.Fatalf("exit = %d, want 0; stdout=%q stderr=%q",
+			code, stdout.String(), stderr.String())
+	}
+	var envelope struct {
+		OK   bool             `json:"ok"`
+		Data backupsPruneData `json:"data"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode: %v; stdout=%q", err, stdout.String())
+	}
+	if !envelope.OK || envelope.Data.Removed == nil ||
+		len(envelope.Data.Removed) != 0 {
+		t.Fatalf("prune = %+v", envelope.Data)
 	}
 }
 
@@ -378,6 +405,26 @@ func TestRunBackupsCreateMissingCurrentArchive(t *testing.T) {
 		t.Fatalf("exit = %d, want 7; stdout=%q", code, stdout)
 	}
 	assertJSONError(t, stdout, ops.ExitArchiveInvalid, manifest.Name)
+}
+
+func TestRunBackupsCreateMissingConfig(t *testing.T) {
+	root, _ := backupCreateRoot(t)
+	config := filepath.Join(root, "configs", "config.lua")
+	if err := os.Remove(config); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stdout, _ := runCreateCommand(t, root, nil, "--type", "state")
+	if code != int(ops.ExitArchiveInvalid) {
+		t.Fatalf("exit = %d, want 7; stdout=%q", code, stdout)
+	}
+	assertJSONError(t, stdout, ops.ExitArchiveInvalid, "config.lua")
+	entries, err := os.ReadDir(filepath.Join(root, "backups", "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("state directory contains %d entries, want none", len(entries))
+	}
 }
 
 func TestRunBackupsCreateWriteFailureCleansPart(t *testing.T) {

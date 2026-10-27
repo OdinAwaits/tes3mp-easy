@@ -29,16 +29,26 @@ func newStateWriteFixture(t *testing.T) stateWriteFixture {
 	root := t.TempDir()
 	players := filepath.Join(root, "players")
 	world := filepath.Join(root, "world")
+	configs := filepath.Join(root, "configs")
 	required := filepath.Join(root, "requiredDataFiles.json")
 	currentFile := filepath.Join(root, "current.txt")
 
-	for _, dir := range []string{players, world} {
+	for _, dir := range []string{players, world, configs} {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, name := range stateWorldDirs {
 		if err := os.MkdirAll(filepath.Join(world, name), 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range stateConfigFiles {
+		path := filepath.Join(configs, name)
+		if err := os.WriteFile(path, []byte(name+"\n"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, writeStateTime, writeStateTime); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -55,6 +65,7 @@ func newStateWriteFixture(t *testing.T) stateWriteFixture {
 		source: StateSource{
 			PlayersDir:        players,
 			WorldDir:          world,
+			ConfigsDir:        configs,
 			RequiredDataFiles: required,
 			CurrentFile:       currentFile,
 		},
@@ -122,12 +133,19 @@ func TestWriteStateDeterministicLayout(t *testing.T) {
 	if info.Current != fixture.current {
 		t.Fatalf("current = %+v, want %+v", info.Current, fixture.current)
 	}
-	if info.Players != 2 || info.WorldFiles != len(stateWorldDirs) {
-		t.Fatalf("info = %+v, want 2 players and %d world files",
-			info, len(stateWorldDirs))
+	if info.Players != 2 || info.WorldFiles != len(stateWorldDirs) ||
+		info.ConfigFiles != len(stateConfigFiles) {
+		t.Fatalf("info = %+v, want 2 players, %d world files and %d configs",
+			info, len(stateWorldDirs), len(stateConfigFiles))
 	}
 
 	wantNames := []string{
+		currentFileName,
+		"configs/",
+		"configs/config.lua",
+		"configs/tes3mp-server-default.cfg",
+		"configs/banlist.json",
+		requiredDataFilesName,
 		"players/",
 		"players/a.json",
 		"players/b.json",
@@ -142,8 +160,6 @@ func TestWriteStateDeterministicLayout(t *testing.T) {
 		"world/recordstore/recordstore.json",
 		"world/custom/",
 		"world/custom/custom.json",
-		requiredDataFilesName,
-		currentFileName,
 	}
 	headers := stateArchiveHeaders(t, data)
 	gotNames := make([]string, 0, len(headers))

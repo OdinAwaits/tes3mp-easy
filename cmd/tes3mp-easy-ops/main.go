@@ -45,15 +45,7 @@ Commands:
   logs --tail <n>
   backups list --type mods|state [--limit <n>] [--before <name>] [--sha256]
   backups create --type state [--manual] [--if-running]
-  snapshot create [--label <text>] [--reason manual|mods|base]
-  snapshot list [--limit <n>] [--before <name>]
-  snapshot restore (--latest|--archive <name>) [--no-restart]
-  snapshot rm <name>... [--force] [--dry-run]
-  checkpoint create [--label <text>] [--reason timer|manual|predeploy] [--if-running]
-  checkpoint list [--limit <n>] [--before <name>]
-  checkpoint pin|unpin <name>
-  checkpoint restore (--latest|--archive <name>) [--accept-mod-mismatch] [--no-restart]
-  checkpoint rm <name>... [--force] [--dry-run]
+  backups prune [--dry-run]
   mods import --file <path>
   mods deploy (--current|--latest|--archive <name>) [--no-restart]
   state deploy (--latest|--archive <name>) [--no-restart]
@@ -68,19 +60,17 @@ See docs/v2/04-ops.md for the target command set.
 
 // knownCommands distinguishes a known but unfinished command from a typo.
 var knownCommands = map[string]struct{}{
-	"doctor":     {},
-	"status":     {},
-	"start":      {},
-	"stop":       {},
-	"restart":    {},
-	"logs":       {},
-	"backups":    {},
-	"snapshot":   {},
-	"checkpoint": {},
-	"mods":       {},
-	"state":      {},
-	"staff":      {},
-	"config":     {},
+	"doctor":  {},
+	"status":  {},
+	"start":   {},
+	"stop":    {},
+	"restart": {},
+	"logs":    {},
+	"backups": {},
+	"mods":    {},
+	"state":   {},
+	"staff":   {},
+	"config":  {},
 }
 
 type options struct {
@@ -142,10 +132,6 @@ func runWithClient(args []string, stdout, stderr io.Writer, client *systemd.Clie
 		return runLogs(opts, rest[1:], client, stdout, stderr)
 	case "backups":
 		return runBackups(opts, rest[1:], client, stdout, stderr)
-	case "snapshot":
-		return runSnapshot(opts, rest[1:], client, stdout, stderr)
-	case "checkpoint":
-		return runCheckpoint(opts, rest[1:], client, stdout, stderr)
 	case "mods":
 		return runMods(opts, rest[1:], client, stdout, stderr)
 	case "state":

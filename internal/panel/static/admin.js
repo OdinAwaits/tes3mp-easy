@@ -4,7 +4,6 @@
   var status = document.getElementById("server-status");
   var health = document.getElementById("server-health");
   var timer = document.getElementById("backup-timer");
-  var guard = document.getElementById("guard-timer");
   var started = document.getElementById("server-started");
 
   var setBadge = function (node, value, fallback) {
@@ -31,7 +30,6 @@
         setBadge(status, data.status, "unknown");
         setBadge(health, data.health, "unknown");
         setBadge(timer, data.backup_timer, "unknown");
-        setBadge(guard, data.guard_timer, "unknown");
         if (started && data.started_at) {
           started.textContent = data.started_at;
           started.setAttribute("datetime", data.started_at);

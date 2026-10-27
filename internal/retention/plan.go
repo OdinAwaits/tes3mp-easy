@@ -58,6 +58,11 @@ func Build(cfg Config) (Plan, error) {
 		}
 	}
 
+	referencedMods, protectReferencedAll, referenceWarnings :=
+		stateModsReferences(cfg, state.files, modsByName)
+	plan.Warnings = append(plan.Warnings, referenceWarnings...)
+	protectAllMods = protectAllMods || protectReferencedAll
+
 	prune := make(map[string]bool)
 	automatic := classifyAutomatic(state.files, cfg.Now)
 	for name := range automatic.prune {
@@ -82,6 +87,9 @@ func Build(cfg Config) (Plan, error) {
 		newestState = state.files[0].Name
 	}
 	protected := map[string]bool{newestState: true, currentName: true}
+	for name := range referencedMods {
+		protected[name] = true
+	}
 	for _, name := range cfg.ProtectedState {
 		protected[name] = true
 	}
@@ -242,6 +250,39 @@ func currentArchive(cfg Config) (string, bool, []string) {
 	default:
 		return current.Name, false, nil
 	}
+}
+
+// stateModsReferences protects every mods package referenced by a live state
+// archive. It runs only for full retention (StateDir and ModsDir both set), so
+// the 15-minute state-only path never opens state archives. Unreadable state
+// metadata protects all mods: the safe direction is to keep too much.
+func stateModsReferences(cfg Config, states []File,
+	modsByName map[string]File,
+) (map[string]bool, bool, []string) {
+	refs := make(map[string]bool)
+	if cfg.StateDir == "" || cfg.ModsDir == "" || len(states) == 0 {
+		return refs, false, nil
+	}
+
+	var warnings []string
+	protectAll := false
+	for _, file := range states {
+		current, err := archive.ReadStateCurrent(file.Path)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf(
+				"%s: cannot read current.txt: %v", file.Name, err))
+			protectAll = true
+			continue
+		}
+		if _, ok := modsByName[current.Name]; !ok {
+			warnings = append(warnings, fmt.Sprintf(
+				"%s references missing mods archive %s",
+				file.Name, current.Name))
+			continue
+		}
+		refs[current.Name] = true
+	}
+	return refs, protectAll, warnings
 }
 
 func classifyAutomatic(files []File, now time.Time) automaticBuckets {

@@ -101,6 +101,7 @@ func stateResourceRoot(t *testing.T, stateSize int64) string {
 	for _, dir := range []string{
 		"players",
 		"world",
+		"configs",
 		"mods/plugins",
 		"backups/mods",
 		"backups/state",
@@ -110,6 +111,7 @@ func stateResourceRoot(t *testing.T, stateSize int64) string {
 			t.Fatalf("create %s: %v", dir, err)
 		}
 	}
+	fixtures.WriteConfigs(t, filepath.Join(root, "configs"))
 	worldDirs := []string{"cell", "world", "map", "recordstore", "custom"}
 	for _, name := range worldDirs {
 		if err := os.MkdirAll(filepath.Join(root, "world", name), 0o750); err != nil {

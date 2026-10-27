@@ -201,18 +201,21 @@ func TestCheckArchives(t *testing.T) {
 
 	t.Run("empty", func(t *testing.T) {
 		root := writeDeepRoot(t)
-		dir := filepath.Join(root, "backups", "state")
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, entry := range entries {
-			if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
+		for _, typ := range []string{"state", "mods"} {
+			dir := filepath.Join(root, "backups", typ)
+			entries, err := os.ReadDir(dir)
+			if err != nil {
 				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
 		check := checkArchives(root)
-		if check.Status != StatusWarn || !strings.Contains(check.Message, "no restore point") {
+		if check.Status != StatusWarn ||
+			!strings.Contains(check.Message, "no state or mods archives") {
 			t.Fatalf("check = %#v, want empty warning", check)
 		}
 	})

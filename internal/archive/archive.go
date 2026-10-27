@@ -19,7 +19,7 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/pathguard"
 )
 
-// Archive limits from docs/v2/03-contracts.md §6.5.
+// Archive limits from docs/v2/03-contracts.md §6.6.
 const (
 	MaxCompressedSize   int64 = 512 << 20
 	MaxUncompressedSize int64 = 1 << 30

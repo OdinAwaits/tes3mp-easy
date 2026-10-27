@@ -49,6 +49,11 @@ func stateDeployRoot(t *testing.T) (string, fixtures.ModsManifest,
 	root, manifest := backupCreateRoot(t)
 	state := fixtures.FullState(manifest)
 	state.Name = "state-manual-2026-10-22_13-00-00.tar.gz"
+	state.Configs = []fixtures.StateFile{
+		{Name: "config.lua", Body: "config = {}\n"},
+		{Name: "tes3mp-server-default.cfg", Body: "[General]\n"},
+		{Name: "banlist.json", Body: "{\"playerNames\":[],\"ipAddresses\":[]}\n"},
+	}
 	state.Players = []fixtures.StateFile{{
 		Name: "player.json", Body: "{\"restored\":true}\n",
 	}}
@@ -152,6 +157,39 @@ func TestParseStateDeployArgs(t *testing.T) {
 				t.Fatalf("args = %+v", got)
 			}
 		})
+	}
+}
+
+func TestRunStateDeployRestoresConfigs(t *testing.T) {
+	fixStateDeployHooks(t)
+	root, _, _, stateName := stateDeployRoot(t)
+	if err := os.WriteFile(filepath.Join(root, "configs", "config.lua"),
+		[]byte("live = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "configs", "customScripts.lua"),
+		[]byte("require('custom.live')\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, stdout, stderr := runStateDeployCommand(t, root,
+		systemd.New(activeRunner(t)), "--archive", stateName)
+	if code != int(ops.ExitOK) {
+		t.Fatalf("exit = %d, want 0; stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	got, err := os.ReadFile(filepath.Join(root, "configs", "config.lua"))
+	if err != nil || string(got) != "config = {}\n" {
+		t.Fatalf("config.lua = %q, %v; want state config", got, err)
+	}
+	if info, err := os.Stat(filepath.Join(root, "configs", "config.lua")); err != nil ||
+		info.Mode().Perm() != 0o600 {
+		t.Fatalf("config.lua mode = %v, %v; want 0600", info, err)
+	}
+	custom, err := os.ReadFile(filepath.Join(root, "configs", "customScripts.lua"))
+	if err != nil || string(custom) != "require('custom.live')\n" {
+		t.Fatalf("customScripts.lua = %q, %v; want live file preserved",
+			custom, err)
 	}
 }
 

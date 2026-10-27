@@ -59,6 +59,11 @@ func ExtractState(r *Reader, dest string) error {
 			if err := validateStateDir(entry.Name, seen); err != nil {
 				return err
 			}
+			if entry.Name == "configs" {
+				if err := ensureExtractDir(filepath.Join(dest, "configs")); err != nil {
+					return err
+				}
+			}
 			continue
 		case TypeFile:
 			// Continue below.
@@ -148,6 +153,25 @@ func ExtractState(r *Reader, dest string) error {
 			seen["world"] = true
 			seen["world/"+sub] = true
 
+		case "configs":
+			if rest == "" || strings.Contains(rest, "/") {
+				return archiveInvalidf(
+					"%q: expected configs/<file>", entry.Name)
+			}
+			if _, ok := stateConfigFileSet[rest]; !ok {
+				return archiveInvalidf(
+					"%q: unexpected config file", entry.Name)
+			}
+			if err := ensureExtractDir(filepath.Join(dest, "configs")); err != nil {
+				return err
+			}
+			if err := writeExtractedFileMode(
+				filepath.Join(dest, "configs", rest), r, buf, 0o600); err != nil {
+				return err
+			}
+			seen["configs"] = true
+			seen[entry.Name] = true
+
 		default:
 			return archiveInvalidf(
 				"%q: unexpected top-level file", entry.Name)
@@ -159,6 +183,9 @@ func ExtractState(r *Reader, dest string) error {
 			return archiveInvalidf(
 				"state archive is missing %s/", name)
 		}
+	}
+	if err := validateStateConfigs(seen); err != nil {
+		return err
 	}
 	if !hasJSON {
 		return archiveInvalidf(

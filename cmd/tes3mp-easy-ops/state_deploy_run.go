@@ -54,6 +54,10 @@ func deployStateLocked(req stateDeployRequest,
 		predeploy: predeploy.archive,
 		warnings:  append([]string{}, predeploy.warnings...),
 	}
+	if !selection.hasConfigs {
+		result.warnings = append(result.warnings,
+			"state archive has no configs/; configuration left unchanged")
+	}
 	if req.dryRun {
 		return result, nil
 	}
@@ -62,6 +66,7 @@ func deployStateLocked(req stateDeployRequest,
 	if err != nil {
 		return stateDeployResult{}, stateDeployError("prepare transaction", err)
 	}
+	tx.hasConfigs = selection.hasConfigs
 
 	wasActive, err := deployIsActive(client, req.timeout)
 	if err != nil {

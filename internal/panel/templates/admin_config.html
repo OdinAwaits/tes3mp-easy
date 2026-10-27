@@ -58,19 +58,10 @@
             </div>
           </form>
 
-          {{if .ReadOnly}}
-            <h3>Только для чтения</h3>
-            <ul class="tag-list">
-              {{range .ReadOnly}}<li><code>{{.}}</code></li>{{end}}
-            </ul>
-          {{end}}
+
         </section>
       {{end}}
 
-      <section class="card">
-        <h2>customScripts.lua</h2>
-        <p class="muted">Файл генерируется ops из <code>mods/scripts/</code> и доступен только для чтения.</p>
-      </section>
     </div>
   </main>
 </body>

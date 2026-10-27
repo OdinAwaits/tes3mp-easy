@@ -28,6 +28,8 @@ type StateArchive struct {
 	Players []StateFile
 	// World maps a required world subdirectory to files below it.
 	World map[string][]StateFile
+	// Configs are written below configs/ when non-empty.
+	Configs []StateFile
 	// OmitPlayersDir omits players/, producing an invalid archive.
 	OmitPlayersDir bool
 	// OmitWorldDir omits world/, producing an invalid archive.
@@ -76,6 +78,21 @@ func (s StateArchive) ArchiveName() string {
 // Entries returns state entries in deterministic order.
 func (s StateArchive) Entries() []Entry {
 	var entries []Entry
+	if !s.OmitCurrent {
+		entries = append(entries, Entry{
+			Name: StateCurrentName,
+			Body: CurrentLine(s.Mods.SHA256, s.Mods.Name),
+		})
+	}
+	if len(s.Configs) > 0 {
+		entries = append(entries, Entry{Name: "configs/", Type: tar.TypeDir})
+		for _, file := range s.Configs {
+			entries = append(entries, Entry{
+				Name: "configs/" + file.Name,
+				Body: file.Body,
+			})
+		}
+	}
 	if !s.OmitPlayersDir {
 		entries = append(entries, Entry{Name: "players/", Type: tar.TypeDir})
 	}
@@ -105,12 +122,6 @@ func (s StateArchive) Entries() []Entry {
 		entries = append(entries, Entry{
 			Name: StateMetadataName,
 			Body: string(requiredJSONFrom(s.Mods.Required)),
-		})
-	}
-	if !s.OmitCurrent {
-		entries = append(entries, Entry{
-			Name: StateCurrentName,
-			Body: CurrentLine(s.Mods.SHA256, s.Mods.Name),
 		})
 	}
 

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ru">
+<head>
+{{template "head"}}
+  <title>Состояния — tes3mp-easy</title>
+</head>
+<body>
+  {{template "adminNav" .}}
+
+  <main class="page">
+    <div class="page-head">
+      <p class="eyebrow">Резервные копии</p>
+      <h1>Состояния</h1>
+      <p class="lead">Состояние хранит игроков, мир и три конфига. Моды — отдельные неизменяемые архивы, на которые ссылается состояние.</p>
+    </div>
+
+    {{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
+    {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
+    {{if .RestartRequired}}<p class="notice">Нужен перезапуск сервера, чтобы применить изменения.</p>{{end}}
+
+    {{if .MissingMods}}
+      <p class="notice" role="status">Текущий архив модов не найден. Восстановление недоступно, пока моды не задеплоены.</p>
+    {{else}}
+      <p class="muted">Текущие моды: <code>{{.CurrentMods}}</code></p>
+    {{end}}
+
+    <div class="toolbar">
+      <div class="actions">
+        <form method="post" action="/admin/state/create">
+          <input type="hidden" name="_csrf" value="{{.CSRF}}">
+          <button class="button button--primary" type="submit">Создать состояние</button>
+        </form>
+        <a class="button button--secondary" href="{{.ModsURL}}">Управление модами</a>
+      </div>
+      <form class="field" method="get" action="/admin/state">
+        <label for="limit">Записей на страницу</label>
+        <input id="limit" type="number" name="limit" min="1" max="500" value="{{.Limit}}">
+        <button class="button button--secondary button--small" type="submit">Показать</button>
+      </form>
+    </div>
+
+    {{if .Empty}}<p class="empty-state">Состояний пока нет.</p>{{end}}
+
+    <div class="stack">
+      {{range .Groups}}
+        <section class="card">
+          <h2>{{.Label}}</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Архив</th>
+                  <th>Моды</th>
+                  <th>Размер</th>
+                  <th>Дата (UTC)</th>
+                  <th>Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Items}}
+                  <tr>
+                    <td>
+                      <code>{{.Name}}</code>
+                      {{if .Current}} <span class="badge" data-status="ok">текущий</span>{{end}}
+                      {{if not .ModsAvailable}} <span class="badge" data-status="warn">Моды отсутствуют</span>{{end}}
+                    </td>
+                    <td>
+                      {{if .ModsArchive}}
+                        <code>{{.ModsArchive}}</code>
+                        {{if .ModsCurrent}}<div class="muted">активны</div>{{else}}<div class="muted">не активны</div>{{end}}
+                      {{else}}
+                        <span class="muted">ссылка не читается</span>
+                      {{end}}
+                    </td>
+                    <td>{{.SizeLabel}}</td>
+                    <td><time datetime="{{.Mtime}}">{{.MtimeLabel}}</time></td>
+                    <td>
+                      <div class="row-actions">
+                        <a class="button button--secondary button--small" href="{{.DownloadURL}}">Скачать состояние</a>
+                        {{if .ModsArchive}}
+                          <a class="button button--secondary button--small" href="{{.ModsDownloadURL}}">Скачать моды</a>
+                        {{end}}
+                        {{if and .ModsAvailable (not .ModsCurrent)}}
+                          <form method="post" action="/admin/mods/deploy">
+                            <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+                            <input type="hidden" name="archive" value="{{.ModsArchive}}">
+                            <button class="button button--secondary button--small" type="submit">Задеплоить моды</button>
+                          </form>
+                        {{end}}
+                        <form method="post" action="/admin/state/deploy">
+                          <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+                          <input type="hidden" name="archive" value="{{.Name}}">
+                          <button class="button button--danger button--small" type="submit"{{if not .CanRestore}} disabled title="Сначала задеплойте указанный архив модов"{{end}}>Восстановить</button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {{end}}
+    </div>
+
+    <p role="alert">Восстановление заменит players/, world/ и три конфига. Моды не подменяются автоматически: состояние восстанавливается только на том архиве модов, который в нём записан. Перед восстановлением ops создаст state-predeploy-*.</p>
+
+    {{if .NextURL}}<p class="pagination"><a class="button button--secondary" href="{{.NextURL}}">Показать более старые</a></p>{{end}}
+  </main>
+</body>
+</html>

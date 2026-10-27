@@ -58,10 +58,8 @@
       <section class="card">
         <h2>Таймеры и проверки</h2>
         <dl class="meta-list">
-          <dt>Чекпоинты</dt>
+          <dt>State backup</dt>
           <dd><span class="badge" id="backup-timer" data-status="{{.Timer}}">{{.Timer}}</span></dd>
-          <dt>Guard</dt>
-          <dd><span class="badge" id="guard-timer" data-status="{{.GuardTimer}}">{{.GuardTimer}}</span></dd>
           <dt>doctor</dt>
           <dd>
             {{if .Doctor}}
@@ -70,7 +68,6 @@
           </dd>
         </dl>
         {{if .TimerError}}<p role="alert">{{.TimerError}}</p>{{end}}
-        {{if .GuardError}}<p role="alert">{{.GuardError}}</p>{{end}}
         {{if .DoctorError}}<p role="alert">{{.DoctorError}}</p>{{end}}
         {{if .Doctor}}
           <ul class="check-list">
@@ -81,7 +78,7 @@
           </ul>
         {{end}}
         <div class="actions">
-          <a class="button button--secondary" href="/admin/restore-points">Точки отката</a>
+          <a class="button button--secondary" href="/admin/state">Состояния</a>
         </div>
       </section>
     </div>
@@ -183,16 +180,12 @@
       <section class="card">
         <h2>Быстрые действия</h2>
         <div class="actions">
-          <form method="post" action="/admin/restore-points/checkpoint/create">
+          <form method="post" action="/admin/state/create">
             <input type="hidden" name="_csrf" value="{{.CSRF}}">
-            <button class="button button--primary" type="submit">Создать чекпоинт</button>
-          </form>
-          <form method="post" action="/admin/restore-points/snapshot/create">
-            <input type="hidden" name="_csrf" value="{{.CSRF}}">
-            <button class="button button--secondary" type="submit">Создать снапшот</button>
+            <button class="button button--primary" type="submit">Создать состояние</button>
           </form>
           <a class="button button--ghost" href="/admin/mods">Загрузить моды</a>
-          <a class="button button--ghost" href="/admin/restore-points">Восстановить</a>
+          <a class="button button--ghost" href="/admin/state">Восстановить</a>
         </div>
         <p class="muted">Мутации блокируются, пока <code>doctor</code> в статусе <code>error</code>. Метрики на это не влияют.</p>
       </section>

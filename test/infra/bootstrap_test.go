@@ -162,7 +162,7 @@ func (h *fakeHost) writeRuntimeFixture() {
 		file("tes3mp-server.x86_64", "#!/bin/sh\nexit 0\n", 0o755),
 		file("tes3mp-prelaunch", "#!/bin/sh\nexit 0\n", 0o755),
 		file("openmw.cfg", "resources = ./resources\n", 0o644),
-		file("tes3mp-server-default.cfg", "[General]\nhome = ./server\n", 0o644),
+		file("tes3mp-server-default.cfg", "[General]\nhome = ./server\n\n[MasterServer]\nenabled = true\n", 0o644),
 		dir("server"),
 		dir("server/scripts"),
 		file("server/scripts/config.lua", "config = {}\n", 0o644),
@@ -839,6 +839,14 @@ func TestBootstrapPreflightPassesAndInstalls(t *testing.T) {
 		"configs/banlist.json",
 	} {
 		assertPathMode(t, filepath.Join(h.dataRoot, file), 0o600, false)
+	}
+	serverCfg, err := os.ReadFile(
+		filepath.Join(h.dataRoot, "configs/tes3mp-server-default.cfg"))
+	if err != nil {
+		t.Fatalf("read server config: %v", err)
+	}
+	if !strings.Contains(string(serverCfg), "[MasterServer]\nenabled = false") {
+		t.Fatalf("fresh install did not disable MasterServer:\n%s", serverCfg)
 	}
 	assertPathMode(t, filepath.Join(h.dataRoot, "mods/plugins/requiredDataFiles.json"), 0o640, false)
 	markerPath := filepath.Join(h.installRoot, "opt/tes3mp-easy/tes3mp/.tes3mp-install-info")

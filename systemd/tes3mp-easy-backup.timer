@@ -1,5 +1,5 @@
 [Unit]
-Description=Run the TES3MP Easy world checkpoint every 15 minutes
+Description=Run the TES3MP Easy world state backup every 15 minutes
 Documentation=https://github.com/Saagilat/tes3mp-easy
 
 [Timer]

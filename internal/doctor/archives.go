@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/Saagilat/tes3mp-easy/internal/archive"
-	"github.com/Saagilat/tes3mp-easy/internal/restorepoint"
 )
 
 type stateArchive struct {
@@ -21,80 +20,69 @@ type stateArchive struct {
 }
 
 func checkArchives(root string) Check {
-	legacy, legacyChecked, problems := checkLegacyArchives(root)
-	if len(problems) > 0 {
-		return errorCheck("archives", "%s", joinProblems(problems))
-	}
-
-	snapshots, err := restorepoint.ListSnapshots(root)
-	if err != nil {
-		return errorCheck("archives", "%v", err)
-	}
-	checkpoints, err := restorepoint.ListCheckpoints(root)
-	if err != nil {
-		return errorCheck("archives", "%v", err)
-	}
-	if len(snapshots) > 0 {
-		path := filepath.Join(restorepoint.Dir(root, restorepoint.KindSnapshot),
-			snapshots[0].Name)
-		if err := verifyRestorePoint(path); err != nil {
-			problems = append(problems, err.Error())
-		}
-	}
-	if len(checkpoints) > 0 {
-		path := filepath.Join(restorepoint.Dir(root, restorepoint.KindCheckpoint),
-			checkpoints[0].Name)
-		if err := verifyRestorePoint(path); err != nil {
-			problems = append(problems, err.Error())
-		}
-	}
+	states, stateChecked, problems := checkStateArchives(root)
+	mods, modsChecked, modsProblems := checkModsArchives(root)
+	problems = append(problems, modsProblems...)
 	if len(problems) > 0 {
 		return errorCheck("archives", "%s", joinProblems(problems))
 	}
 
 	warnings := make([]string, 0)
-	missing := make([]string, 0)
-	for _, checkpoint := range checkpoints {
-		if checkpoint.Base.Available {
-			continue
-		}
-		missing = append(missing, checkpoint.Name)
-	}
+	missing := missingStateMods(root, states)
 	if len(missing) > 0 {
 		warnings = append(warnings, fmt.Sprintf(
-			"%d checkpoints have a missing base: %s",
+			"%d state archives reference missing mods packages: %s",
 			len(missing), summarizeNames(missing)))
 	}
-
-	if len(snapshots) == 0 && len(checkpoints) == 0 && legacy == 0 {
-		return warnCheck("archives", "no restore point archives yet")
+	if len(states) == 0 && len(mods) == 0 {
+		return warnCheck("archives", "no state or mods archives yet")
 	}
 	if len(warnings) > 0 {
 		return warnCheck("archives", "%s", strings.Join(warnings, "; "))
 	}
-	parts := make([]string, 0, 2)
-	if len(snapshots) > 0 || len(checkpoints) > 0 {
-		parts = append(parts, fmt.Sprintf("%d snapshots and %d checkpoints",
-			len(snapshots), len(checkpoints)))
+
+	var parts []string
+	if len(states) > 0 {
+		parts = append(parts, fmt.Sprintf("validated %d of %d state archives",
+			stateChecked, len(states)))
 	}
-	if legacy > 0 {
-		parts = append(parts, fmt.Sprintf("validated %d of %d legacy state archives",
-			legacyChecked, legacy))
+	if len(mods) > 0 {
+		parts = append(parts, fmt.Sprintf("validated %d of %d mods archives",
+			modsChecked, len(mods)))
 	}
-	return okCheck("archives", "validated %s", strings.Join(parts, "; "))
+	return okCheck("archives", "%s", strings.Join(parts, "; "))
 }
 
-func checkLegacyArchives(root string) (count, checked int, problems []string) {
+func missingStateMods(root string, states []stateArchive) []string {
+	modsDir := filepath.Join(root, "backups", "mods")
+	var missing []string
+	for _, item := range states {
+		current, err := archive.ReadStateCurrent(item.path)
+		if err != nil {
+			missing = append(missing, item.name)
+			continue
+		}
+		info, err := os.Lstat(filepath.Join(modsDir, current.Name))
+		if err != nil || !info.Mode().IsRegular() {
+			missing = append(missing, item.name+" -> "+current.Name)
+		}
+	}
+	return missing
+}
+
+func checkStateArchives(root string) (archives []stateArchive, checked int,
+	problems []string,
+) {
 	dir := filepath.Join(root, "backups", "state")
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
-		return 0, 0, nil
+		return nil, 0, nil
 	}
 	if err != nil {
-		return 0, 0, []string{fmt.Sprintf("cannot read %s: %v", dir, err)}
+		return nil, 0, []string{fmt.Sprintf("cannot read %s: %v", dir, err)}
 	}
 
-	archives := make([]stateArchive, 0, len(entries))
+	archives = make([]stateArchive, 0, len(entries))
 	for _, entry := range entries {
 		parsed, err := archive.ParseArchiveName(entry.Name())
 		if err != nil || !parsed.Kind.IsState() {
@@ -112,7 +100,7 @@ func checkLegacyArchives(root string) (count, checked int, problems []string) {
 		})
 	}
 	if len(archives) == 0 {
-		return 0, 0, nil
+		return nil, 0, nil
 	}
 	sort.Slice(archives, func(i, j int) bool {
 		if archives[i].timestamp != archives[j].timestamp {
@@ -141,19 +129,69 @@ func checkLegacyArchives(root string) (count, checked int, problems []string) {
 			problems = append(problems, fmt.Sprintf("%s: %v", item.name, closeErr))
 		}
 	}
-	return len(archives), len(samples), problems
+	return archives, len(samples), problems
 }
 
-func verifyRestorePoint(path string) error {
-	dir, err := os.MkdirTemp("", "tes3mp-easy-doctor-")
+func checkModsArchives(root string) (archives []stateArchive, checked int,
+	problems []string,
+) {
+	dir := filepath.Join(root, "backups", "mods")
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, 0, nil
+	}
 	if err != nil {
-		return err
+		return nil, 0, []string{fmt.Sprintf("cannot read %s: %v", dir, err)}
 	}
-	defer os.RemoveAll(dir)
-	if _, err := restorepoint.Extract(path, dir); err != nil {
-		return fmt.Errorf("%s: %w", filepath.Base(path), err)
+
+	archives = make([]stateArchive, 0, len(entries))
+	for _, entry := range entries {
+		parsed, err := archive.ParseArchiveName(entry.Name())
+		if err != nil || !parsed.Kind.IsMods() {
+			continue
+		}
+		info, err := os.Lstat(filepath.Join(dir, entry.Name()))
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		archives = append(archives, stateArchive{
+			path:      filepath.Join(dir, entry.Name()),
+			name:      entry.Name(),
+			timestamp: parsed.Time.UTC().Format("2006-01-02T15:04:05Z"),
+			collision: parsed.Collision,
+		})
 	}
-	return nil
+	if len(archives) == 0 {
+		return nil, 0, nil
+	}
+	sort.Slice(archives, func(i, j int) bool {
+		if archives[i].timestamp != archives[j].timestamp {
+			return archives[i].timestamp > archives[j].timestamp
+		}
+		if archives[i].collision != archives[j].collision {
+			return archives[i].collision > archives[j].collision
+		}
+		return archives[i].name > archives[j].name
+	})
+
+	samples := archiveSamples(len(archives))
+	for _, index := range samples {
+		item := archives[index]
+		reader, err := archive.Open(item.path)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %v", item.name, err))
+			continue
+		}
+		_, validateErr := archive.ValidateMods(reader)
+		closeErr := reader.Close()
+		switch {
+		case validateErr != nil:
+			problems = append(problems, fmt.Sprintf("%s: %v", item.name, validateErr))
+		case closeErr != nil:
+			problems = append(problems, fmt.Sprintf("%s: %v", item.name, closeErr))
+		}
+	}
+	return archives, len(samples), problems
 }
 
 func summarizeNames(names []string) string {

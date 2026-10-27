@@ -87,10 +87,20 @@ func decodeBackups(t *testing.T, env envelope, withSHA256 bool) backupsPayload {
 		wantItemKeys = []string{"current", "mtime", "name", "sha256", "size"}
 	}
 	var itemKeys struct {
+		Type  string                       `json:"type"`
 		Items []map[string]json.RawMessage `json:"items"`
 	}
 	if err := json.Unmarshal(env.Data, &itemKeys); err != nil {
 		t.Fatalf("decode items: %v", err)
+	}
+	allowed := [][]string{wantItemKeys}
+	if itemKeys.Type == "state" {
+		available := append([]string{"mods_available"}, wantItemKeys...)
+		sort.Strings(available)
+		allowed = append(allowed, available)
+		both := append([]string{"mods_available", "mods_archive"}, wantItemKeys...)
+		sort.Strings(both)
+		allowed = append(allowed, both)
 	}
 	for i, item := range itemKeys.Items {
 		keys := make([]string, 0, len(item))
@@ -98,8 +108,15 @@ func decodeBackups(t *testing.T, env envelope, withSHA256 bool) backupsPayload {
 			keys = append(keys, key)
 		}
 		sort.Strings(keys)
-		if !reflect.DeepEqual(keys, wantItemKeys) {
-			t.Fatalf("item %d keys = %v, want %v", i, keys, wantItemKeys)
+		matched := false
+		for _, want := range allowed {
+			if reflect.DeepEqual(keys, want) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Fatalf("item %d keys = %v, want one of %v", i, keys, allowed)
 		}
 	}
 

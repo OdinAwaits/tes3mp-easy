@@ -938,9 +938,48 @@ ensure_config_file() {
     pass "config: $destination seeded from the TES3MP runtime"
 }
 
+# disable_master_server fresh-install config. The runtime TES3MP archive ships
+# [MasterServer] enabled = true; a fresh tes3mp-easy install must not announce
+# the server until the admin explicitly enables it.
+disable_master_server() {
+    local path=$1
+    local temp="$DATA_ROOT/.staging/master-server.$$"
+    local line in_section=0
+
+    if ! {
+        while IFS= read -r line || [[ -n $line ]]; do
+            if [[ $line =~ ^\[(.*)\]$ ]]; then
+                if [[ ${BASH_REMATCH[1]} == MasterServer ]]; then
+                    in_section=1
+                else
+                    in_section=0
+                fi
+            elif ((in_section)) &&
+                [[ $line =~ ^[[:space:]]*enabled[[:space:]]*= ]]; then
+                line="enabled = false"
+            fi
+            printf '%s\n' "$line"
+        done <"$path"
+    } >"$temp"; then
+        rm -f -- "$temp"
+        abort_install "cannot rewrite MasterServer in $path"
+    fi
+    run_install install -m 0600 -o tes3mp -g tes3mp "$temp" "$path"
+    rm -f -- "$temp"
+    pass "config: MasterServer disabled on fresh install"
+}
+
 install_base_configs() {
+    local server_cfg="$DATA_ROOT/configs/tes3mp-server-default.cfg"
+    local server_seeded=0
+    if [[ ! -e $server_cfg ]]; then
+        server_seeded=1
+    fi
     ensure_config_file "$TES3MP_RUNTIME_DIR/tes3mp-server-default.cfg" \
-        "$DATA_ROOT/configs/tes3mp-server-default.cfg"
+        "$server_cfg"
+    if ((server_seeded)); then
+        disable_master_server "$server_cfg"
+    fi
     ensure_config_file "$TES3MP_RUNTIME_DIR/server/scripts/config.lua" \
         "$DATA_ROOT/configs/config.lua"
     ensure_config_file "$TES3MP_RUNTIME_DIR/server/scripts/customScripts.lua" \

@@ -45,11 +45,18 @@ type backupsData struct {
 }
 
 type backupsItem struct {
-	Name    string  `json:"name"`
-	Size    int64   `json:"size"`
-	MTime   string  `json:"mtime"`
-	Current bool    `json:"current"`
-	SHA256  *string `json:"sha256,omitempty"`
+	Name          string  `json:"name"`
+	Size          int64   `json:"size"`
+	MTime         string  `json:"mtime"`
+	Current       bool    `json:"current"`
+	SHA256        *string `json:"sha256,omitempty"`
+	ModsArchive   *string `json:"mods_archive,omitempty"`
+	ModsAvailable *bool   `json:"mods_available,omitempty"`
+}
+
+type backupsPruneData struct {
+	Removed  []string `json:"removed"`
+	Warnings []string `json:"warnings"`
 }
 
 type backupsListOptions struct {
@@ -105,7 +112,7 @@ func runBackups(opts options, args []string, client *systemd.Client,
 	if len(args) == 0 {
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInvalidArgument,
-				"backups: subcommand is required; want list or create"))
+				"backups: subcommand is required; want list, create or prune"))
 	}
 
 	switch args[0] {
@@ -113,11 +120,78 @@ func runBackups(opts options, args []string, client *systemd.Client,
 		return runBackupsList(opts, args[1:], stdout, stderr)
 	case "create":
 		return runBackupsCreate(opts, args[1:], client, stdout, stderr)
+	case "prune":
+		return runBackupsPrune(opts, args[1:], stdout, stderr)
 	default:
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInvalidArgument,
 				fmt.Sprintf("backups: unknown subcommand %q", args[0])))
 	}
+}
+
+func runBackupsPrune(opts options, args []string,
+	stdout, stderr io.Writer,
+) int {
+	if len(args) != 0 {
+		return writeError(stdout, stderr, opts.json,
+			ops.NewError(ops.ExitInvalidArgument,
+				fmt.Sprintf("backups prune: unexpected argument %q", args[0])))
+	}
+
+	mode := lock.Exclusive
+	if opts.dryRun {
+		mode = lock.Shared
+	}
+	held, lockErr := acquireOpsLock(opts.root, "backups prune", mode,
+		opts.lockTimeout, opts.dryRun)
+	if lockErr != nil {
+		return writeError(stdout, stderr, opts.json, lockErr)
+	}
+	if held != nil {
+		defer func() { _ = held.Close() }()
+	}
+
+	cfg := retention.Config{
+		StateDir: filepath.Join(opts.root, "backups", "state"),
+		ModsDir:  filepath.Join(opts.root, "backups", "mods"),
+		Now:      time.Now().UTC(),
+	}
+	data := backupsPruneData{Removed: []string{}, Warnings: []string{}}
+	if opts.dryRun {
+		plan, err := retention.Build(cfg)
+		if err != nil {
+			return writeError(stdout, stderr, opts.json,
+				ops.NewError(ops.ExitInternal,
+					fmt.Sprintf("backups prune: %v", err)))
+		}
+		for _, file := range plan.Prune {
+			data.Removed = append(data.Removed, file.Name)
+		}
+		data.Warnings = append(data.Warnings, plan.Warnings...)
+	} else {
+		result, err := retention.Apply(cfg)
+		if err != nil {
+			return writeError(stdout, stderr, opts.json,
+				ops.NewError(ops.ExitInternal,
+					fmt.Sprintf("backups prune: %v", err)))
+		}
+		data.Removed = append(data.Removed, result.Pruned...)
+		data.Warnings = append(data.Warnings, result.Warnings...)
+	}
+
+	if opts.json {
+		return writeJSONSuccess(stdout, stderr, data)
+	}
+	for _, name := range data.Removed {
+		fmt.Fprintf(stdout, "removed: %s\n", name)
+	}
+	for _, warning := range data.Warnings {
+		fmt.Fprintf(stderr, "tes3mp-easy-ops: backups prune: %s\n", warning)
+	}
+	if len(data.Removed) == 0 {
+		fmt.Fprintln(stdout, "removed: -")
+	}
+	return int(ops.ExitOK)
 }
 
 func runBackupsCreate(opts options, args []string, client *systemd.Client,
@@ -311,6 +385,8 @@ func backupCreateError(operation string, err error) *ops.Error {
 	switch {
 	case errors.Is(err, syscall.ENOSPC):
 		exit = ops.ExitNoSpace
+	case errors.Is(err, fs.ErrNotExist):
+		exit = ops.ExitArchiveInvalid
 	case errors.Is(err, archive.ErrInvalid):
 		exit = ops.ExitArchiveInvalid
 	case errors.Is(err, pathguard.ErrUnsafePath):
@@ -402,6 +478,22 @@ func writeBackupsCreateHuman(w io.Writer, data backupsCreateData) error {
 	return err
 }
 
+func applyFullRetentionLocked(root string, now time.Time,
+	protectedState []string,
+) ([]string, []string) {
+	cfg := retention.Config{
+		StateDir:       filepath.Join(root, "backups", "state"),
+		ModsDir:        filepath.Join(root, "backups", "mods"),
+		ProtectedState: protectedState,
+		Now:            now,
+	}
+	result, err := retention.Apply(cfg)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("retention: %v", err)}
+	}
+	return result.Pruned, result.Warnings
+}
+
 func createStateBackupLocked(opts stateBackupOptions) (stateBackupResult, *ops.Error) {
 	if opts.root == "" {
 		return stateBackupResult{}, ops.NewError(ops.ExitInternal,
@@ -425,10 +517,21 @@ func createStateBackupLocked(opts stateBackupOptions) (stateBackupResult, *ops.E
 		}
 	}
 
+	var pressurePruned []string
+	var pressureWarnings []string
+	if !opts.dryRun {
+		if free, freeErr := backupDiskFree(stateDir); freeErr == nil &&
+			free < backupWarnFree {
+			pressurePruned, pressureWarnings = applyFullRetentionLocked(
+				opts.root, now, opts.protect)
+		}
+	}
+
 	warnings, spaceErr := checkBackupSpace(stateDir)
 	if spaceErr != nil {
 		return stateBackupResult{}, spaceErr
 	}
+	warnings = append(pressureWarnings, warnings...)
 
 	name, err := archive.NextArchiveNameInDir(stateDir, opts.kind, now)
 	if err != nil {
@@ -437,6 +540,7 @@ func createStateBackupLocked(opts stateBackupOptions) (stateBackupResult, *ops.E
 	source := archive.StateSource{
 		PlayersDir: filepath.Join(opts.root, "players"),
 		WorldDir:   filepath.Join(opts.root, "world"),
+		ConfigsDir: filepath.Join(opts.root, "configs"),
 		RequiredDataFiles: filepath.Join(opts.root, "mods", "plugins",
 			"requiredDataFiles.json"),
 		CurrentFile: filepath.Join(modsDir, backupsCurrentFile),
@@ -478,13 +582,15 @@ func createStateBackupLocked(opts stateBackupOptions) (stateBackupResult, *ops.E
 		archive:  name,
 		size:     counter.n,
 		sha256:   hex.EncodeToString(digest.Sum(nil)),
-		pruned:   []string{},
+		pruned:   append([]string{}, pressurePruned...),
 		warnings: append([]string{}, warnings...),
 	}
 
+	// State creation always runs state-only retention. Mods packages are
+	// immutable and can only be pruned by full retention on mods changes,
+	// explicit `backups prune` or disk-pressure handling.
 	cfg := retention.Config{
 		StateDir:       stateDir,
-		ModsDir:        modsDir,
 		ProtectedState: opts.protect,
 		Now:            now,
 	}
@@ -682,12 +788,27 @@ func listBackups(options backupsListOptions) (backupsData, *ops.Error) {
 	}
 
 	items := make([]backupsItem, 0, len(archives))
+	modsDir := filepath.Join(options.root, "backups", "mods")
 	for _, entry := range archives {
 		item := backupsItem{
 			Name:    entry.name,
 			Size:    entry.size,
 			MTime:   entry.mtime.Format(time.RFC3339),
 			Current: current != nil && entry.name == *current,
+		}
+		if options.typ == backupTypeState {
+			stateCurrent, stateErr := archive.ReadStateCurrent(
+				filepath.Join(dir, entry.name))
+			if stateErr == nil {
+				modsName := stateCurrent.Name
+				item.ModsArchive = &modsName
+				available := regularBackupFile(
+					filepath.Join(modsDir, modsName))
+				item.ModsAvailable = &available
+			} else {
+				available := false
+				item.ModsAvailable = &available
+			}
 		}
 		items = append(items, item)
 	}
@@ -752,6 +873,11 @@ func applyBackupsCursor(entries []backupEntry, options backupsListOptions) []bac
 		}
 	}
 	return older
+}
+
+func regularBackupFile(name string) bool {
+	info, err := os.Lstat(name)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func backupSHA256(name string) (string, error) {

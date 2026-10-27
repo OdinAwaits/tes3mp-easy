@@ -286,7 +286,13 @@ func ensureExtractDir(path string) error {
 }
 
 func writeExtractedFile(path string, r io.Reader, buf []byte) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o640)
+	return writeExtractedFileMode(path, r, buf, 0o640)
+}
+
+func writeExtractedFileMode(path string, r io.Reader, buf []byte,
+	mode os.FileMode,
+) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 	if err != nil {
 		return err
 	}

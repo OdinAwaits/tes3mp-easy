@@ -31,6 +31,7 @@ func createContractRoot(t *testing.T) (string, fixtures.ModsManifest) {
 	for _, dir := range []string{
 		"players",
 		"world",
+		"configs",
 		"mods/plugins",
 		"backups/mods",
 		"backups/state",
@@ -45,6 +46,7 @@ func createContractRoot(t *testing.T) (string, fixtures.ModsManifest) {
 			t.Fatalf("create world/%s: %v", name, err)
 		}
 	}
+	fixtures.WriteConfigs(t, filepath.Join(root, "configs"))
 
 	mods := fixtures.DefaultModsInit()
 	manifest := mods.Install(t, filepath.Join(root, "backups", "mods"))

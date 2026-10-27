@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Макет: состояния — tes3mp-easy</title>
+  <link rel="stylesheet" href="../../../internal/panel/static/panel.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#">
+      <span class="brand-mark" aria-hidden="true">◆</span>
+      <span>TES3MP <strong>Easy</strong></span>
+    </a>
+    <nav class="nav" aria-label="Разделы панели">
+      <a href="dashboard.html">Обзор</a>
+      <a href="#">Логи</a>
+      <a href="#">Моды</a>
+      <a href="state.html" aria-current="page">Состояния</a>
+      <a href="config-form.html">Настройки</a>
+      <a href="#">Staff</a>
+      <a href="#">Пароль</a>
+    </nav>
+    <form class="logout"><button class="button button--ghost button--small" type="button">Выйти</button></form>
+  </header>
+
+  <main class="page">
+    <div class="page-head">
+      <p class="eyebrow">Резервные копии</p>
+      <h1>Состояния</h1>
+      <p class="lead">Состояние хранит игроков, мир и три конфига. Моды — отдельные неизменяемые архивы, на которые ссылается состояние.</p>
+    </div>
+
+    <p class="muted">Текущие моды: <code>mods-2026-10-27_15-57-00.tar.gz</code></p>
+
+    <div class="toolbar">
+      <div class="actions">
+        <button class="button button--primary" type="button">Создать состояние</button>
+        <a class="button button--secondary" href="#">Управление модами</a>
+      </div>
+      <div class="field">
+        <label for="limit">Записей на страницу</label>
+        <input id="limit" type="number" min="1" max="500" value="200">
+      </div>
+    </div>
+
+    <div class="stack">
+      <section class="card">
+        <h2>27 октября 2026</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Архив</th>
+                <th>Моды</th>
+                <th>Размер</th>
+                <th>Дата (UTC)</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>state-2026-10-27_16-30-00.tar.gz</code> <span class="badge" data-status="ok">текущий</span></td>
+                <td><code>mods-2026-10-27_15-57-00.tar.gz</code><div class="muted">активны</div></td>
+                <td>148 KB</td>
+                <td><time datetime="2026-10-27T16:30:00Z">2026-10-27 16:30</time></td>
+                <td><div class="row-actions">
+                  <button class="button button--secondary button--small" type="button">Скачать состояние</button>
+                  <button class="button button--secondary button--small" type="button">Скачать моды</button>
+                  <button class="button button--danger button--small" type="button">Восстановить</button>
+                </div></td>
+              </tr>
+              <tr>
+                <td><code>state-2026-10-27_16-15-00.tar.gz</code></td>
+                <td><code>mods-2026-10-27_15-57-00.tar.gz</code><div class="muted">активны</div></td>
+                <td>147 KB</td>
+                <td><time datetime="2026-10-27T16:15:00Z">2026-10-27 16:15</time></td>
+                <td><div class="row-actions">
+                  <button class="button button--secondary button--small" type="button">Скачать состояние</button>
+                  <button class="button button--secondary button--small" type="button">Скачать моды</button>
+                  <button class="button button--danger button--small" type="button">Восстановить</button>
+                </div></td>
+              </tr>
+              <tr>
+                <td><code>state-predeploy-2026-10-27_15-57-00.tar.gz</code></td>
+                <td><code>mods-2026-10-27_15-30-00.tar.gz</code><div class="muted">не активны</div></td>
+                <td>146 KB</td>
+                <td><time datetime="2026-10-27T15:57:00Z">2026-10-27 15:57</time></td>
+                <td><div class="row-actions">
+                  <button class="button button--secondary button--small" type="button">Скачать состояние</button>
+                  <button class="button button--secondary button--small" type="button">Скачать моды</button>
+                  <button class="button button--secondary button--small" type="button">Задеплоить моды</button>
+                  <button class="button button--danger button--small" type="button" disabled title="Сначала задеплойте указанный архив модов">Восстановить</button>
+                </div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>1 сентября 2026</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Архив</th>
+                <th>Моды</th>
+                <th>Размер</th>
+                <th>Дата (UTC)</th>
+                <th>Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>state-2026-09-01_00-00-00.tar.gz</code> <span class="badge" data-status="warn">Моды отсутствуют</span></td>
+                <td><span class="muted">ссылка не читается</span></td>
+                <td>96 KB</td>
+                <td><time datetime="2026-09-01T00:00:00Z">2026-09-01 00:00</time></td>
+                <td><div class="row-actions">
+                  <button class="button button--secondary button--small" type="button">Скачать состояние</button>
+                  <button class="button button--danger button--small" type="button" disabled title="Сначала задеплойте указанный архив модов">Восстановить</button>
+                </div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <p role="alert">Восстановление заменит players/, world/ и три конфига. Моды не подменяются автоматически: состояние восстанавливается только на том архиве модов, который в нём записан. Перед восстановлением ops создаст state-predeploy-*.</p>
+
+    <p class="pagination"><a class="button button--secondary" href="#">Показать более старые</a></p>
+  </main>
+</body>
+</html>
+

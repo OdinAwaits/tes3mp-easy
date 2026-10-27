@@ -10,13 +10,12 @@
   <main class="page">
     <div class="page-head">
       <p class="eyebrow">Публичный архив</p>
-      <h1>Публичные бэкапы</h1>
-      <p class="lead">Скачайте резервные копии состояния мира и архив модов.</p>
+      <h1>Публичные архивы модов</h1>
+      <p class="lead">Скачайте текущий или предыдущий архив модов. Состояния мира доступны только администратору.</p>
     </div>
 
-    <nav class="tabs" aria-label="Тип бэкапа">
-      <a href="{{.StateURL}}"{{if eq .Type "state"}} aria-current="page"{{end}}>Состояние</a>
-      <a href="{{.ModsURL}}"{{if eq .Type "mods"}} aria-current="page"{{end}}>Моды</a>
+    <nav class="tabs" aria-label="Раздел">
+      <a href="{{.ModsURL}}" aria-current="page">Моды</a>
       <a href="/">Главная</a>
     </nav>
 

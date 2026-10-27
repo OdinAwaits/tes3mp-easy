@@ -13,7 +13,12 @@ type StateInfo struct {
 	RequiredDataFiles []RequiredFile
 	Players           int
 	WorldFiles        int
+	ConfigFiles       int
 }
+
+// HasConfigs reports whether the archive includes configs/. Old state archives
+// without configs remain valid and restore only players/ and world/.
+func (info StateInfo) HasConfigs() bool { return info.ConfigFiles > 0 }
 
 // stateWorldDirs is the fixed set of world subdirectories from
 // docs/v2/03-contracts.md §6.2. The slice preserves a deterministic order for
@@ -129,6 +134,9 @@ func ValidateStateWithSize(r *Reader) (StateInfo, int64, error) {
 				"state archive is missing %s/", name)
 		}
 	}
+	if err := validateStateConfigs(seen); err != nil {
+		return StateInfo{}, 0, err
+	}
 	if !hasJSON {
 		return StateInfo{}, 0, archiveInvalidf(
 			"state archive is missing %s", requiredDataFilesName)
@@ -141,6 +149,38 @@ func ValidateStateWithSize(r *Reader) (StateInfo, int64, error) {
 	return info, uncompressed, nil
 }
 
+// ReadStateCurrent reads current.txt from a state archive without validating
+// the rest of the archive. WriteState stores current.txt first, so retention
+// can read the mods reference without scanning player and world files.
+func ReadStateCurrent(name string) (Current, error) {
+	reader, err := Open(name)
+	if err != nil {
+		return Current{}, err
+	}
+	defer reader.Close()
+
+	for {
+		entry, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return Current{}, err
+		}
+		if entry.Type != TypeFile || entry.Name != currentFileName {
+			continue
+		}
+		data, err := readLimitedEntry(reader, currentFileName,
+			entry.Size, MaxCurrentFileSize)
+		if err != nil {
+			return Current{}, err
+		}
+		return ParseCurrent(data)
+	}
+	return Current{}, archiveInvalidf(
+		"state archive is missing %s", currentFileName)
+}
+
 func stateRequiredDirs() []string {
 	required := make([]string, 0, 2+len(stateWorldDirs))
 	required = append(required, "players", "world")
@@ -150,12 +190,28 @@ func stateRequiredDirs() []string {
 	return required
 }
 
+func validateStateConfigs(seen map[string]bool) error {
+	if !seen["configs"] {
+		return nil
+	}
+	for _, name := range stateConfigFiles {
+		if !seen["configs/"+name] {
+			return archiveInvalidf(
+				"state archive is missing configs/%s", name)
+		}
+	}
+	return nil
+}
+
 func validateStateDir(name string, seen map[string]bool) error {
 	switch {
-	case name == "players", name == "world":
+	case name == "players", name == "world", name == "configs":
 		seen[name] = true
 		return nil
 	case strings.HasPrefix(name, "players/"):
+		return archiveInvalidf(
+			"%q: nested directories are not allowed", name)
+	case strings.HasPrefix(name, "configs/"):
 		return archiveInvalidf(
 			"%q: nested directories are not allowed", name)
 	case strings.HasPrefix(name, "world/"):
@@ -255,6 +311,20 @@ func validateStateEntry(
 		info.WorldFiles++
 		seen["world"] = true
 		seen["world/"+sub] = true
+		return nil
+
+	case "configs":
+		if rest == "" || strings.Contains(rest, "/") {
+			return archiveInvalidf(
+				"%q: expected configs/<file>", entry.Name)
+		}
+		if _, ok := stateConfigFileSet[rest]; !ok {
+			return archiveInvalidf(
+				"%q: unexpected config file", entry.Name)
+		}
+		info.ConfigFiles++
+		seen["configs"] = true
+		seen[entry.Name] = true
 		return nil
 
 	default:

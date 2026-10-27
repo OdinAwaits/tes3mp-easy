@@ -87,13 +87,15 @@ type modsCurrent struct {
 }
 
 type backupItemView struct {
-	Name        string
-	Size        int64
-	SizeLabel   string
-	Mtime       string
-	MtimeLabel  string
-	Current     bool
-	DownloadURL string
+	Name          string
+	Size          int64
+	SizeLabel     string
+	Mtime         string
+	MtimeLabel    string
+	Current       bool
+	DownloadURL   string
+	ModsArchive   *string
+	ModsAvailable *bool
 }
 
 type backupGroup struct {
@@ -112,7 +114,6 @@ type backupsPageData struct {
 	Error     string
 	Empty     bool
 	ModsURL   string
-	StateURL  string
 	Limit     int
 }
 
@@ -298,12 +299,16 @@ func (h *panelHandler) handleBackups(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	typ := query.Get("type")
 	if typ == "" {
-		typ = "state"
+		typ = "mods"
 	}
-	if typ != "mods" && typ != "state" {
+	if typ != "mods" {
+		message := "Неизвестный тип бэкапа. Публично доступны только mods."
+		if typ == "state" {
+			message = "Публично доступны только архивы модов."
+		}
 		h.renderBackups(w, http.StatusBadRequest, backupsPageData{
-			Type:  "state",
-			Error: "Неизвестный тип бэкапа. Допустимы mods и state.",
+			Type:  "mods",
+			Error: message,
 		})
 		return
 	}
@@ -350,7 +355,6 @@ func (h *panelHandler) handleBackups(w http.ResponseWriter, r *http.Request) {
 		ItemCount: len(backups.Items),
 		Empty:     len(backups.Items) == 0,
 		ModsURL:   "/backups?type=mods",
-		StateURL:  "/backups?type=state",
 		Limit:     limit,
 	}
 	if backups.Current != nil {
@@ -372,9 +376,6 @@ func (h *panelHandler) renderBackups(w http.ResponseWriter, status int, data bac
 	}
 	if data.ModsURL == "" {
 		data.ModsURL = "/backups?type=mods"
-	}
-	if data.StateURL == "" {
-		data.StateURL = "/backups?type=state"
 	}
 	if data.TypeLabel == "" {
 		data.TypeLabel = backupTypeLabel(data.Type)
@@ -548,13 +549,15 @@ func groupBackups(items []BackupItem, typ string, now time.Time) []backupGroup {
 		mtime, mtimeLabel := backupTime(item.Mtime)
 		groups[len(groups)-1].Items = append(groups[len(groups)-1].Items,
 			backupItemView{
-				Name:        item.Name,
-				Size:        item.Size,
-				SizeLabel:   humanSize(item.Size),
-				Mtime:       mtime,
-				MtimeLabel:  mtimeLabel,
-				Current:     item.Current,
-				DownloadURL: "/backups/" + typ + "/" + url.PathEscape(item.Name),
+				Name:          item.Name,
+				Size:          item.Size,
+				SizeLabel:     humanSize(item.Size),
+				Mtime:         mtime,
+				MtimeLabel:    mtimeLabel,
+				Current:       item.Current,
+				DownloadURL:   "/backups/" + typ + "/" + url.PathEscape(item.Name),
+				ModsArchive:   item.ModsArchive,
+				ModsAvailable: item.ModsAvailable,
 			})
 	}
 	return groups

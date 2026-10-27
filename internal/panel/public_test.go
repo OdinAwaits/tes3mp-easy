@@ -455,7 +455,7 @@ func TestPublicBackupsPage(t *testing.T) {
 
 func TestPublicBackupsDefaultsAndValidation(t *testing.T) {
 	env := newPublicTestEnv(t)
-	env.ops.backups = Backups{Type: "state", Items: []BackupItem{}}
+	env.ops.backups = Backups{Type: "mods", Items: []BackupItem{}}
 
 	rec := panelRequest(t, env.handler, http.MethodGet, "/backups", nil, nil, nil)
 	if rec.Code != http.StatusOK {
@@ -465,7 +465,7 @@ func TestPublicBackupsDefaultsAndValidation(t *testing.T) {
 		t.Fatal("empty backups page has no empty-state message")
 	}
 	if len(env.ops.backupsCalls) != 1 ||
-		env.ops.backupsCalls[0].typ != "state" ||
+		env.ops.backupsCalls[0].typ != "mods" ||
 		env.ops.backupsCalls[0].limit != defaultBackupLimit ||
 		env.ops.backupsCalls[0].before != "" {
 		t.Fatalf("default BackupsList call = %+v", env.ops.backupsCalls)
@@ -475,11 +475,12 @@ func TestPublicBackupsDefaultsAndValidation(t *testing.T) {
 		path string
 	}{
 		{path: "/backups?type=unknown"},
-		{path: "/backups?type=state&limit=0"},
-		{path: "/backups?type=state&limit=501"},
-		{path: "/backups?type=state&limit=nope"},
-		{path: "/backups?type=state&before=../secret.tar.gz"},
-		{path: "/backups?type=state&before=notes.txt"},
+		{path: "/backups?type=state"},
+		{path: "/backups?type=mods&limit=0"},
+		{path: "/backups?type=mods&limit=501"},
+		{path: "/backups?type=mods&limit=nope"},
+		{path: "/backups?type=mods&before=../secret.tar.gz"},
+		{path: "/backups?type=mods&before=notes.txt"},
 	}
 	for _, tt := range tests {
 		rec := panelRequest(t, env.handler, http.MethodGet, tt.path, nil, nil, nil)
@@ -498,7 +499,7 @@ func TestPublicBackupsOpsFailure(t *testing.T) {
 		Exit: ops.ExitServiceUnavailable, Code: ops.CodeServiceUnavailable,
 		Message: "systemd is unavailable",
 	}
-	rec := panelRequest(t, env.handler, http.MethodGet, "/backups?type=state", nil, nil, nil)
+	rec := panelRequest(t, env.handler, http.MethodGet, "/backups?type=mods", nil, nil, nil)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("backups ops failure = %d, want 503", rec.Code)
 	}
@@ -516,9 +517,9 @@ func TestPublicBackupsOpsFailure(t *testing.T) {
 
 func TestPublicBackupDownload(t *testing.T) {
 	env := newPublicTestEnv(t)
-	name := "state-2026-10-23_11-00-00.tar.gz"
-	body := []byte("state archive body")
-	target := writeTestBackup(t, env.cfg.Root, "state", name, body)
+	name := "mods-2026-10-23_11-00-00.tar.gz"
+	body := []byte("mods archive body")
+	target := writeTestBackup(t, env.cfg.Root, "mods", name, body)
 	if err := os.Mkdir(filepath.Join(filepath.Dir(target), "directory.tar.gz"), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -530,7 +531,7 @@ func TestPublicBackupDownload(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rec := panelRequest(t, env.handler, http.MethodGet, "/backups/state/"+name, nil, nil, nil)
+	rec := panelRequest(t, env.handler, http.MethodGet, "/backups/mods/"+name, nil, nil, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET backup = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -546,12 +547,13 @@ func TestPublicBackupDownload(t *testing.T) {
 	}
 
 	for _, path := range []string{
-		"/backups/state/missing.tar.gz",
-		"/backups/state/notes.txt",
-		"/backups/state/directory.tar.gz",
-		"/backups/state/link.tar.gz",
-		"/backups/mods/" + name,
-		"/backups/state/..%2Fsecret.tar.gz",
+		"/backups/mods/missing.tar.gz",
+		"/backups/mods/notes.txt",
+		"/backups/mods/directory.tar.gz",
+		"/backups/mods/link.tar.gz",
+		"/backups/mods/state-manual-2026-10-23_11-00-00.tar.gz",
+		"/backups/mods/..%2Fsecret.tar.gz",
+		"/backups/state/" + name,
 	} {
 		rec := panelRequest(t, env.handler, http.MethodGet, path, nil, nil, nil)
 		if rec.Code == http.StatusOK {
@@ -565,16 +567,16 @@ func TestPublicBackupDownload(t *testing.T) {
 
 func TestPublicDownloadRateLimit(t *testing.T) {
 	env := newPublicTestEnv(t)
-	name := "state-2026-10-23_11-00-00.tar.gz"
-	writeTestBackup(t, env.cfg.Root, "state", name, []byte("state"))
+	name := "mods-2026-10-23_11-00-00.tar.gz"
+	writeTestBackup(t, env.cfg.Root, "mods", name, []byte("mods"))
 
 	for i := 0; i < maxDownloadRequests; i++ {
-		rec := panelRequest(t, env.handler, http.MethodGet, "/backups/state/"+name, nil, nil, nil)
+		rec := panelRequest(t, env.handler, http.MethodGet, "/backups/mods/"+name, nil, nil, nil)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("download %d = %d, want 200", i+1, rec.Code)
 		}
 	}
-	rec := panelRequest(t, env.handler, http.MethodGet, "/backups/state/"+name, nil, nil, nil)
+	rec := panelRequest(t, env.handler, http.MethodGet, "/backups/mods/"+name, nil, nil, nil)
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("download after limit = %d, want 429", rec.Code)
 	}

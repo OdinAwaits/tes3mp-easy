@@ -6,9 +6,9 @@
 
 | Файл | Что показывает | Нормативное описание |
 |---|---|---|
-| [dashboard.html](dashboard.html) | `/admin`: статус, таймеры, графики RAM/CPU/диска за 1 ч/6 ч/24 ч | `05-panel.md` §13 |
-| [restore-points.html](restore-points.html) | `/admin/restore-points`: чекпоинты, снапшоты, история конфигов, восстановление, pin, удаление с подтверждением имени | `05-panel.md` §10 |
-| [config-form.html](config-form.html) | `/admin/config`: форма целиком, diff на клиенте, «Изменений нет», история конфигов и восстановление | `05-panel.md` §11 |
+| [dashboard.html](dashboard.html) | `/admin`: статус, таймер автобэкапов, графики RAM/CPU/диска за 1 ч/6 ч/24 ч | `05-panel.md` §13 |
+| [state.html](state.html) | `/admin/state`: состояния, их архивы модов, скачивание и восстановление | `05-panel.md` §10 |
+| [config-form.html](config-form.html) | `/admin/config`: форма целиком, diff на клиенте, «Изменений нет» | `05-panel.md` §11 |
 
 Открывать напрямую в браузере:
 
@@ -24,7 +24,7 @@ xdg-open docs/v2/mockups/dashboard.html
 `chart-grid`, `chart-label`, `metric-row`, `metric`, `metric-value`,
 `metric-meta`.
 
-Баннер низкого диска описан в `05-panel.md` §13: в `restore-points.html` —
-вариант `stop`, когда guard уже остановил сервер, в `dashboard.html` — `warn`.
-Графики — статический SVG из нескольких точек: реальный шаблон строит `points`
-из метрик, `admin.js` обновляет их раз в 15 секунд.
+Низкий диск показан в `dashboard.html` вариантом `warn`; при `error` панель
+блокирует мутации, но сервер продолжает работать. Графики — статический SVG
+из нескольких точек: реальный шаблон строит `points` из метрик, `admin.js`
+обновляет их раз в 15 секунд.
