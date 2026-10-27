@@ -238,8 +238,6 @@ rootctl.
 │   │   ├── checkpoint-*.tar.gz
 │   │   ├── checkpoint-predeploy-*.tar.gz
 │   │   └── <name>.pin            # sidecar закрепления, не архив
-│   ├── configs/                  # история конфигов, ~1 MiB на запись
-│   │   └── configs-*.tar.gz
 │   ├── legacy-state/             # старые state-* после обновления, readonly
 │   └── guard.json                # маркер guard: level, free, at; 0640
 ├── panel-data/                   # tes3mp-panel:tes3mp
@@ -513,7 +511,6 @@ tes3mp-easy-guard.timer ──каждые 60 с──► tes3mp-easy-guard.serv
 | Staging/upload (пик — больший из двух) | 1.0 GiB | 1.0 GiB |
 | `backups/snapshots` | 0.3 GiB | 1.5 GiB |
 | `backups/checkpoints` | 0.05 GiB | 0.25 GiB |
-| `backups/configs` | 0.01 GiB | 0.03 GiB |
 | `backups/mods` | 0.3 GiB | 0.5 GiB |
 | `panel-data` (auth, TLS) | 0.05 GiB | — |
 | journald | 0.1 GiB | 0.1 GiB |

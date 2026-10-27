@@ -52,7 +52,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/in
 Конкретную версию можно закрепить:
 
 ```bash
-TES3MP_EASY_VERSION=0.1.15 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
+TES3MP_EASY_VERSION=0.1.16 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
 ```
 
 Ручной путь, если архив нужно скачать заранее:
@@ -61,7 +61,7 @@ TES3MP_EASY_VERSION=0.1.15 bash <(curl -Ls https://raw.githubusercontent.com/Saa
    собранный `dist/tes3mp-easy-<version>-linux-amd64.tar.gz`):
 
    ```bash
-   VERSION=0.1.15
+   VERSION=0.1.16
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz"
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
    sha256sum -c "tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
@@ -72,7 +72,7 @@ TES3MP_EASY_VERSION=0.1.15 bash <(curl -Ls https://raw.githubusercontent.com/Saa
    Локальная сборка релиза:
 
    ```bash
-   go run ./cmd/tes3mp-easy-pack --version 0.1.15
+   go run ./cmd/tes3mp-easy-pack --version 0.1.16
    ```
 
 2. Проверьте хост без изменений:
@@ -585,14 +585,12 @@ message: base snapshot-... is missing
 ... checkpoint unpin checkpoint-2026-10-22_12-00-00.tar.gz
 ... checkpoint rm    checkpoint-2026-10-22_12-00-00.tar.gz --dry-run
 ... snapshot rm      snapshot-2026-10-20_10-00-00.tar.gz
-... backups rm       --type configs configs-2026-10-20_10-00-00.tar.gz
 ```
 
 Без `--force` защищённое имя даёт `archive_in_use` (exit 12): закреплён,
-`current`, последний снапшот или база, на которую ссылаются чекпоинты.
-Проверка идёт по всей пачке до удаления, так
-что при одном защищённом имени не удалится ничего. `current`-архив модов и
-последний снапшот не удаляются даже с `--force`; база, если она не последняя,
+последний снапшот или база, на которую ссылаются чекпоинты. Проверка идёт по
+всей пачке до удаления, так что при одном защищённом имени не удалится ничего.
+Последний снапшот не удаляется даже с `--force`; база, если она не последняя,
 с `--force` удаляется, её чекпоинты остаются с пометкой «база удалена».
 
 ## 8. Retention и диск
@@ -601,17 +599,17 @@ message: base snapshot-... is missing
 
 ```bash
 du -sh /tes3mp-easy/backups/snapshots /tes3mp-easy/backups/checkpoints \
-       /tes3mp-easy/backups/configs /tes3mp-easy/backups/mods \
+       /tes3mp-easy/backups/mods \
        /tes3mp-easy/players /tes3mp-easy/world /tes3mp-easy/mods
 df -h /tes3mp-easy
 ```
 
-Бюджеты: `snapshots` 1.5 GiB, `checkpoints` 256 MiB, `configs` 32 MiB,
-`mods` 512 MiB, свободный резерв 512 MiB. `doctor` даёт `warn` при свободных
+Бюджеты: `snapshots` 1.5 GiB, `checkpoints` 256 MiB, `mods` 512 MiB,
+свободный резерв 512 MiB. `doctor` даёт `warn` при свободных
 256–512 MiB и `error` меньше 256 MiB.
 
-Retention работает автоматически после `checkpoint create`, `snapshot create`,
-`mods import`, `config set` и `config restore`:
+Retention работает автоматически после `checkpoint create`, `snapshot create`
+и `mods import`:
 
 - чекпоинты 0–7 дней — все;
 - 7–365 дней — последний за UTC-день;
@@ -620,7 +618,7 @@ Retention работает автоматически после `checkpoint cre
 - закреплённые — навсегда, predeploy — 2;
 - снапшоты: `manual` — 5, `mods`/`base` — 2, плюс все, на которые ссылается
   хранимый чекпоинт;
-- `configs` — 20, моды — 5, `mods-init` — 2 новейших и текущий, если он старше.
+- `mods` — 5, `mods-init` — 2 новейших и текущий, если он старше.
 
 База защищена, пока на неё ссылается хранимый чекпоинт: мод-пак годовалой
 давности остаётся восстановимым. Если `backups/snapshots` выходит за бюджет,
@@ -688,12 +686,11 @@ Guard проверяет диск каждые 60 секунд (`tes3mp-easy-gua
      --root /tes3mp-easy --json checkpoint rm <name>
    ```
 
-   Сначала удаляйте старые чекпоинты, затем `configs-*`, затем самые старые
-   незакреплённые снапшоты. Снапшот, на который ссылаются чекпоинты, требует
-   `--force`, после чего эти чекпоинты станут невосстановимыми без
-   `--accept-mod-mismatch`. `current.txt` и текущий `mods-*` не удаляются
-   никогда. Месячные представители и закреплённые точки — последними и только
-   после копии на другую машину.
+   Сначала удаляйте старые чекпоинты, затем самые старые незакреплённые
+   снапшоты. Снапшот, на который ссылаются чекпоинты, требует `--force`, после
+   чего эти чекпоинты станут невосстановимыми без `--accept-mod-mismatch`.
+   Последний снапшот не удаляется никогда. Месячные представители и
+   закреплённые точки — последними и только после копии на другую машину.
 
 5. Запустите таймер снова, снимите маркер и проверьте `doctor`:
 
@@ -917,7 +914,6 @@ ssh backup@offsite 'tar -tzf /srv/tes3mp-easy-backups/snapshots/<archive>.tar.gz
 Чекпоинт ссылается на снапшот по `sha256`, поэтому `checkpoints/` и
 `snapshots/` копируются только вместе. `current.txt` и текущий
 `mods-*.tar.gz` обязательны: по ним определяется активный мод-пак.
-`configs-*` весят мало — храните их целиком, иначе не будет истории настроек.
 
 ## 15. Восстановление на новой VPS
 

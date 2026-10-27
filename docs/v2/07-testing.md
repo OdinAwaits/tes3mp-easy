@@ -151,14 +151,15 @@ predeploy-лимиты, защиту текущего mods-архива и за�
 - `snapshot restore` и `checkpoint restore`: успех, `--no-restart`, ошибки
   архива, rollback распаковки, lock, отсутствие переименований в data root
   (ops работает без записи в `root:root 0755`);
-- `rm`: `--dry-run`, `archive_in_use` для закреплённого/`current`/базы,
-  атомарность пачки, `--force` для базы оставляет `available=false`;
+- `rm`: `--dry-run`, `archive_in_use` для закреплённого чекпоинта, последнего
+  снапшота и базы, атомарность пачки, `--force` для базы оставляет
+  `available=false`; `checkpoint rm` принимает `checkpoint-predeploy-*`;
 - `guard`: `ok`/`warn`/`stop`, маркер `guard.json`, отсутствие повторного
   `stop`; `start` снимает маркер;
 - `staff set`: успех, dry-run, отсутствующий игрок, небезопасный путь, пустой
   `settings`;
-- `config get/set`: таблицы только для чтения, dry-run, `--values`
-  всё-или-ничего, `config restore`, валидация, symlink, человекочитаемый вывод.
+- `config get/set`: таблицы только для чтения, dry-run, валидация, symlink,
+  человекочитаемый вывод.
 
 ## 4. Панель
 
@@ -317,6 +318,10 @@ GUI-тесты не гоняются в CI: Fyne требует дисплея. 
    видит `mods_sha256` и скачивает `mods-*`.
 4. **Точки отката.** Создать чекпоинт → изменить мир → восстановить →
    состояние вернулось, сервер запущен, `checkpoint-predeploy-*` существует.
+   Закрепить чекпоинт → retention и `checkpoint rm` без `--force` его не
+   удаляют → снять закрепление. Удалить predeploy-чекпоинт из панели с
+   подтверждением имени. Удалить базу с `--force` → чекпоинты показывают
+   «База удалена» и восстанавливаются только с `--accept-mod-mismatch`.
 5. **Публичные бэкапы.** При `public_state_download=true` скачать
    mods/checkpoints без логина; при `false` — `/backups` без `type` и
    `/backups/checkpoints/<name>` отвечают 404, а `/backups?type=mods` работает.
