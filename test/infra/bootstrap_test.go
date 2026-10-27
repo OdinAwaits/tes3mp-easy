@@ -1027,6 +1027,45 @@ func assertSymlink(t *testing.T, path, want string) {
 	}
 }
 
+func TestBootstrapNormalizesExistingConfigModes(t *testing.T) {
+	h := newFakeHost(t)
+	configs := []string{
+		"tes3mp-server-default.cfg",
+		"config.lua",
+		"customScripts.lua",
+		"banlist.json",
+	}
+	for _, name := range configs {
+		h.writeFile(filepath.Join(h.dataRoot, "configs", name), "keep "+name+"\n", 0o640)
+	}
+
+	got := h.run(t)
+
+	assertExit(t, got, 0)
+	for _, name := range configs {
+		path := filepath.Join(h.dataRoot, "configs", name)
+		assertPathMode(t, path, 0o600, false)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if want := "keep " + name + "\n"; string(data) != want {
+			t.Fatalf("%s contents = %q, want %q", path, data, want)
+		}
+		assertContains(t, got.stdout,
+			"config: "+path+" already exists (tes3mp:tes3mp 0600)")
+	}
+
+	logData, err := os.ReadFile(h.commandLog)
+	if err != nil {
+		t.Fatalf("read command log: %v", err)
+	}
+	for _, name := range configs {
+		assertContains(t, string(logData),
+			"chown args=tes3mp:tes3mp "+filepath.Join(h.dataRoot, "configs", name))
+	}
+}
+
 func TestBootstrapInstallsReleaseBinariesAndStartsPanel(t *testing.T) {
 	h := newFakeHost(t)
 	binDir := h.writeServerBinaries()

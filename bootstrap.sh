@@ -903,6 +903,19 @@ install_tes3mp_runtime() {
     pass "runtime: TES3MP $TES3MP_VERSION installed under $TES3MP_RUNTIME_DIR"
 }
 
+# normalize_config_file PATH
+#
+# Existing installations may carry config files created by an older release
+# with a wider mode. Doctor and the mutation gate require 0600, so upgrade must
+# normalize ownership and mode without touching the contents.
+normalize_config_file() {
+    local path=$1
+
+    run_install chown tes3mp:tes3mp "$path"
+    run_install chmod 0600 "$path"
+    pass "config: $path already exists (tes3mp:tes3mp 0600)"
+}
+
 # ensure_config_file SOURCE DESTINATION
 ensure_config_file() {
     local source=$1
@@ -915,7 +928,7 @@ ensure_config_file() {
         if [[ ! -f $destination ]]; then
             abort_install "config path $destination is not a regular file"
         fi
-        pass "config: $destination already exists"
+        normalize_config_file "$destination"
         return
     fi
     if [[ ! -f $source ]]; then
@@ -941,7 +954,7 @@ install_base_configs() {
         if [[ ! -f $banlist ]]; then
             abort_install "config path $banlist is not a regular file"
         fi
-        pass "config: $banlist already exists"
+        normalize_config_file "$banlist"
     else
         local temp="$DATA_ROOT/.staging/banlist.json.$$"
         if ! printf '{\n  "playerNames": [],\n  "ipAddresses": []\n}\n' >"$temp"; then
