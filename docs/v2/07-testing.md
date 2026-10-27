@@ -144,7 +144,8 @@ predeploy-лимиты, защиту текущего mods-архива и за�
 - `mods deploy`: `--current`/`--latest`/`--archive`, `--no-restart`, отсутствие
   метаданных, неверные цели, `service_unavailable`, rollback;
 - `state deploy`: успех, `--no-restart`, ошибки архива, rollback распаковки,
-  lock;
+  lock, отсутствие переименований в data root (ops работает без записи в
+  `root:root 0755`);
 - `staff set`: успех, dry-run, отсутствующий игрок, небезопасный путь, пустой
   `settings`;
 - `config get/set`: таблицы только для чтения, dry-run, валидация, symlink,

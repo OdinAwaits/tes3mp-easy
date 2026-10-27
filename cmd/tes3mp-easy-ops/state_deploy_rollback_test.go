@@ -67,7 +67,9 @@ func TestRunStateDeployRollbackOnSwitchFailure(t *testing.T) {
 	stateDeployRenameFunc = func(oldPath, newPath string) error {
 		if strings.Contains(oldPath, string(filepath.Separator)+".staging"+
 			string(filepath.Separator)) &&
-			strings.HasSuffix(newPath, string(filepath.Separator)+"players") {
+			filepath.Base(filepath.Dir(oldPath)) == "players" &&
+			filepath.Base(filepath.Dir(filepath.Dir(oldPath))) != "old" &&
+			filepath.Base(filepath.Dir(newPath)) == "players" {
 			return syscall.ENOSPC
 		}
 		return os.Rename(oldPath, newPath)

@@ -10,7 +10,6 @@ import (
 )
 
 type stateDeployTx struct {
-	rootDir       string
 	stagingParent string
 	stagingDir    string
 	playersDir    string
@@ -20,8 +19,8 @@ type stateDeployTx struct {
 
 	playersMoved     bool
 	worldMoved       bool
-	playersInstalled bool
-	worldInstalled   bool
+	installedPlayers []string
+	installedWorld   []string
 }
 
 func newStateDeployTx(root string, at time.Time) (*stateDeployTx, error) {
@@ -44,7 +43,6 @@ func newStateDeployTx(root string, at time.Time) (*stateDeployTx, error) {
 	}
 
 	tx := &stateDeployTx{
-		rootDir:       rootDir,
 		stagingParent: stagingParent,
 		playersDir:    playersDir,
 		worldDir:      worldDir,
@@ -56,9 +54,9 @@ func newStateDeployTx(root string, at time.Time) (*stateDeployTx, error) {
 			candidate = fmt.Sprintf("%s-%02d", id, collision)
 		}
 		tx.stagingDir = filepath.Join(stagingParent, "state-"+candidate)
-		tx.playersOld = playersDir + ".old-" + candidate
-		tx.worldOld = worldDir + ".old-" + candidate
-		free, err := allPathsFree(tx.stagingDir, tx.playersOld, tx.worldOld)
+		tx.playersOld = filepath.Join(tx.stagingDir, "old", "players")
+		tx.worldOld = filepath.Join(tx.stagingDir, "old", "world")
+		free, err := allPathsFree(tx.stagingDir)
 		if err != nil {
 			return nil, err
 		}
@@ -82,9 +80,18 @@ func (tx *stateDeployTx) stage(archivePath string) error {
 	if err := stateDeployExtractFunc(archivePath, tx.stagingDir); err != nil {
 		return err
 	}
+	for _, dir := range []string{tx.playersOld, tx.worldOld} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+		if err := atomicfile.SyncDir(dir); err != nil {
+			return err
+		}
+	}
 	for _, dir := range []string{
 		filepath.Join(tx.stagingDir, "players"),
 		filepath.Join(tx.stagingDir, "world"),
+		filepath.Join(tx.stagingDir, "old"),
 		tx.stagingDir,
 	} {
 		if err := atomicfile.SyncDir(dir); err != nil {
@@ -95,28 +102,57 @@ func (tx *stateDeployTx) stage(archivePath string) error {
 }
 
 func (tx *stateDeployTx) switchDirs() error {
-	if err := stateDeployRenameFunc(tx.playersDir, tx.playersOld); err != nil {
+	// The data root is root:root 0755, and ops runs as tes3mp. Renaming the
+	// players/ and world/ directories themselves would need write permission on
+	// the root. Move the directory contents instead: both the live dirs and the
+	// staging transaction are writable by tes3mp.
+	tx.playersMoved = true
+	if _, err := moveDirEntries(tx.playersDir, tx.playersOld); err != nil {
 		return fmt.Errorf("move old players: %w", err)
 	}
-	tx.playersMoved = true
-	if err := stateDeployRenameFunc(tx.worldDir, tx.worldOld); err != nil {
+	tx.worldMoved = true
+	if _, err := moveDirEntries(tx.worldDir, tx.worldOld); err != nil {
 		return fmt.Errorf("move old world: %w", err)
 	}
-	tx.worldMoved = true
 
-	if err := stateDeployRenameFunc(
-		filepath.Join(tx.stagingDir, "players"), tx.playersDir); err != nil {
+	installed, err := moveDirEntries(
+		filepath.Join(tx.stagingDir, "players"), tx.playersDir)
+	tx.installedPlayers = installed
+	if err != nil {
 		return fmt.Errorf("install players: %w", err)
 	}
-	tx.playersInstalled = true
-	if err := stateDeployRenameFunc(
-		filepath.Join(tx.stagingDir, "world"), tx.worldDir); err != nil {
+	installed, err = moveDirEntries(
+		filepath.Join(tx.stagingDir, "world"), tx.worldDir)
+	tx.installedWorld = installed
+	if err != nil {
 		return fmt.Errorf("install world: %w", err)
 	}
-	tx.worldInstalled = true
 
-	if err := atomicfile.SyncDir(tx.rootDir); err != nil {
-		return fmt.Errorf("sync root directory: %w", err)
-	}
 	return nil
+}
+
+// moveDirEntries renames every top-level entry from src to dst and returns the
+// names that were moved. A partial failure returns the names moved before the
+// error so rollback can restore them.
+func moveDirEntries(src, dst string) ([]string, error) {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return nil, err
+	}
+	moved := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if err := stateDeployRenameFunc(
+			filepath.Join(src, name), filepath.Join(dst, name)); err != nil {
+			return moved, fmt.Errorf("rename %s: %w", name, err)
+		}
+		moved = append(moved, name)
+	}
+	if err := atomicfile.SyncDir(src); err != nil {
+		return moved, err
+	}
+	if err := atomicfile.SyncDir(dst); err != nil {
+		return moved, err
+	}
+	return moved, nil
 }

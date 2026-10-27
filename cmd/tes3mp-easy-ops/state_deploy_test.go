@@ -207,6 +207,71 @@ func TestRunStateDeployRestartsServer(t *testing.T) {
 	}
 }
 
+func TestRunStateDeployWorksWithoutRootWrite(t *testing.T) {
+	fixStateDeployHooks(t)
+	root, _, _, _ := stateDeployRoot(t)
+	runner := activeRunner(t)
+	root = filepath.Clean(root)
+
+	var rootRenames []string
+	stateDeployRenameFunc = func(oldPath, newPath string) error {
+		if filepath.Dir(filepath.Clean(oldPath)) == root ||
+			filepath.Dir(filepath.Clean(newPath)) == root {
+			rootRenames = append(rootRenames, oldPath+" -> "+newPath)
+			return &os.PathError{Op: "rename", Path: oldPath,
+				Err: os.ErrPermission}
+		}
+		return os.Rename(oldPath, newPath)
+	}
+
+	code, _, stdout, stderr := runStateDeployCommand(t, root,
+		systemd.New(runner), "--latest")
+	if code != int(ops.ExitOK) {
+		t.Fatalf("exit = %d, want 0; stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if len(rootRenames) != 0 {
+		t.Fatalf("state deploy renamed entries in the data root: %v", rootRenames)
+	}
+	player, err := os.ReadFile(filepath.Join(root, "players", "player.json"))
+	if err != nil || string(player) != "{\"restored\":true}\n" {
+		t.Fatalf("restored player = %q, %v", player, err)
+	}
+	cell, err := os.ReadFile(filepath.Join(root, "world", "cell", "cell.json"))
+	if err != nil || string(cell) != "restored cell\n" {
+		t.Fatalf("restored cell = %q, %v", cell, err)
+	}
+	assertNoStateDeployLeftovers(t, root)
+}
+
+func TestRunStateDeployWithoutRootWritePermission(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission checks")
+	}
+	fixStateDeployHooks(t)
+	root, _, _, _ := stateDeployRoot(t)
+	runner := activeRunner(t)
+	if err := os.Mkdir(filepath.Join(root, ".staging"), 0o700); err != nil {
+		t.Fatalf("create staging parent: %v", err)
+	}
+	if err := os.Chmod(root, 0o555); err != nil {
+		t.Fatalf("make root read-only: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(root, 0o755)
+	})
+
+	code, _, stdout, stderr := runStateDeployCommand(t, root,
+		systemd.New(runner), "--latest")
+	if code != int(ops.ExitOK) {
+		t.Fatalf("exit = %d, want 0; stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	player, err := os.ReadFile(filepath.Join(root, "players", "player.json"))
+	if err != nil || string(player) != "{\"restored\":true}\n" {
+		t.Fatalf("restored player = %q, %v", player, err)
+	}
+	assertNoStateDeployLeftovers(t, root)
+}
+
 func TestRunStateDeployNoRestart(t *testing.T) {
 	fixStateDeployHooks(t)
 	root, _, _, _ := stateDeployRoot(t)

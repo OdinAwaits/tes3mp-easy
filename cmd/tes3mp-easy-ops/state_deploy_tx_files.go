@@ -4,55 +4,52 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/Saagilat/tes3mp-easy/internal/atomicfile"
 )
 
-// rollback restores the previous players/ and world/ directories. It is
+// rollback restores the previous players/ and world/ contents. It is
 // idempotent and only touches paths that this transaction moved or installed.
 func (tx *stateDeployTx) rollback() error {
 	var errs []error
-	if tx.playersInstalled {
-		errs = append(errs, os.RemoveAll(tx.playersDir))
+	for _, name := range tx.installedPlayers {
+		errs = append(errs,
+			os.RemoveAll(filepath.Join(tx.playersDir, name)))
+	}
+	for _, name := range tx.installedWorld {
+		errs = append(errs,
+			os.RemoveAll(filepath.Join(tx.worldDir, name)))
 	}
 	if tx.playersMoved {
-		errs = append(errs, stateDeployRenameFunc(tx.playersOld, tx.playersDir))
-	}
-	if tx.worldInstalled {
-		errs = append(errs, os.RemoveAll(tx.worldDir))
+		_, err := moveDirEntries(tx.playersOld, tx.playersDir)
+		errs = append(errs, err)
 	}
 	if tx.worldMoved {
-		errs = append(errs, stateDeployRenameFunc(tx.worldOld, tx.worldDir))
+		_, err := moveDirEntries(tx.worldOld, tx.worldDir)
+		errs = append(errs, err)
 	}
 	errs = append(errs, os.RemoveAll(tx.stagingDir))
-	errs = append(errs, atomicfile.SyncDir(tx.rootDir))
+	errs = append(errs, atomicfile.SyncDir(tx.playersDir))
+	errs = append(errs, atomicfile.SyncDir(tx.worldDir))
 	errs = append(errs, atomicfile.SyncDir(tx.stagingParent))
 	return errors.Join(ignoreNotExist(errs...)...)
 }
 
 func (tx *stateDeployTx) commit() []string {
 	var warnings []string
-	if tx.playersMoved {
-		if err := os.RemoveAll(tx.playersOld); err != nil {
-			warnings = append(warnings, fmt.Sprintf(
-				"remove %s: %v", tx.playersOld, err))
-		}
-	}
-	if tx.worldMoved {
-		if err := os.RemoveAll(tx.worldOld); err != nil {
-			warnings = append(warnings, fmt.Sprintf(
-				"remove %s: %v", tx.worldOld, err))
-		}
-	}
 	if err := os.RemoveAll(tx.stagingDir); err != nil {
 		warnings = append(warnings, fmt.Sprintf(
 			"remove %s: %v", tx.stagingDir, err))
 	}
-	if err := atomicfile.SyncDir(tx.rootDir); err != nil {
-		warnings = append(warnings, fmt.Sprintf("sync root directory: %v", err))
-	}
-	if err := atomicfile.SyncDir(tx.stagingParent); err != nil {
-		warnings = append(warnings, fmt.Sprintf("sync staging directory: %v", err))
+	for _, dir := range []string{
+		tx.playersDir,
+		tx.worldDir,
+		tx.stagingParent,
+	} {
+		if err := atomicfile.SyncDir(dir); err != nil {
+			warnings = append(warnings, fmt.Sprintf("sync %s: %v", dir, err))
+		}
 	}
 	return warnings
 }

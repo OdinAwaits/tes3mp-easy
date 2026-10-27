@@ -326,10 +326,12 @@ CRC-списками) и пустым `scripts/`; `current.txt` указывае
   если он работал до операции (и не указан --no-restart)
 ```
 
-`mods deploy` и `state deploy` подменяют каталоги через `rename`. Панель
-запускает `ops` в своём namespace, поэтому `.staging` и целевые каталоги
+`mods deploy` и `state deploy` подменяют содержимое каталогов через `rename`.
+Панель запускает `ops` в своём namespace, поэтому `.staging` и целевые каталоги
 обязаны быть на одном mount — это обеспечивает единственный
-`ReadWritePaths=/tes3mp-easy`.
+`ReadWritePaths=/tes3mp-easy`. `state deploy` не переименовывает сами
+`players/` и `world/`: корень принадлежит `root:root 0755`, а ops работает от
+`tes3mp`; он переносит верхнеуровневые записи внутри этих каталогов.
 
 ### State-бэкап и восстановление
 
@@ -340,8 +342,8 @@ tes3mp-easy-backup.timer ──каждые 5 минут──► tes3mp-easy-ba
   → retention → JSON с pruned/warnings
 
 Браузер ──POST /admin/state/deploy──► panel ──sudo -u tes3mp──► ops state deploy
-  ops: lock → проверка архива → state-predeploy → stop → staging → подмена
-       players/ и world/ → start, если был запущен → при ошибке вернуть старые
+  ops: lock → проверка архива → state-predeploy → stop → staging → перенос
+       содержимого players/ и world/ → start → при ошибке вернуть старое
 ```
 
 ### Клиент игрока
