@@ -27,11 +27,11 @@ func (tx *modsDeployTx) rollback() error {
 	}
 	if tx.currentWritten {
 		errs = append(errs, restoreOptionalFile(
-			tx.currentPath, tx.oldCurrent, tx.currentExisted))
+			tx.currentPath, tx.oldCurrent, tx.currentExisted, dataFileMode))
 	}
 	if tx.customWritten {
 		errs = append(errs, restoreOptionalFile(
-			tx.customPath, tx.oldCustom, tx.customExisted))
+			tx.customPath, tx.oldCustom, tx.customExisted, configFileMode))
 	}
 	errs = append(errs, os.RemoveAll(tx.stagingDir))
 	errs = append(errs, removePathIfExists(tx.currentPath+".part"))
@@ -119,9 +119,9 @@ func captureOptionalFile(path string, limit int64) ([]byte, bool, error) {
 	return data, true, nil
 }
 
-func restoreOptionalFile(path string, data []byte, existed bool) error {
+func restoreOptionalFile(path string, data []byte, existed bool, mode os.FileMode) error {
 	if existed {
-		return atomicfile.WriteFile(path, data, 0o640)
+		return atomicfile.WriteFile(path, data, mode)
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err

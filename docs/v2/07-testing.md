@@ -142,7 +142,8 @@ predeploy-лимиты, защиту текущего mods-архива и за�
   dry-run, cross-filesystem, `EXDEV` copy fallback (успех и ошибка копирования),
   non-`EXDEV` rename error;
 - `mods deploy`: `--current`/`--latest`/`--archive`, `--no-restart`, отсутствие
-  метаданных, неверные цели, `service_unavailable`, rollback;
+  метаданных, неверные цели, `service_unavailable`, rollback; `configs/` —
+  `0700`, `customScripts.lua` — `0600`, полный `doctor` после деплоя без ошибок;
 - `state deploy`: успех, `--no-restart`, ошибки архива, rollback распаковки,
   lock, отсутствие переименований в data root (ops работает без записи в
   `root:root 0755`);
@@ -292,7 +293,8 @@ GUI-тесты не гоняются в CI: Fyne требует дисплея. 
    `backups list` показывает его; при остановленной игре `--if-running` даёт
    `skipped`.
 3. **Моды.** Загрузить архив → deploy → сервер перезапустился (если был
-   запущен) → клиент видит `mods_sha256` и скачивает `mods-*`.
+   запущен) → `doctor` без ошибок (особенно `ownership` и `configs`) → клиент
+   видит `mods_sha256` и скачивает `mods-*`.
 4. **State.** Создать бэкап → изменить мир → восстановить → состояние
    вернулось, сервер запущен, `state-predeploy-*` существует.
 5. **Публичные бэкапы.** Скачать mods/state без логина; список не раскрывает

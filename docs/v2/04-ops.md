@@ -398,6 +398,7 @@ upload. Копирования между разными файловыми си
    оставить как `mods/plugins.old-<id>` до успеха.
 9. Сгенерировать `configs/customScripts.lua` из `mods/scripts/*.lua`
    (отсортировано, `require("custom.<name>")`).
+   Каталог `configs/` — `0700`, файл — `0600`: ровно это проверяет doctor.
 10. Записать `backups/mods/current.txt` в формате `<sha256> <filename>`.
 11. Запустить `tes3mp.service`, если он был запущен и не указан
     `--no-restart`.

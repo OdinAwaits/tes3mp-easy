@@ -12,7 +12,12 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/atomicfile"
 )
 
-const maxCustomScriptsSize int64 = 4 << 20
+const (
+	maxCustomScriptsSize int64       = 4 << 20
+	configsDirMode       os.FileMode = 0o700
+	configFileMode       os.FileMode = 0o600
+	dataFileMode         os.FileMode = 0o640
+)
 
 type modsDeployTx struct {
 	modsDir       string
@@ -167,7 +172,7 @@ func (tx *modsDeployTx) writeCustomScripts() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(tx.configsDir, 0o750); err != nil {
+	if err := os.MkdirAll(tx.configsDir, configsDirMode); err != nil {
 		return err
 	}
 	if err := optionalDir(tx.configsDir); err != nil {
@@ -178,13 +183,13 @@ func (tx *modsDeployTx) writeCustomScripts() error {
 		data = append(data, '\n')
 	}
 	tx.customWritten = true
-	return modsDeployWriteFileFunc(tx.customPath, data, 0o640)
+	return modsDeployWriteFileFunc(tx.customPath, data, configFileMode)
 }
 
 func (tx *modsDeployTx) writeCurrent(name, sha string) error {
 	tx.currentWritten = true
 	return modsDeployWriteFileFunc(tx.currentPath, archive.FormatCurrent(
-		archive.Current{SHA256: sha, Name: name}), 0o640)
+		archive.Current{SHA256: sha, Name: name}), dataFileMode)
 }
 
 func generatedScriptLines(scriptsDir string) ([]string, error) {

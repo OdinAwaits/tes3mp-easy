@@ -111,6 +111,18 @@ func assertNoDeployLeftovers(t *testing.T, root string) {
 	}
 }
 
+func assertPathMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("%s mode = %04o, want %04o", path, got, want)
+	}
+}
+
 func TestParseModsDeployArgs(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -219,7 +231,8 @@ func TestRunModsDeployRestartsServer(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "mods", "scripts", "test.lua")); err != nil {
 		t.Fatalf("installed script: %v", err)
 	}
-	custom, err := os.ReadFile(filepath.Join(root, "configs", "customScripts.lua"))
+	customPath := filepath.Join(root, "configs", "customScripts.lua")
+	custom, err := os.ReadFile(customPath)
 	if err != nil {
 		t.Fatalf("read customScripts.lua: %v", err)
 	}
@@ -227,6 +240,8 @@ func TestRunModsDeployRestartsServer(t *testing.T) {
 	if string(custom) != wantCustom {
 		t.Fatalf("customScripts.lua = %q, want %q", custom, wantCustom)
 	}
+	assertPathMode(t, filepath.Join(root, "configs"), 0o700)
+	assertPathMode(t, customPath, 0o600)
 
 	modsDir := filepath.Join(root, "backups", "mods")
 	if got := fixtures.ReadCurrent(t, modsDir); got != fixtures.CurrentLine(sha, mods.Name) {
@@ -245,6 +260,45 @@ func TestRunModsDeployRestartsServer(t *testing.T) {
 	}
 	if calls := runner.Calls(); !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("calls = %#v, want %#v", calls, wantCalls)
+	}
+}
+
+func TestRunModsDeployPassesDoctorOwnership(t *testing.T) {
+	fixModsDeployHooks(t)
+	root := doctorHealthyRoot(t)
+	setDoctorEnv(t)
+
+	mods := fixtures.ScriptedMods()
+	mods.Name = "mods-2026-10-22_13-00-00.tar.gz"
+	path := filepath.Join(root, "backups", "mods", mods.Name)
+	mods.Write(t, path)
+
+	client, runner := doctorClient(t, nil)
+	runner.Respond("systemctl", []string{"is-active", systemd.UnitTES3MPService},
+		"active\n", nil)
+	runner.Respond("sudo", []string{"-n", systemd.RootctlPath, "stop"}, "", nil)
+	runner.Respond("sudo", []string{"-n", systemd.RootctlPath, "start"}, "", nil)
+
+	code, _, stdout, stderr := runDeployCommand(t, root, client,
+		"--archive", mods.Name)
+	if code != int(ops.ExitOK) {
+		t.Fatalf("deploy exit = %d, want 0; stdout=%q stderr=%q",
+			code, stdout, stderr)
+	}
+
+	var doctorStdout, doctorStderr bytes.Buffer
+	code = runWithClient([]string{"--root", root, "--json", "doctor"},
+		&doctorStdout, &doctorStderr, client)
+	if code != 0 {
+		t.Fatalf("doctor exit = %d, want 0; stdout=%q stderr=%q",
+			code, doctorStdout.String(), doctorStderr.String())
+	}
+	data := decodeDoctor(t, doctorStdout.String())
+	for _, name := range []string{"ownership", "configs", "cleanup"} {
+		status, message := doctorCheck(t, data, name)
+		if status != "ok" {
+			t.Fatalf("doctor %s = %q (%s), want ok", name, status, message)
+		}
 	}
 }
 
@@ -514,6 +568,7 @@ func TestRunModsDeployRollbackOnStartFailure(t *testing.T) {
 	if err != nil || string(custom) != "old custom scripts\n" {
 		t.Fatalf("customScripts.lua = %q, %v; want old contents", custom, err)
 	}
+	assertPathMode(t, customPath, 0o600)
 	assertNoDeployLeftovers(t, root)
 
 	wantCalls := []systemdtest.Call{
@@ -556,6 +611,7 @@ func TestRunModsDeployRollbackOnCustomScriptsFailure(t *testing.T) {
 	if err != nil || string(custom) != "old custom scripts\n" {
 		t.Fatalf("customScripts.lua = %q, %v; want old contents", custom, err)
 	}
+	assertPathMode(t, customPath, 0o600)
 	assertNoDeployLeftovers(t, root)
 }
 
