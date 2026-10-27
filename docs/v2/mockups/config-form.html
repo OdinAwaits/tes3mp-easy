@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Макет: настройки целиком — tes3mp-easy</title>
+  <link rel="stylesheet" href="../../../internal/panel/static/panel.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#">
+      <span class="brand-mark" aria-hidden="true">◆</span>
+      <span>TES3MP <strong>Easy</strong></span>
+    </a>
+    <nav class="nav" aria-label="Разделы панели">
+      <a href="#">Обзор</a>
+      <a href="#">Логи</a>
+      <a href="#">Моды</a>
+      <a href="restore-points.html">Точки отката</a>
+      <a href="#" aria-current="page">Настройки</a>
+      <a href="#">Staff</a>
+      <a href="#">Пароль</a>
+    </nav>
+    <form class="logout"><button class="button button--ghost button--small" type="button">Выйти</button></form>
+  </header>
+
+  <main class="page">
+    <div class="page-head">
+      <p class="eyebrow">Конфигурация</p>
+      <h1>Настройки</h1>
+      <p class="lead">Форма отправляется целиком. Панель считает diff и передаёт только изменённые поля одной командой.</p>
+    </div>
+
+    <p class="notice">Изменено 2 поля. Сохранение создаст <code>configs-2026-10-27_16-40-00.tar.gz</code> и потребует перезапуска.</p>
+    <p class="muted">Если ничего не менять, кнопка неактивна и показано «Изменений нет»; архив истории не создаётся.</p>
+
+    <section class="card">
+      <h2>Сервер — tes3mp-server-default.cfg</h2>
+      <p class="muted">INI. Пустой <code>hostname</code> отдаётся клиенту как <code>TES3MP</code>.</p>
+      <form method="post" action="/admin/config/server">
+        <div class="grid">
+          <div class="config-row">
+            <label for="hostname">hostname</label>
+            <input id="hostname" value="Morrowind with friends">
+          </div>
+          <div class="config-row">
+            <label for="port">port</label>
+            <input id="port" type="number" value="25565">
+          </div>
+          <div class="config-row">
+            <label for="maximumPlayers">maximumPlayers</label>
+            <input id="maximumPlayers" type="number" value="8">
+          </div>
+          <div class="config-row">
+            <label for="password">password</label>
+            <input id="password" type="password" value="">
+          </div>
+          <div class="config-row">
+            <label for="logLevel">logLevel</label>
+            <select id="logLevel">
+              <option value="0">0</option>
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </div>
+          <div class="config-row">
+            <label for="masterserver">[MasterServer] enabled</label>
+            <select id="masterserver">
+              <option value="true" selected>Да</option>
+              <option value="false">Нет</option>
+            </select>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="button button--primary" type="submit">Сохранить изменения</button>
+          <button class="button button--secondary" type="reset">Отменить</button>
+          <span class="muted">Изменено: 2</span>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Мир — config.lua</h2>
+      <p class="muted">Только простые значения из белого списка. Таблицы и списки не редактируются.</p>
+      <form method="post" action="/admin/config/config">
+        <div class="grid">
+          <div class="config-row">
+            <label for="gameMode">gameMode</label>
+            <input id="gameMode" value="default">
+          </div>
+          <div class="config-row">
+            <label for="loginTime">loginTime</label>
+            <input id="loginTime" type="number" value="60">
+          </div>
+          <div class="config-row">
+            <label for="maxClientsPerIP">maxClientsPerIP</label>
+            <input id="maxClientsPerIP" type="number" value="3">
+          </div>
+          <div class="config-row">
+            <label for="difficulty">difficulty</label>
+            <input id="difficulty" type="number" value="-20">
+          </div>
+          <div class="config-row">
+            <label for="passTimeWhenEmpty">passTimeWhenEmpty</label>
+            <select id="passTimeWhenEmpty">
+              <option value="true" selected>Да</option>
+              <option value="false">Нет</option>
+            </select>
+          </div>
+          <div class="config-row">
+            <label for="enforceDataFiles">enforceDataFiles</label>
+            <select id="enforceDataFiles">
+              <option value="true" selected>Да</option>
+              <option value="false">Нет</option>
+            </select>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="button button--primary" type="submit">Сохранить изменения</button>
+          <button class="button button--secondary" type="reset">Отменить</button>
+          <span class="muted">Изменений нет</span>
+        </div>
+      </form>
+      <h3>Только для чтения</h3>
+      <ul class="tag-list">
+        <li><code>gameSettings</code></li>
+        <li><code>vrSettings</code></li>
+        <li><code>defaultTimeTable</code></li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>История конфигов</h2>
+      <p class="muted">Каждое сохранение создаёт <code>configs-*</code>. Восстановление заменит все четыре файла и потребует перезапуска.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Архив</th>
+              <th>Причина</th>
+              <th>Дата (UTC)</th>
+              <th>Размер</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>configs-2026-10-27_16-40-00.tar.gz</code></td>
+              <td><span class="tag">config_set</span></td>
+              <td><time datetime="2026-10-27T16:40:00Z">2026-10-27 16:40</time></td>
+              <td>24 KB</td>
+              <td><button class="button button--secondary button--small" type="button">Восстановить</button></td>
+            </tr>
+            <tr>
+              <td><code>configs-2026-10-26_09-12-00.tar.gz</code></td>
+              <td><span class="tag">config_restore</span></td>
+              <td><time datetime="2026-10-26T09:12:00Z">2026-10-26 09:12</time></td>
+              <td>23 KB</td>
+              <td><button class="button button--secondary button--small" type="button">Восстановить</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="actions">
+        <button class="button button--primary" type="button">Вернуть предыдущие</button>
+        <span class="muted">Использует <code>config restore --latest</code></span>
+      </div>
+    </section>
+
+    <section class="card card--warning">
+      <h2>Удаление архива истории</h2>
+      <p>Введите имя архива целиком. Текущий архив и последний <code>configs-*</code> не удаляются.</p>
+      <div class="field">
+        <label for="delete-configs">Имя архива</label>
+        <input id="delete-configs" placeholder="configs-2026-09-01_00-00-00.tar.gz">
+      </div>
+      <div class="actions">
+        <button class="button button--danger" type="button" disabled>Удалить</button>
+        <button class="button button--ghost" type="button">Проверить план (--dry-run)</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

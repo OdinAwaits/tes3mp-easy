@@ -70,6 +70,8 @@
 | 8 | `unsafe_path` | Небезопасное имя или путь | 400 |
 | 9 | `config_invalid` | Ошибка конфига | 422 |
 | 10 | `checks_failed` | `doctor` нашёл ошибки | 503 |
+| 11 | `plugin_in_use` | Из мод-пака удаляется плагин, на который ссылается точка отката | 409 |
+| 12 | `archive_in_use` | Архив защищён от удаления: закреплён, активен или является базой точки отката | 409 |
 
 `doctor` возвращает `0`, если нет проверок со статусом `error` (предупреждения
 допустимы), и `10`, если есть хотя бы одна ошибка. Код `2` зарезервирован за
@@ -89,7 +91,7 @@
     "status": "warn",
     "checks": [
       {"name": "root", "status": "ok"},
-      {"name": "disk", "status": "warn", "message": "свободно меньше 1 ГиБ"}
+      {"name": "disk", "status": "warn", "message": "свободно меньше 512 MiB", "details": {"free": 402653184, "level": "warn"}}
     ]
   }
 }
@@ -99,6 +101,11 @@
 кодом `10`. Это исключение из формы ошибки: `doctor` не добавляет объект
 `error`, потому что диагностика уже в `data.checks`; HTTP 503 панель выставляет
 по коду выхода. Имена проверок и их смысл — в `04-ops.md` §6.
+
+`details` — необязательный объект у проверки. Для `disk` он содержит `free`
+(свободные байты) и `level` маркера guard (`ok`, `warn`, `stop`). Остальные
+проверки `details` не отдают, панель не полагается на их поля. Потребление
+RAM/CPU — не проверка `doctor`, а метрики панели (`05-panel.md` §13).
 
 ### `status`
 
@@ -114,7 +121,8 @@
 }
 ```
 
-- `unit` — ровно `tes3mp.service` или `tes3mp-easy-backup.timer`.
+- `unit` — ровно `tes3mp.service`, `tes3mp-easy-backup.timer` или
+  `tes3mp-easy-guard.timer`.
 - `state`: `running`, `stopped`, `starting`, `unhealthy`, `unknown`.
 - `health`: `healthy`, `unhealthy`, `unknown`.
 - `started_at` — RFC3339 или `null`; для таймера это время последнего запуска,
@@ -152,7 +160,7 @@
 
 ### `backups list`
 
-CLI: `backups list --type mods|state [--limit 200] [--before <name>] [--sha256]`.
+CLI: `backups list --type mods|configs [--limit 200] [--before <name>] [--sha256]`.
 
 ```json
 {
@@ -173,7 +181,9 @@ CLI: `backups list --type mods|state [--limit 200] [--before <name>] [--sha256]`
 }
 ```
 
-- `current` — имя из `backups/mods/current.txt`; для state всегда `null`.
+- `current` — имя из `backups/mods/current.txt`; для `configs` всегда `null`.
+- `type=mods` отдаёт `mods-*` и `mods-init-*`, `type=configs` — `configs-*`.
+  Снапшоты и чекпоинты эта команда не отдаёт: у них свои команды.
 - `items` отсортированы по `mtime`, новые сверху; при равном `mtime` — по имени
   по убыванию.
 - `limit` — 1..500, по умолчанию 200. `before` — имя архива, курсор
@@ -184,45 +194,264 @@ CLI: `backups list --type mods|state [--limit 200] [--before <name>] [--sha256]`
   поле `sha256` только к элементам текущей страницы.
 - Битый `current.txt` — `archive_invalid`, а не молчаливый `null`.
 
-### `backups create`
+### `snapshot create`
 
-CLI: `backups create --type state [--manual] [--if-running]`.
+CLI: `snapshot create [--label <text>] [--reason manual|mods|base] [--dry-run]`.
 
 ```json
 {
   "ok": true,
   "data": {
-    "archive": "state-2026-10-22_12-00-00.tar.gz",
-    "size": 123456,
+    "archive": "snapshot-2026-10-27_16-40-00.tar.gz",
+    "size": 201326592,
     "sha256": "abc...",
-    "skipped": false,
-    "pruned": ["state-2026-10-15_12-00-00.tar.gz"],
-    "warnings": []
-  }
-}
-```
-
-- Без `--manual` имя `state-*`; с `--manual` — `state-manual-*`.
-- `pruned` — имена удалённых retention-архивов, может быть пустым.
-- `warnings` — предупреждения retention/диска, может быть пустым. Если архив
-  создан, но бюджет превышен и автоматически удалять больше нечего,
-  `warnings` содержит причину, а команда завершается успешно.
-- `skipped` = `false` для созданного архива; при `skipped=true` поля `archive`,
-  `size` и `sha256` отсутствуют, а `reason` равен `not_running`.
-
-При `--if-running` и остановленном сервере:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "skipped": true,
-    "reason": "not_running",
+    "reason": "manual",
+    "label": "перед квестами",
+    "mods_archive": "mods-2026-10-27_16-40-00.tar.gz",
     "pruned": [],
     "warnings": []
   }
 }
 ```
+
+- Снапшот всегда полный: `state/`, `mods/`, `configs/` (§6.2). `reason=mods`
+  ставит `mods deploy`, `reason=manual` — панель и CLI,
+  `reason=base` — ленивая база из `checkpoint create`, когда подходящего
+  снапшота нет; вручную этот reason не нужен.
+- `mods_archive` — архив из `backups/mods/`, из которого взяты моды. Если
+  живые `mods/` расходятся с `current.txt`, ops сначала создаёт
+  `mods-<timestamp>` из живого каталога и обновляет `current.txt`.
+- `label` — необязательная строка 1..64 символа; без флага поле `null`.
+- `pruned` и `warnings` — имена удалённых retention-архивов и предупреждения
+  по диску. `--dry-run` печатает план и файла не создаёт.
+
+### `snapshot list`
+
+CLI: `snapshot list [--limit 200] [--before <name>]`.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [
+      {
+        "name": "snapshot-2026-10-27_16-40-00.tar.gz",
+        "size": 201326592,
+        "mtime": "2026-10-27T16:40:00Z",
+        "reason": "manual",
+        "label": "перед квестами",
+        "mods_sha256": "abc...",
+        "state_sha256": "def...",
+        "used_by": 12,
+        "protected": true
+      }
+    ],
+    "next_before": null
+  }
+}
+```
+
+- `used_by` — число живых чекпоинтов, чей `base.name` указывает на снапшот;
+- `protected` — `true`, если снапшот нельзя удалить retention-ом: на него
+  ссылается хотя бы один чекпоинт или он самый новый.
+
+### `snapshot restore`
+
+CLI: `snapshot restore (--latest|--archive <name>) [--no-restart]`.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "archive": "snapshot-2026-10-27_16-40-00.tar.gz",
+    "mods_archive": "mods-2026-10-27_16-40-00.tar.gz",
+    "base_switched": true,
+    "predeploy_checkpoint": "checkpoint-predeploy-2026-10-27_17-02-11.tar.gz",
+    "restarted": true
+  }
+}
+```
+
+- `base_switched` = `true`, если активный мод-пак отличался и был подменён;
+- `mods_archive` — архив в `backups/mods/`, соответствующий модам снапшота; при
+  необходимости ops создаёт его из слоя `mods/` и обновляет `current.txt`, иначе
+  будущие чекпоинты не смогут ссылаться на моды;
+- `predeploy_checkpoint` создаётся всегда до остановки сервера;
+- `--latest` берёт самый новый снапшот любого `reason`.
+
+### `checkpoint create`
+
+CLI: `checkpoint create [--label <text>] [--if-running] [--dry-run]`.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "archive": "checkpoint-2026-10-27_16-45-00.tar.gz",
+    "size": 131072,
+    "sha256": "abc...",
+    "label": null,
+    "reason": "manual",
+    "base": {
+      "name": "snapshot-2026-10-27_16-40-00.tar.gz",
+      "sha256": "abc...",
+      "mods_sha256": "def..."
+    },
+    "players": 12,
+    "skipped": false,
+    "pruned": [],
+    "warnings": []
+  }
+}
+```
+
+- `base` — активный снапшот: самый новый, чей `mods_sha256` совпадает с
+  `current.txt`. Если подходящего нет, ops сначала создаёт `snapshot-*` с
+  `reason=base` и ссылается на него.
+- `players` — число файлов в `players/` на момент снятия.
+- `--dry-run` печатает план (имя архива, база, `warnings`) и не создаёт ни
+  чекпоинт, ни ленивый `snapshot-*` с `reason=base`.
+- `--if-running` и остановленный сервер:
+  `{"skipped": true, "reason": "not_running", "pruned": [], "warnings": []}`;
+  поля `archive`, `size`, `sha256`, `base` отсутствуют.
+- Чекпоинт снимается с живого сервера и не транзакционен: файл, который TES3MP
+  пишет в этот момент, может попасть в архив частично. При 15-минутном
+  интервале и типичных ~100 KB это приемлемый recovery point.
+
+### `checkpoint list`
+
+CLI: `checkpoint list [--limit 200] [--before <name>]`.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [
+      {
+        "name": "checkpoint-2026-10-27_16-45-00.tar.gz",
+        "size": 131072,
+        "mtime": "2026-10-27T16:45:00Z",
+        "label": null,
+        "reason": "timer",
+        "pinned": false,
+        "players": 12,
+        "base": {
+          "name": "snapshot-2026-10-27_16-40-00.tar.gz",
+          "sha256": "abc...",
+          "available": true
+        }
+      }
+    ],
+    "next_before": null
+  }
+}
+```
+
+- `available=false` — базового снапшота нет (его удалил retention или
+  `snapshot rm --force`): обычный `checkpoint restore` вернёт `not_found`, а с
+  `--accept-mod-mismatch` мир восстанавливается на текущих модах
+  (`base_deployed=false`, `base_missing=true`);
+- `reason` — `timer`, `manual` или `predeploy`; панель показывает `predeploy`
+  отдельной группой и не предлагает `--latest` для неё;
+- `pinned` читается из sidecar-файла `<name>.pin`, а не из архива: архивы
+  неизменяемы.
+
+### `snapshot rm` / `checkpoint rm` / `backups rm`
+
+CLI:
+
+```text
+snapshot rm <name>... [--force] [--dry-run]
+checkpoint rm <name>... [--force] [--dry-run]
+backups rm --type mods|configs <name>... [--force] [--dry-run]
+```
+
+```json
+{
+  "ok": true,
+  "data": {
+    "removed": ["checkpoint-2026-09-01_00-00-00.tar.gz"],
+    "skipped": [],
+    "freed": 131072,
+    "warnings": []
+  }
+}
+```
+
+- имя проверяется как безопасное (`unsafe_path`, exit 8) и как архив своего
+  типа (`invalid_argument`, exit 2); отсутствующий файл — `not_found`, exit 3;
+- без `--force` защищённые имена не удаляются: закреплённый чекпоинт, архив из
+  `current.txt`, последний снапшот и база, на которую ссылаются чекпоинты, дают
+  `archive_in_use`, exit 12, и отклоняется вся пачка — частичного удаления нет;
+- с `--force` удаляется закреплённый чекпоинт вместе с `.pin` и база, на которую
+  ссылаются точки отката (если это не последний снапшот): чекпоинты остаются,
+  получают `available=false`, а `warnings` перечисляет их имена;
+- архив из `current.txt` и последний снапшот не удаляются даже с `--force`: они
+  попадают в `skipped` с причиной `current` или `last_snapshot`. Если после
+  фильтра удалять нечего — `archive_in_use`, exit 12; если что-то удалено —
+  exit 0;
+- `--dry-run` возвращает `removed`/`freed` как план, файлы не трогает;
+- lock берётся, удаление — `os.Remove` + `fsync` каталога; retention после `rm`
+  не запускается.
+
+### `checkpoint pin` / `checkpoint unpin`
+
+CLI: `checkpoint pin <name>` / `checkpoint unpin <name>`.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "archive": "checkpoint-2026-10-27_16-45-00.tar.gz",
+    "pinned": true
+  }
+}
+```
+
+`pin` создаёт `backups/checkpoints/<name>.pin` (JSON `{"pinned_at": "..."}`),
+`unpin` удаляет его. Архив не переписывается. Закреплённые чекпоинты retention
+не удаляет никогда.
+
+### `checkpoint restore`
+
+CLI: `checkpoint restore (--latest|--archive <name>) [--accept-mod-mismatch]
+[--no-restart]`.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "archive": "checkpoint-2026-10-27_16-45-00.tar.gz",
+    "base": {
+      "name": "snapshot-2026-10-27_16-40-00.tar.gz",
+      "sha256": "abc..."
+    },
+    "base_deployed": true,
+    "base_missing": false,
+    "mods_archive": "mods-2026-10-27_16-40-00.tar.gz",
+    "missing_plugins": [],
+    "predeploy_checkpoint": "checkpoint-predeploy-2026-10-27_17-02-11.tar.gz",
+    "restarted": true
+  }
+}
+```
+
+- `base_deployed=false`, если активный мод-пак уже совпадает с базой; иначе
+  моды базы деплоятся так же, как в `snapshot restore`;
+- `base_missing=true` только с `--accept-mod-mismatch`, когда база удалена:
+  `base` и `mods_archive` — `null`, активный мод-пак не меняется, а
+  `missing_plugins` перечисляет плагины из `requiredDataFiles.json` чекпоинта,
+  которых нет в текущем паке;
+- без флага отсутствующая база — `not_found`, exit 3, данные не меняются;
+- `configs/` не трогается никогда: конфиги принадлежат админу, а не точке
+  отката;
+- `--latest` берёт самый новый чекпоинт с `available=true` и не рассматривает
+  `checkpoint-predeploy-*`: это внутренние точки отката, их восстанавливают
+  только явным `--archive`;
+- `--accept-mod-mismatch` не меняет `current.txt`: база следующих чекпоинтов
+  выбирается по текущему паку, а если подходящего снапшота нет — первый
+  `checkpoint create` создаст `snapshot-*` с `reason=base` (нужно ≥512 MiB
+  свободно, иначе `no_space`).
 
 ### `mods import`
 
@@ -250,41 +479,34 @@ CLI: `backups create --type state [--manual] [--if-running]`.
 {
   "ok": true,
   "data": {
-    "archive": "mods-2026-10-22_12-00-00.tar.gz",
+    "archive": "mods-2026-10-27_16-40-00.tar.gz",
     "sha256": "abc...",
     "previous": "mods-2026-10-21_12-00-00.tar.gz",
-    "state_backup": "state-predeploy-2026-10-22_12-00-00.tar.gz",
+    "changes": {
+      "added": ["new-quests.esp"],
+      "removed": [],
+      "reordered": false,
+      "crc_changed": ["balance.esp"]
+    },
+    "predeploy_checkpoint": "checkpoint-predeploy-2026-10-27_16-40-00.tar.gz",
+    "snapshot": "snapshot-2026-10-27_16-40-00.tar.gz",
     "restarted": true
   }
 }
 ```
 
-`previous` может быть `null`, если это первый деплой. `state_backup` — имя
-созданного перед деплоем state-архива; он создаётся всегда. `restarted`
-равен `true`, только если сервер работал до операции и был запущен после неё;
-если сервер был остановлен или указан `--no-restart`, поле равно `false`.
-
-### `state deploy`
-
-```json
-{
-  "ok": true,
-  "data": {
-    "archive": "state-manual-2026-10-22_12-00-00.tar.gz",
-    "mods_archive": "mods-2026-10-22_12-00-00.tar.gz",
-    "predeploy_backup": "state-predeploy-2026-10-22_12-00-00.tar.gz",
-    "restarted": true
-  }
-}
-```
-
-`mods_archive` — архив модов из `current.txt` внутри state-архива. Он не может
-быть `null`: `current.txt` обязателен. Перед восстановлением ops всегда делает
-`state-predeploy-*`. `restarted` равен `true`, только если сервер работал до
-операции и был запущен после неё; при `--no-restart` или изначально
-остановленном сервере — `false`. `--latest` выбирает самый новый `state-*` или
-`state-manual-*`, но не `state-predeploy-*`; последние восстанавливаются только
-явным `--archive`.
+- `previous` может быть `null`, если это первый деплой;
+- `changes` — diff плагинов и скриптов относительно активного мод-пака;
+  `reordered` = `true`, если изменился только порядок загрузки; `crc_changed` —
+  плагины с тем же именем и другим CRC32;
+- `predeploy_checkpoint` создаётся всегда. `snapshot` с `reason=mods`
+  создаётся после успешной подмены: деплой меняет базу мира;
+- если `changes.removed` не пуст и хотя бы один удаляемый плагин входит в базу
+  живого чекпоинта, без `--allow-plugin-removal` команда завершается кодом 11
+  `plugin_in_use` и ничего не меняет;
+- `restarted` равен `true`, только если сервер работал до операции и был
+  запущен после неё; при `--no-restart` или изначально остановленном сервере —
+  `false`.
 
 ### `staff set`
 
@@ -322,26 +544,74 @@ CLI: `backups create --type state [--manual] [--if-running]`.
 
 ### `config set`
 
+CLI:
+
+```text
+config set --file server|config|banlist (--values <json>|--key <k> --value <v>) [--dry-run]
+```
+
 ```json
 {
   "ok": true,
   "data": {
     "file": "config",
-    "key": "loginTime",
-    "value": 60,
+    "changed": [
+      {"key": "loginTime", "value": 60},
+      {"key": "difficulty", "value": -20}
+    ],
+    "restart_required": true,
+    "configs_archive": "configs-2026-10-27_16-40-00.tar.gz"
+  }
+}
+```
+
+- `--values` — JSON-объект `{"<key>": <value>}`; все ключи проверяются до
+  записи, при ошибке не меняется ни один (всё или ничего);
+- `--key`/`--value` остаются для одной настройки и дают `changed` из одного
+  элемента;
+- `changed` отсортирован по `key`, `value` уже приведён к типу;
+- `configs_archive` — архив истории конфигов (§6.6), созданный после записи.
+  Он есть только для `--file config` и только вне `--dry-run`, иначе `null`;
+- `restart_required` всегда `true`: сервер не перезапускается.
+
+### `config restore`
+
+CLI: `config restore (--latest|--archive <name>)`.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "archive": "configs-2026-10-27_16-40-00.tar.gz",
+    "files": [
+      "config.lua",
+      "tes3mp-server-default.cfg",
+      "banlist.json",
+      "customScripts.lua"
+    ],
+    "predeploy_archive": "configs-2026-10-27_17-02-11.tar.gz",
     "restart_required": true
   }
 }
 ```
+
+- перед записью текущие конфиги архивируются (`predeploy_archive`), и каждый
+  файл получает `.bak-<timestamp>`;
+- `files` — ровно записи архива в фиксированном порядке;
+- `customScripts.lua` восстанавливается из архива, но `mods deploy` и `doctor`
+  пересоздают его из `mods/scripts/`; расхождение — `warn`, не `error`;
+- команда сервер не перезапускает: `restart_required` всегда `true`, панель
+  показывает баннер и кнопку рестарта.
 
 ## 5. Ops: lock и атомарность
 
 - Все мутации берут эксклюзивный lock `.locks/ops.lock` через `flock`.
 - `--lock-timeout` по умолчанию `30s`; при истечении — код `4`, `locked`.
 - Читающие команды (`doctor`, `status`, `backups list`, `logs`) lock не берут.
-- Внутренние операции, которым нужен уже взятый lock (например, state-бэкап
-  внутри `mods deploy`), не вызывают публичную команду повторно. В коде это
-  отдельная функция `createStateBackupLocked`, чтобы не было deadlock.
+- Внутренние операции, которым нужен уже взятый lock (чекпоинт внутри
+  `mods deploy`, снапшот внутри `checkpoint create`), не вызывают публичную
+  команду повторно. В коде это отдельные функции `createCheckpointLocked` и
+  `createSnapshotLocked`, чтобы не было deadlock.
 - Любая запись — temp-файл в том же каталоге, `fsync`, `rename`.
 - `--dry-run` берёт shared lock и ничего не меняет.
 
@@ -375,13 +645,84 @@ mods.tar.gz
   содержит `plugins/requiredDataFiles.json` с тремя базовыми ESM и пустой
   `scripts/`.
 
-### 6.2. State
+### 6.2. Snapshot
 
-Только вложенная форма. Плоские `cell/`, `world/`, `map/`, `recordstore/`,
-`custom/` в корне архива не принимаются.
+Снапшот — самодостаточная база: мир, моды и конфиги в одном архиве. Только
+вложенная форма; плоские `players/`, `world/`, `plugins/`, `configs/` в корне
+не принимаются.
 
 ```text
-state.tar.gz
+snapshot.tar.gz
+├── manifest.json
+├── state/
+│   ├── players/
+│   ├── world/
+│   │   ├── cell/
+│   │   ├── world/
+│   │   ├── map/
+│   │   ├── recordstore/
+│   │   └── custom/
+│   └── requiredDataFiles.json
+├── mods/
+│   ├── plugins/
+│   │   ├── mod.esp
+│   │   └── requiredDataFiles.json
+│   └── scripts/
+└── configs/
+    ├── config.lua
+    ├── tes3mp-server-default.cfg
+    ├── banlist.json
+    └── customScripts.lua
+```
+
+```json
+{
+  "format": "tes3mp-easy-snapshot",
+  "version": 1,
+  "created_at": "2026-10-27T16:40:00Z",
+  "reason": "manual",
+  "label": "",
+  "panel_version": "0.1.15",
+  "mods_sha256": "abc...",
+  "state_sha256": "def...",
+  "configs_sha256": "012..."
+}
+```
+
+- `manifest.json` — первая запись архива: панель читает только её;
+- `reason`: `manual`, `mods`, `base`; `label` — 0..64 символа, `""` без метки;
+- digest слоя считается от канонического листинга, а не от байтов архива:
+
+```text
+digest(layer) = sha256( layer "\n" + Σ path "\0" size "\0" file_sha256 "\n" )
+```
+
+записи сортируются по `path` (байтовый порядок, `/` внутри пути, без ведущего
+`/`), `size` — десятичное, `file_sha256` — 64 hex в нижнем регистре. Digest не
+зависит от порядка обхода, mtime и степени сжатия.
+
+Правила:
+
+- `state/` — только вложенная форма, `players/` и `world/<name>/` ровно эти
+  пути;
+- `mods/` подчиняется §6.1 целиком, но лежит под префиксом `mods/`;
+- набор плагинов, их CRC и порядок в `plugins/requiredDataFiles.json` — это
+  порядок загрузки; расхождение с файлами слоя — `archive_invalid`;
+- `configs/` — ровно четыре файла из списка, не больше и не меньше;
+- `current.txt` внутри снапшота нет: активный мод-пак определяется по слою
+  `mods/` и `mods_sha256`;
+- при восстановлении ops заводит (или переиспользует) `mods-*` в
+  `backups/mods/`, чтобы `current.txt` оставался валидным;
+- снапшот неизменяем: он никогда не дописывается и не пересобирается.
+
+
+### 6.3. Checkpoint
+
+Чекпоинт — только прогресс мира: без модов и без конфигов.
+
+```text
+checkpoint.tar.gz
+├── manifest.json
 ├── players/
 ├── world/
 │   ├── cell/
@@ -389,28 +730,41 @@ state.tar.gz
 │   ├── map/
 │   ├── recordstore/
 │   └── custom/
-├── requiredDataFiles.json
-└── current.txt
+└── requiredDataFiles.json
 ```
 
-Обязательны все перечисленные каталоги и оба файла. Пустой `players/` — это
-каталог без файлов, а не отсутствующий каталог. Любое отклонение —
-`archive_invalid` с указанием отсутствующей записи.
+```json
+{
+  "format": "tes3mp-easy-checkpoint",
+  "version": 1,
+  "created_at": "2026-10-27T16:45:00Z",
+  "reason": "timer",
+  "label": "",
+  "base": {
+    "name": "snapshot-2026-10-27_16-40-00.tar.gz",
+    "sha256": "abc...",
+    "mods_sha256": "def...",
+    "state_sha256": "012..."
+  },
+  "players": 12,
+  "world_sha256": "345..."
+}
+```
 
-Правила:
+- `reason`: `timer`, `manual`, `predeploy`;
+- `base` — снапшот, продолжением которого является чекпоинт. `sha256`
+  проверяется при восстановлении, `mods_sha256` показывает, нужно ли деплоить
+  моды, `state_sha256` — от какой версии мира снят чекпоинт (сам мир лежит в
+  чекпоинте целиком, это не дельта);
+- `world_sha256` — digest слоя `players/` + `world/` + `requiredDataFiles.json`
+  по алгоритму §6.2;
+- `players` — число файлов в `players/`;
+- чекпоинт не содержит `mods/`, `configs/` и `current.txt`; восстановление без
+  доступной базы — `not_found`, кроме явного `--accept-mod-mismatch` (§4);
+- закрепление не меняет архив: оно живёт в sidecar-файле
+  `backups/checkpoints/<name>.pin` с `{"pinned_at": "..."}`.
 
-- `players/` и `world/<name>/` — ровно эти пути, без дополнительной вложенности;
-- `requiredDataFiles.json` и `current.txt` — метаданные мод-пака, с которым
-  сделан state;
-- `current.txt` обязателен и должен быть в каноническом формате §6.4;
-- `current.txt` должен указывать на существующий архив в `backups/mods/`, иначе
-  `state deploy` возвращает `archive_invalid`;
-- ops не подменяет моды: если `current.txt` из state не совпадает с текущим
-  `backups/mods/current.txt`, сначала нужно задеплоить нужный мод-пак;
-- `state deploy` не удаляет текущие `players/` и `world/` до успешной
-  распаковки в staging.
-
-### 6.3. `requiredDataFiles.json`
+### 6.4. `requiredDataFiles.json`
 
 ```json
 [
@@ -431,10 +785,14 @@ state.tar.gz
   `plugins/` — в JSON (кроме самого `requiredDataFiles.json`); три базовых ESM
   (`Morrowind.esm`, `Tribunal.esm`, `Bloodmoon.esm`) в архив не входят и
   проверяются клиентом по установленному Morrowind;
-- для state JSON описывает мод-пак, но сами плагины лежат в `backups/mods/`,
-  а не в state-архиве.
+- в `snapshot-*` JSON лежит в `mods/plugins/requiredDataFiles.json` и обязан
+  совпадать с составом `mods/plugins/` (кроме трёх базовых ESM);
+- в `checkpoint-*` JSON лежит в корне и описывает мод-пак базы: тот же набор,
+  что в `base.mods_sha256`; расхождение — `archive_invalid`;
+- отдельного state-архива с JSON больше нет, `current.txt` в снапшотах и
+  чекпоинтах не используется.
 
-### 6.4. `current.txt`
+### 6.5. `current.txt`
 
 Единственный формат:
 
@@ -452,21 +810,57 @@ state.tar.gz
   `archive_invalid`;
 - новые записи всегда создаются только в этом формате.
 
-### 6.5. Лимиты архивов
+### 6.6. Configs
 
-| Параметр | Моды | State |
-|---|---|---|
-| Максимальный размер сжатого архива | 512 MiB | 512 MiB |
-| Максимальный размер после распаковки | 1 GiB | 1 GiB |
-| Максимальное число записей tar | 50 000 | 50 000 |
-| Максимальный размер upload | 512 MiB | — |
-| Разрешённые типы записей | regular file, directory | regular file, directory |
+История конфигов: маленький архив, который создаётся при каждом изменении
+`config.lua` и перед `config restore`.
+
+```text
+configs.tar.gz
+├── manifest.json
+├── config.lua
+├── tes3mp-server-default.cfg
+├── banlist.json
+└── customScripts.lua
+```
+
+```json
+{
+  "format": "tes3mp-easy-configs",
+  "version": 1,
+  "created_at": "2026-10-27T16:40:00Z",
+  "reason": "config_set",
+  "label": "",
+  "files": {
+    "config.lua": "abc...",
+    "tes3mp-server-default.cfg": "def...",
+    "banlist.json": "012...",
+    "customScripts.lua": "345..."
+  }
+}
+```
+
+- `reason`: `config_set`, `config_restore`, `predeploy`;
+- `files` — sha256 каждого файла, ровно четыре ключа;
+- архив не содержит `players/`, `world/`, `mods/`;
+- снапшот (§6.2) содержит те же четыре файла в `configs/`, но не заменяет этот
+  архив: история конфигов не должна стоить копии модов.
+
+### 6.7. Лимиты архивов
+
+| Параметр | Моды | Snapshot | Checkpoint | Configs |
+|---|---|---|---|---|
+| Максимальный размер сжатого архива | 512 MiB | 1 GiB | 256 MiB | 1 MiB |
+| Максимальный размер после распаковки | 1 GiB | 2 GiB | 512 MiB | 4 MiB |
+| Максимальное число записей tar | 50 000 | 100 000 | 50 000 | 16 |
+| Максимальный размер upload | 512 MiB | — | — | — |
+| Разрешённые типы записей | regular file, directory | то же | то же | то же |
 
 Symlink, hardlink, device, FIFO, абсолютные пути, `..`, NUL и дубликаты
 отклоняются с `archive_invalid` или `unsafe_path`. Gzip-мусор после tar и
 повреждённый gzip — `archive_invalid`.
 
-### 6.6. Имена архивов
+### 6.8. Имена архивов
 
 Все имена — UTC, без пробелов:
 
@@ -474,69 +868,110 @@ Symlink, hardlink, device, FIFO, абсолютные пути, `..`, NUL и д�
 |---|---|---|
 | Моды | `mods-YYYY-MM-DD_HH-MM-SS.tar.gz` | `mods import` |
 | Базовые моды | `mods-init-YYYY-MM-DD_HH-MM-SS.tar.gz` | `bootstrap.sh` |
-| State по таймеру | `state-YYYY-MM-DD_HH-MM-SS.tar.gz` | `tes3mp-easy-backup.timer` |
-| State вручную | `state-manual-YYYY-MM-DD_HH-MM-SS.tar.gz` | панель / `--manual` |
-| State перед деплоем | `state-predeploy-YYYY-MM-DD_HH-MM-SS.tar.gz` | `mods deploy` / `state deploy` |
+| Snapshot | `snapshot-YYYY-MM-DD_HH-MM-SS.tar.gz` | `snapshot create`, `mods deploy` |
+| Checkpoint | `checkpoint-YYYY-MM-DD_HH-MM-SS.tar.gz` | `tes3mp-easy-backup.timer`, `checkpoint create` |
+| Checkpoint перед восстановлением | `checkpoint-predeploy-YYYY-MM-DD_HH-MM-SS.tar.gz` | `mods deploy`, `snapshot restore`, `checkpoint restore` |
+| Configs | `configs-YYYY-MM-DD_HH-MM-SS.tar.gz` | `config set --file config`, `config restore` |
 
-Если файл с таким именем уже существует, к имени перед `.tar.gz`
-добавляется `-01`, `-02` и так далее. Имена вне шаблонов не принимаются как
-state/mods-архивы.
+Если файл с таким именем уже существует, к имени перед `.tar.gz` добавляется
+`-01`, `-02` и так далее. Имена вне шаблонов не принимаются как архивы этого
+типа. Pin-файлы `<name>.pin` рядом с чекпоинтами архивами не являются и в
+списки не попадают.
 
-### 6.7. Retention
+### 6.9. Retention
 
-Retention применяется после каждого успешного `backups create`, `mods import`
-и создания `state-predeploy-*`. Время — UTC.
+Retention применяется после каждого успешного `snapshot create`,
+`checkpoint create`, `config set --file config`, `config restore`,
+`mods import` и создания `checkpoint-predeploy-*`. Время — UTC. Ручное
+удаление — `rm` из §4; retention после него не запускается.
+
+Чекпоинты делятся на классы по возрасту; представитель бакета выбирается по
+имени архива, без чтения содержимого:
 
 | Класс | Возраст | Что хранится |
 |---|---|---|
-| Горячий | 0–7 дней | все автоматические `state-<timestamp>` (каждые 5 минут) |
-| Дневной | 7–365 дней | последний автоматический `state-<timestamp>` каждого дня |
-| Недельный | 1–3 года | последний автоматический `state-<timestamp>` каждой ISO-недели |
-| Месячный | старше 3 лет | последний автоматический `state-<timestamp>` каждого месяца, **навсегда** |
-| Ручной | любой | последние 5 `state-manual-*` |
-| Перед деплоем | любой | последние 2 `state-predeploy-*` |
-| Моды | любой | последние 5 `mods-<timestamp>` (кроме `mods-init-*`) |
-| Базовые моды | любой | последние 2 `mods-init-*` |
+| Горячий | 0–7 дней | все `checkpoint-<timestamp>` (каждые 15 минут) |
+| Дневной | 7–365 дней | самый новый чекпоинт каждой UTC-даты |
+| Недельный | 1–3 года | самый новый чекпоинт каждой ISO-недели |
+| Месячный | старше 3 лет | самый новый чекпоинт каждого месяца, **навсегда** |
+| Закреплённый | любой | все, у кого есть `<name>.pin`, **навсегда** |
+| Predeploy | любой | последние 2 `checkpoint-predeploy-*` |
 
-«Последний в bucket» — самый новый архив внутри дня/недели/месяца. При обычном
-retention в каждом bucket остаётся этот представитель; при pressure pruning
-дневные и недельные представители могут удаляться (самые старые первыми), но
-месячный представитель не удаляется автоматически никогда.
+Дневной представитель фиксируется, когда сутки закончились, и больше не
+меняется: чекпоинты следующих суток его не вытесняют. «Последний чекпоинт дня»
+означает последний по времени архив этой UTC-даты.
 
-Всегда защищены:
+Прочие классы:
 
-- самый новый state-архив любого класса;
+| Класс | Что хранится |
+|---|---|
+| Snapshot, автоматический | последние 2 с `reason=mods` или `reason=base` |
+| Snapshot, ручной | последние 5 с `reason=manual` |
+| Snapshot, защищённый | любой, на который ссылается хранимый чекпоинт |
+| Configs | последние 20 `configs-*` |
+| Моды | последние 5 `mods-<timestamp>` (кроме `mods-init-*`) |
+| Базовые моды | последние 2 `mods-init-*` |
+
+Автоматически не удаляются никогда:
+
+- самый новый чекпоинт и самый новый снапшот;
+- снапшот, на который ссылается хотя бы один хранимый чекпоинт;
+- закреплённые чекпоинты (`<name>.pin`);
 - архив, на который указывает `backups/mods/current.txt`, и сам `current.txt`;
-- последний месячный архив каждого месяца.
+- самая новая запись `configs-*`.
+
+Снапшот-база живёт столько же, сколько ссылающиеся на него чекпоинты, включая
+дневные, недельные и месячные: мод-пак, снятый год назад, остаётся
+восстановимым. Бюджет `backups/snapshots` при этом конечен. Если он превышен,
+защита снимается только с самой старой базы (при равенстве — с той, на которую
+ссылается меньше чекпоинтов). Её чекпоинты не удаляются, получают
+`available=false` и восстанавливаются только с `--accept-mod-mismatch`;
+`warnings` перечисляет такие чекпоинты, `doctor` показывает `warn`.
 
 Если места не хватает, включается pressure pruning в порядке:
 
-1. автоматические `state-<timestamp>` старше 24 часов, не являющиеся последними
-   за день;
-2. дневные представители (самые старые первыми);
-3. недельные представители (самые старые первыми).
+1. `checkpoint-predeploy-*` сверх 2, самые старые;
+2. автоматические снапшоты с `reason=base` сверх 1, не защищённые
+   чекпоинтами;
+3. незакреплённые чекпоинты вне горячего окна, самые старые: сначала не
+   представители бакета, затем дневные, затем недельные;
+4. самые старые снапшоты-базы, защита которых снимается последней; их
+   чекпоинты остаются с `available=false`.
 
-Месячные не удаляются даже при давлении. Если после этого бюджет всё ещё
-превышен, архив всё равно создаётся (если есть физическое место), а
-`warnings` содержит причину. `doctor` показывает `warn`, пока бюджет не
-вернётся в норму.
+Ручные снапшоты, месячные представители и закреплённые чекпоинты pressure
+pruning не удаляет. Если после этого бюджет всё ещё превышен, архив всё равно
+создаётся (при наличии физического места), а `warnings` содержит причину.
+`doctor` показывает `warn`, пока бюджет не вернётся в норму.
 
 Бюджеты:
 
 | Каталог | Бюджет |
 |---|---|
-| `backups/state` | 1 GiB |
+| `backups/snapshots` | 1.5 GiB |
+| `backups/checkpoints` | 256 MiB |
+| `backups/configs` | 32 MiB |
 | `backups/mods` | 512 MiB |
 | Свободный резерв на файловой системе | не меньше 512 MiB |
 
-`doctor` предупреждает, если свободно меньше 1 GiB, и считает ошибкой, если
-свободно меньше 512 MiB. Превышение бюджета каталога — `warn`, а не повод
-удалять месячные архивы.
+Оценка объёма: 672 горячих чекпоинта за 7 дней плюс 358 дневных за год плюс
+недельные и месячные ≈ 1100 архивов × ~150 КБ ≈ 165 МБ. Бюджет
+`backups/checkpoints` не достигается даже за три года, поэтому дневную историю
+можно хранить бессрочно.
+
+Guard (`04-ops.md` §6) останавливает сервер, если свободного места меньше
+256 MiB, и предупреждает при 512 MiB. `doctor` даёт `warn` при свободных
+256–512 MiB и `error` меньше 256 MiB. Превышение бюджета каталога — `warn`, а
+не повод удалять закреплённые точки.
 
 ## 7. Публичный HTTP API
 
 Базовый URL — `https://<panel>/api/v1`. Пароль сервера здесь не отдаётся
-никогда.
+никогда. Публичный список мира и скачивание пакета включаются флагом
+`public_state_download` в конфиге панели; по умолчанию флаг выключен. Тот же
+флаг управляет публичным списком чекпоинтов (`/backups` без `type` и
+`/backups?type=checkpoints`) и маршрутом `/backups/checkpoints/<name>`: при
+выключенном флаге они отвечают `404`, а `/backups?type=mods` и архивы модов
+остаются доступными.
 
 ### `GET /api/v1/server`
 
@@ -597,6 +1032,76 @@ retention в каждом bucket остаётся этот представит�
 - поддержка `If-None-Match` → `304 Not Modified`;
 - при отсутствии архива или невалидном `current.txt` — `404` с `no_mods`.
 
+### `GET /api/v1/checkpoints`
+
+```json
+{
+  "items": [
+    {
+      "name": "checkpoint-2026-10-27_16-45-00.tar.gz",
+      "created_at": "2026-10-27T16:45:00Z",
+      "label": null,
+      "size": 131072,
+      "sha256": "abc...",
+      "players": 12,
+      "base": {
+        "name": "snapshot-2026-10-27_16-40-00.tar.gz",
+        "mods_sha256": "def..."
+      },
+      "url": "/api/v1/checkpoints/checkpoint-2026-10-27_16-45-00.tar.gz/download"
+    }
+  ],
+  "next_before": null
+}
+```
+
+- по умолчанию 50 новейших; `?before=<name>&limit=1..200` — как
+  `checkpoint list`;
+- `label` — `null`, если метки нет; `base.mods_sha256` нужен клиенту, чтобы
+  сравнить со своим мод-паком;
+- `Cache-Control: no-store`;
+- вместе с `.../download` доступен только при `public_state_download = true`,
+  иначе `404` с кодом `disabled`.
+
+### `GET /api/v1/checkpoints/<name>/download`
+
+Собирает переносимый пакет мира на лету, без временного файла:
+
+```text
+tes3mp-server-<checkpoint>.tar.gz
+├── manifest.json
+├── world/
+│   ├── players/
+│   ├── world/{cell,world,map,recordstore,custom}/
+│   └── requiredDataFiles.json
+├── mods/
+│   ├── plugins/
+│   └── scripts/
+├── config.lua.template
+└── README.txt
+```
+
+```json
+{
+  "format": "tes3mp-easy-world-bundle",
+  "version": 1,
+  "created_at": "2026-10-27T16:45:00Z",
+  "checkpoint": "checkpoint-2026-10-27_16-45-00.tar.gz",
+  "base": "snapshot-2026-10-27_16-40-00.tar.gz",
+  "players": 12
+}
+```
+
+- `config.lua.template` — `config.lua` из базы с пустым `password`, пустыми
+  списками бана и без админских ключей; пароли и баны наружу не уходят;
+- `README.txt` — как поднять сервер из пакета без панели;
+- `200 OK`, `Content-Type: application/gzip`, `Content-Length`,
+  `Content-Disposition: attachment; filename="<bundle>"`;
+- `ETag` — sha256 от пары (чекпоинт, база);
+- `404 not_found` — чекпоинта нет; `409 base_missing` — нет базового снапшота;
+  `404 disabled` — флаг выключен;
+- лимит скачиваний общий: 60 в минуту на IP.
+
 ### `GET /healthz`
 
 `200 OK`, тело `ok\n`, без проверки других сервисов. Это liveness, а не
@@ -614,7 +1119,8 @@ readiness.
 ```
 
 Коды: `not_found`, `no_mods`, `rate_limited`, `service_unavailable`,
-`internal`. HTTP-статусы: `404`, `404`, `429`, `503`, `500`.
+`internal`, `disabled`, `base_missing`. HTTP-статусы: `404`, `404`, `429`,
+`503`, `500`, `404`, `409`.
 
 ## 8. Вызов ops из панели
 
@@ -628,9 +1134,9 @@ readiness.
 
 | Операция | Таймаут |
 |---|---|
-| `status`, `logs`, `backups list`, `config get` | 5 с |
-| `start`, `stop`, `restart`, `staff set`, `config set` | 2 мин |
-| `mods import`, `mods deploy`, `state deploy`, `backups create` | 10 мин |
+| `status`, `logs`, `backups list`, `snapshot list`, `checkpoint list`, `config get` | 5 с |
+| `start`, `stop`, `restart`, `staff set`, `config set`, `config restore`, `checkpoint pin`, `checkpoint unpin`, `snapshot rm`, `checkpoint rm`, `backups rm` | 2 мин |
+| `mods import`, `mods deploy`, `snapshot create`, `snapshot restore`, `checkpoint create`, `checkpoint restore` | 30 мин |
 
 - Одновременно может идти только одна мутация. Второй запрос ждёт lock до 30 с;
   если не дождался — `409 locked` и сообщение «операция уже выполняется».
@@ -731,16 +1237,21 @@ readiness.
 
 ## 10. Старые форматы не принимаются
 
-- State-архив только вложенный: `players/`, `world/<пять каталогов>/`,
-  `requiredDataFiles.json`, `current.txt`.
+- Единственные форматы — §6.1–§6.6: `mods-*`, `mods-init-*`, `snapshot-*`,
+  `checkpoint-*`, `configs-*`.
+- State-архивов больше нет: `state-*`, `state-manual-*` и `state-predeploy-*`
+  не принимает ни одна команда (`archive_invalid`).
 - `current.txt` только `<sha256> <filename>`; строка только с хешем —
   `archive_invalid`.
-- Имена вне шаблонов §6.6 не являются валидными state/mods-архивами.
+- Имена вне шаблонов §6.8 не являются валидными архивами.
 - Старые URL `/list-backups/...` и `/download/...` не поддерживаются.
 - Старые клиентские конфиги не мигрируются.
-- Если при обновлении найден старый формат, `doctor` возвращает `error`, а
-  `state deploy`/`mods deploy` — `archive_invalid`. Автоматической конвертации
-  нет; нужен новый архив, снятый этой версией.
+- При обновлении `bootstrap.sh` переносит `backups/state/` в
+  `backups/legacy-state/`, не меняя файлы: данные не удаляются, но и не
+  восстанавливаются этой версией. `doctor` показывает `warn` с этим каталогом,
+  пока администратор не уберёт его в холодный архив.
+- Автоматической конвертации state → checkpoint нет: старый state-архив не
+  содержит ссылки на базу, поэтому такая конвертация была бы догадкой.
 
 ## 11. Изменение контракта
 

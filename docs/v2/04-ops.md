@@ -65,22 +65,32 @@ internal/
 | Команда | Что делает |
 |---|---|
 | `doctor [--json]` | Проверяет root, права, systemd, journald, runtime, память, диск, конфиги, `current.txt`, retention-бюджеты |
-| `status [--unit tes3mp.service\|tes3mp-easy-backup.timer] [--json]` | Состояние unit |
+| `status [--unit tes3mp.service\|tes3mp-easy-backup.timer\|tes3mp-easy-guard.timer] [--json]` | Состояние unit |
 | `start` / `stop` / `restart` | Управляет `tes3mp.service` через rootctl |
 | `logs --tail N` | Отдаёт последние N строк journald для `tes3mp.service` |
-| `backups list --type mods\|state [--limit 200] [--before <name>] [--sha256]` | Страница архива с курсором |
-| `backups create --type state [--manual] [--if-running]` | Создаёт state-бэкап и применяет retention |
+| `backups list --type mods\|configs [--limit 200] [--before <name>] [--sha256]` | Страница архивов модов или истории конфигов |
+| `snapshot create [--label <text>] [--reason manual\|mods\|base] [--dry-run]` | Снапшот: мир + моды + конфиги |
+| `snapshot list [--limit 200] [--before <name>]` | Список снапшотов |
+| `snapshot restore (--latest\|--archive <name>) [--no-restart]` | Восстанавливает снапшот целиком |
+| `checkpoint create [--label <text>] [--if-running] [--dry-run]` | Прогресс мира на базе активного снапшота |
+| `checkpoint list [--limit 200] [--before <name>]` | Список чекпоинтов |
+| `checkpoint restore (--latest\|--archive <name>) [--accept-mod-mismatch] [--no-restart]` | Восстанавливает мир из чекпоинта |
+| `checkpoint pin\|unpin <name>` | Защищает чекпоинт от retention |
+| `snapshot rm <name>... [--force] [--dry-run]` | Удаляет снапшоты вручную |
+| `checkpoint rm <name>... [--force] [--dry-run]` | Удаляет чекпоинты вручную |
+| `backups rm --type mods\|configs <name>... [--force] [--dry-run]` | Удаляет архив модов или истории конфигов |
 | `mods import --file <path>` | Проверяет и импортирует архив модов |
-| `mods deploy (--current\|--latest\|--archive <name>) [--no-restart]` | Деплоит моды |
-| `state deploy (--latest\|--archive <name>) [--no-restart]` | Восстанавливает state |
+| `mods deploy (--current\|--latest\|--archive <name>) [--allow-plugin-removal] [--no-restart]` | Деплоит моды и делает снапшот |
 | `staff set --player <name> --rank 0..3` | Меняет `settings.staffRank` |
 | `config get --file server\|config\|banlist` | Отдаёт структурированные настройки |
-| `config set --file ... --key ... --value ...` | Меняет одну настройку |
+| `config set --file ... (--values <json>\|--key --value)` | Меняет одну настройку или пачку |
+| `config restore (--latest\|--archive <name>)` | Возвращает конфиги из истории |
 
-Команды `mods deploy` и `state deploy` останавливают сервер перед подменой
-файлов. Если он был запущен, после успеха они запускают его снова; если был
-остановлен — оставляют остановленным. Флаг `--no-restart` оставляет сервер
-остановленным и в первом случае; он не отменяет остановку перед подменой.
+`mods deploy`, `snapshot restore` и `checkpoint restore` останавливают сервер
+перед подменой файлов. Если он был запущен, после успеха они запускают его
+снова; если был остановлен — оставляют остановленным. Флаг `--no-restart`
+оставляет сервер остановленным и в первом случае; он не отменяет остановку
+перед подменой.
 
 ## 4. JSON и коды выхода
 
@@ -101,15 +111,18 @@ internal/
 
 - Реализация: `flock`/`syscall.Flock` на файле; lock живёт, пока жив процесс.
 - `--lock-timeout 30s`: по истечении — exit 4, `locked`.
-- Читающие команды (`status`, `logs`, `backups list`, `doctor`) lock не берут:
-  архивы пишутся через temp + rename и не видны частично.
+- Читающие команды (`status`, `logs`, `backups list`, `snapshot list`,
+  `checkpoint list`, `doctor`) lock не берут: архивы пишутся через temp + rename
+  и не видны частично.
 - `--dry-run` берёт shared lock и ничего не пишет.
 - Внутренние операции не вызывают публичную команду повторно: `mods deploy`
-  делает state-бэкап через `createStateBackupLocked`, а timer-запуск — через
-  ту же внутреннюю функцию. Иначе `flock` в том же процессе даст deadlock.
+  снимает чекпоинт через `createCheckpointLocked`, `checkpoint create` —
+  снапшот через `createSnapshotLocked`, timer — через
+  `createCheckpointLocked`. Иначе `flock` в том же процессе даст deadlock.
 
 Любая запись файла — это temp-файл в том же каталоге, `fsync`, `rename`.
-Никаких «записали прямо в `config.lua`» и «удалили state, потом распаковали».
+Никаких «записали прямо в `config.lua`» и «удалили `players/`, потом
+распаковали».
 
 ## 6. Команды
 
@@ -125,7 +138,7 @@ internal/
 - `uname -m` — `x86_64`; другая архитектура — `error`;
 - `systemctl` работает, версия systemd читается; не-systemd — `error`;
 - `tes3mp.service` и `tes3mp-panel.service` установлены и не в `failed`;
-  `tes3mp-easy-backup.timer` активен и `enabled`;
+  `tes3mp-easy-backup.timer` и `tes3mp-easy-guard.timer` активны и `enabled`;
 - journald читается, `journalctl -u tes3mp.service -n 1` не требует пароля;
 - `tes3mp-server` и библиотеки релиза на месте; `libluajit-5.1.so.2` находится
   через `ldconfig -p`; `LD_LIBRARY_PATH=/opt/tes3mp-easy/tes3mp/lib ldd
@@ -133,14 +146,18 @@ internal/
 - RAM не меньше 512 MiB; swap не меньше 480 MiB (bootstrap создаёт 512 MiB
   `/swapfile`, если swap меньше 480 MiB), `vm.swappiness=10`;
 - cgroup-лимиты юнитов соответствуют §3 `02-architecture.md`;
-- свободное место: `warn` меньше 1 GiB, `error` меньше 512 MiB;
+- свободное место: `warn` меньше 512 MiB, `error` меньше 256 MiB; маркер
+  `backups/guard.json` уровня `stop` делает проверку `error` независимо от
+  текущего `statfs`;
 - `panel-data/uploads` и `backups/` на одной файловой системе (`stat.Dev`);
-- `backups/state` и `backups/mods` в пределах бюджета 1 GiB / 512 MiB;
+- `backups/snapshots`, `backups/checkpoints`, `backups/configs` и `backups/mods`
+  в пределах бюджета 1.5 GiB / 256 MiB / 32 MiB / 512 MiB;
 - `backups/mods/current.txt` канонический, указывает на существующий архив,
   sha256 совпадает;
 - `requiredDataFiles.json` читается и соответствует `mods/plugins/` (кроме трёх
   базовых ESM, которых в `mods/plugins/` нет);
-- state-архивы (последний, средний и самый старый) имеют вложенную структуру;
+- манифесты последних снапшотов и чекпоинтов читаются, digest слоёв совпадает с
+  содержимым, у каждого живого чекпоинта есть база; иначе `warn`;
 - конфиги парсятся, `customScripts.lua` соответствует `mods/scripts/`;
 - нет осиротевших `.part`, `.old-*`, `.staging/` и старых lock-файлов;
 - journald-капы `SystemMaxUse=100M`, `RuntimeMaxUse=32M`.
@@ -160,10 +177,11 @@ internal/
 - `arch` — `uname -m` равен `x86_64`, иначе `error`;
 - `systemd` — `systemctl --version` читается и начинается с `systemd`;
 - `units` — `tes3mp.service` и `tes3mp-panel.service` установлены
-  (`LoadState=loaded`) и не в `failed`; `tes3mp-easy-backup.timer` активен и
-  `enabled`;
-- `disk` — свободное место на файловой системе `--root`: `warn` меньше 1 GiB,
-  `error` меньше 512 MiB;
+  (`LoadState=loaded`) и не в `failed`; `tes3mp-easy-backup.timer` и
+  `tes3mp-easy-guard.timer` активны и `enabled`;
+- `disk` — свободное место на файловой системе `--root`: `warn` меньше
+  512 MiB, `error` меньше 256 MiB; маркер `backups/guard.json` уровня `stop`
+  даёт `error` с текстом «сервер остановлен guard-ом: мало места»;
 - `ownership` — точные владельцы и режимы из §4 `02-architecture.md`:
   `/` `root:root 0755`, игровые каталоги и их файлы `tes3mp:tes3mp`,
   `panel-data/` `tes3mp-panel:tes3mp 0750`, `uploads/` `2770`, `.locks/` и
@@ -178,23 +196,27 @@ internal/
 - `memory` — RAM не меньше 512 MiB, swap не меньше 480 MiB и
   `vm.swappiness=10` в drop-in и, если доступно, в `/proc/sys/vm/swappiness`;
   если bootstrap не смог создать `/swapfile`, проверка остаётся `error`;
-- `cgroup` — `MemoryHigh`/`MemoryMax` трёх service-юнитов совпадают с §3
-  `02-architecture.md` (`384M/448M`, `48M/64M`, `48M/64M`);
+  потребление RAM/CPU — метрики панели, не проверка `doctor`;
+- `cgroup` — `MemoryHigh`/`MemoryMax` четырёх service-юнитов совпадают с §3
+  `02-architecture.md` (`384M/448M`, `48M/64M`, `48M/64M`, `16M/32M`);
 - `filesystems` — `panel-data/uploads` и `backups/` имеют одинаковый
   `stat.Dev`; при разных устройствах `mods import` вернёт `invalid_argument`.
   Отдельные bind mounts внутри одного устройства проходят проверку, поэтому
   panel unit использует один `ReadWritePaths=/tes3mp-easy`; `EXDEV` при
   импорте дополнительно обрабатывается копированием;
-- `budgets` — `backups/state` не больше 1 GiB, `backups/mods` не больше
+- `budgets` — `backups/snapshots` не больше 1.5 GiB, `backups/checkpoints` не
+  больше 256 MiB, `backups/configs` не больше 32 MiB, `backups/mods` не больше
   512 MiB; превышение — `warn`, не `error`;
 - `current` — `backups/mods/current.txt` канонический, указывает на
   существующий обычный архив, sha256 совпадает;
 - `datafiles` — `mods/plugins/requiredDataFiles.json` читается, все три
   базовых ESM перечислены, каждый плагин в каталоге есть в JSON и наоборот;
   указанные CRC32 проверяются по локальным файлам;
-- `archives` — последний, средний и самый старый state-архивы (до трёх)
-  читаются как tar.gz и имеют вложенную структуру; если архивов ещё нет —
-  `warn`;
+- `archives` — самый новый снапшот и самый новый чекпоинт читаются как tar.gz,
+  `manifest.json` лежит первой записью, digest слоёв совпадает с файлами;
+  если архивов ещё нет — `warn`;
+- `legacy` — каталога `backups/legacy-state/` нет; если он есть, `warn` с
+  подсказкой убрать старые state-архивы в холодный архив;
 - `configs` — `tes3mp-server-default.cfg` (INI), `config.lua`
   (`config.key = value`) и `banlist.json` разбираются; `customScripts.lua`
   содержит ровно `require("custom.<name>")` из `mods/scripts/*.lua` в
@@ -236,8 +258,9 @@ data root.
 доступен, иначе `null`. Для сервиса `started_at` — `ActiveEnterTimestamp`;
 `n/a` превращается в `null`.
 
-`--unit` принимает только `tes3mp.service` (по умолчанию) и
-`tes3mp-easy-backup.timer`; другое имя — exit 2. Поле `backend` отсутствует.
+`--unit` принимает только `tes3mp.service` (по умолчанию),
+`tes3mp-easy-backup.timer` и `tes3mp-easy-guard.timer`; другое имя — exit 2.
+Поле `backend` отсутствует.
 
 ### `start` / `stop` / `restart`
 
@@ -263,9 +286,37 @@ sudo -n /usr/local/libexec/tes3mp-easy-rootctl restart
 `data.lines`; панель показывает массив в `<pre>`. Пустой journal — `lines: []`,
 exit 0. Если journald недоступен — exit 6, `service_unavailable`.
 
+### `guard`
+
+Внутренняя команда `tes3mp-easy-guard.service`, запускаемая
+`tes3mp-easy-guard.timer` раз в 60 с. Пользователю не показывается, но это
+обычный ops-глагол с тем же envelope.
+
+1. `statfs` на `--root`; пороги — константы 512 MiB и 256 MiB, не флаги.
+2. ≥ 512 MiB: удалить устаревший маркер, если он был, вернуть
+   `{"level": "ok", "free": N}`.
+3. 256–512 MiB: записать `backups/guard.json` (`0640`) с
+   `{"level": "warn", "free": N, "at": "..."}` и строку в journald; сервер не
+   трогать.
+4. < 256 MiB: то же с `"level": "stop"`, затем `rootctl stop`.
+5. Если `tes3mp.service` уже `inactive`/`failed`, вызывается только запись
+   маркера: повторный тик видит `stop` и лишь обновляет `free`.
+
+`start`/`restart` удаляют маркер перед вызовом rootctl: админ явно просит
+запуск. Если места всё ещё меньше 256 MiB, guard остановит сервер на следующем
+тике и снова поставит `stop` — скрытого автозапуска после просадки диска нет.
+
+Lock guard не берёт: `rootctl stop` идемпотентен, а lock в момент нехватки
+места занят долгим снапшотом, и ждать его — значит не спасти диск. Guard ничего
+не архивирует и не удаляет; удаление — только явные `rm` и retention.
+
+`doctor` читает `backups/guard.json`: уровень `stop` даёт `error` в проверке
+`disk`, `warn` — `warn`. Панель строит баннер по `doctor`, а не по своему
+таймеру.
+
 ### `backups list`
 
-Читает `backups/mods/*.tar.gz` или `backups/state/*.tar.gz`, сортирует по
+Читает `backups/mods/*.tar.gz` или `backups/configs/*.tar.gz`, сортирует по
 mtime (новые сверху). По умолчанию не считает sha256 — это дорого на больших
 архивах. Флаг `--sha256` добавляет хеш только для текущей страницы.
 
@@ -275,10 +326,9 @@ mtime (новые сверху). По умолчанию не считает sha
   (`invalid_argument`, exit 2). Если архив-курсор уже удалён retention, используется
   UTC-время из его имени;
 - `next_before` — последний элемент страницы, если страница заполнена;
-- `mods` включает `mods-*` и `mods-init-*`, `state` — `state-*`,
-  `state-manual-*` и `state-predeploy-*`. Файлы вне шаблонов §6.6 и symlink
-  игнорируются;
-- `current` берётся из `backups/mods/current.txt`; для `state` всегда `null`.
+- `mods` включает `mods-*` и `mods-init-*`, `configs` — `configs-*`. Файлы вне
+  шаблонов `03-contracts.md` §6.8, symlink и `*.pin` игнорируются;
+- `current` берётся из `backups/mods/current.txt`; для `configs` всегда `null`.
   Отсутствующий `current.txt` — это `null`, битый — `archive_invalid`, exit 7;
 - без `--json` выводятся строки `<name>\t<size>\t<mtime>\t<current|->`
   (с `--sha256` добавляется пятая колонка), а также `type`, `current` и
@@ -298,32 +348,126 @@ mtime (новые сверху). По умолчанию не считает sha
 }
 ```
 
-### `backups create`
+### `snapshot create`
 
 1. Берёт lock.
-2. Если `--if-running`: `systemctl is-active tes3mp.service`; не `active` →
-   `skipped=true`, `reason=not_running`, exit 0. Если `systemctl` недоступен —
-   exit 6, `service_unavailable`, а не skipped.
-3. Проверяет диск: свободно меньше 512 MiB → `no_space`; меньше 1 GiB →
+2. `--dry-run`: проверяет диск и сверяет живой `mods/` с `current.txt` по
+   шагам 3–4, но ничего не создаёт; возвращает план и `warnings`, файлы не
+   меняются.
+3. Проверяет диск: свободно меньше 512 MiB → `no_space`; меньше 1 GiB —
    warning, но продолжает.
-4. Открывает `backups/state/<name>.tar.gz.part` и пишет потоково: gzip.Writer →
-   tar.Writer → файлы. Без промежуточной копии state и без буфера в памяти.
-   Порядок: `players/`, `world/cell/`, `world/world/`, `world/map/`,
-   `world/recordstore/`, `world/custom/`, `requiredDataFiles.json`,
-   `current.txt`.
-5. `fsync` файла и каталога, `rename` в `.tar.gz`.
-6. Применяет retention и бюджеты; возвращает `archive`, `size`, `sha256`,
-   `pruned`, `warnings`. При `skipped=true` полей `archive`, `size`, `sha256`
-   нет, возвращаются `reason`, `pruned`, `warnings`.
+4. Сверяет живой `mods/` с архивом из `backups/mods/current.txt`. При
+   расхождении сначала создаёт `mods-<timestamp>` из живого каталога и
+   обновляет `current.txt` одной транзакцией: иначе `mods_sha256` снапшота не
+   совпадёт ни с одним чекпоинтом.
+5. Открывает `backups/snapshots/<name>.tar.gz.part` и пишет потоково:
+   `manifest.json` первой записью, затем `state/`, `mods/`, `configs/`.
+   Digest каждого слоя считается по ходу записи, без промежуточной копии.
+6. `fsync` файла и каталога, `rename` в `.tar.gz`.
+7. Применяет retention и бюджеты; возвращает `archive`, `size`, `sha256`,
+   `mods_archive`, `pruned`, `warnings`.
 
-Имя: `state-*` для таймера, `state-manual-*` при `--manual`. Внутренний вызов
-для деплоя создаёт `state-predeploy-*`.
+`--reason manual` — значение по умолчанию; `--reason mods` использует
+`mods deploy`, `--reason base` — только ленивая база из `checkpoint create`
+(вручную не нужен). Таймер снапшоты не создаёт: при мод-паке в сотни мегабайт это
+дороже всего 15-минутного цикла. Снапшот снимается с живого сервера;
+согласованную точку даёт `checkpoint-predeploy-*` из `mods deploy` и
+восстановления.
 
-Бэкап снимается с живого сервера и не является транзакционным snapshot: файл,
-который TES3MP пишет в этот момент, может попасть в архив в промежуточном
-состоянии. При типичных ~100 KB и 5-минутном интервале это приемлемый
-recovery point; для гарантированно согласованного архива остановите сервер
-или сделайте `state-predeploy` через deploy-операцию.
+### `snapshot list` / `checkpoint list`
+
+Оба читают только `manifest.json` — первую запись архива, не распаковывая его.
+Пагинация (`--limit`, `--before`, `next_before`) — как у `backups list`.
+`snapshot list` строит карту ссылок по манифестам всех чекпоинтов каталога и
+отдаёт `used_by`/`protected`; `checkpoint list` читает `.pin` и проверяет
+наличие базы. Битый или чужой манифест — `archive_invalid`, exit 7, без
+частичного списка.
+
+### `snapshot restore`
+
+1. Взять lock; проверить архив: `manifest.json` первой записью, `format`,
+   `version`, наличие `state/`, `mods/`, `configs/`, совпадение digest слоёв;
+   иначе `archive_invalid`.
+2. Проверить диск.
+3. Сделать `checkpoint-predeploy-*` через `createCheckpointLocked`.
+4. Остановить `tes3mp.service`, если он работал.
+5. Распаковать `mods/` в `.staging/snapshot-<id>/`, подменить `mods/plugins` и
+   `mods/scripts` через rename, завести `mods-*` в `backups/mods/` (или
+   переиспользовать архив с тем же sha256), записать `current.txt`,
+   сгенерировать `customScripts.lua`.
+6. Распаковать `state/` в `.staging/snapshot-<id>/` и перенести
+   верхнеуровневые записи `players/` и `world/` так же, как в
+   `checkpoint restore`.
+7. Распаковать `configs/` поверх `configs/`; каждому файлу — `.bak-<timestamp>`.
+8. Запустить сервер, если он работал и не указан `--no-restart`.
+9. Ошибка на шагах 5–8: вернуть `mods/`, `current.txt`, `players/`, `world/` и
+   `configs/` из staging, запустить сервер, если он работал, и вернуть ошибку.
+
+`--latest` берёт самый новый снапшот любого `reason`. После успеха снапшот
+становится базой следующих чекпоинтов: его `mods_sha256` совпадает с
+`current.txt`.
+
+### `checkpoint create`
+
+1. Взять lock.
+2. `--if-running`: не `active` → `skipped=true`, `reason=not_running`, exit 0;
+   недоступный systemd — `service_unavailable`, exit 6, а не skipped.
+3. Найти базу: самый новый снапшот, чей `mods_sha256` равен sha256 архива из
+   `current.txt`. Если подходящего нет — создать `snapshot-*` с `reason=base`
+   через `createSnapshotLocked`.
+4. Проверить диск.
+5. Писать `backups/checkpoints/<name>.tar.gz.part`: `manifest.json`,
+   `players/`, `world/{cell,world,map,recordstore,custom}/`,
+   `requiredDataFiles.json`; digest слоя считается по ходу записи.
+6. `fsync`, `rename`, retention, ответ.
+
+`--label` попадает только в манифест и в имя не входит. `--dry-run` проверяет
+`--if-running` и выбирает базу по шагам 2–3, но не создаёт ни чекпоинт, ни
+ленивый `snapshot-*` с `reason=base`. Predeploy-чекпоинты
+создаёт та же функция с `reason=predeploy`; `--latest` их не выбирает.
+Чекпоинт снимается с живого сервера и не транзакционен: файл, который TES3MP
+пишет в этот момент, может попасть в архив частично. При 15-минутном интервале
+и типичных ~100 KB это приемлемый recovery point.
+
+### `checkpoint pin` / `checkpoint unpin`
+
+`pin` пишет `<name>.pin` атомарно (temp + rename), повторный вызов
+идемпотентен и возвращает `pinned=true`; `unpin` удаляет файл, отсутствие — не
+ошибка. Lock берётся: pin влияет на retention, который может идти параллельно.
+Архив не переписывается.
+
+### `checkpoint restore`
+
+1. Взять lock; проверить чекпоинт: манифест, digest, `players/`,
+   `world/{пять}`, `requiredDataFiles.json`.
+2. Найти базу по `base.name` и `base.sha256`. Базы нет и `--accept-mod-mismatch`
+   не указан — `not_found`, exit 3, данные не меняются.
+3. Если активный мод-пак не совпадает с `base.mods_sha256`, развернуть моды
+   базы по шагу 5 `snapshot restore`; иначе `base_deployed=false`.
+4. `checkpoint-predeploy-*`, остановка сервера, staging, подмена
+   верхнеуровневых записей `players/` и `world/`, запуск — как в
+   `snapshot restore`.
+5. `configs/` не читается и не пишется. С `--accept-mod-mismatch` моды не
+   меняются, `base_missing=true`, а `missing_plugins` перечисляет плагины
+   чекпоинта, которых нет в текущем паке. `current.txt` тоже не меняется:
+   база следующих чекпоинтов выбирается по текущему паку, а при отсутствии
+   подходящего снапшота первый `checkpoint create` создаст `snapshot reason=base`
+   (нужно ≥512 MiB свободно).
+
+Сами каталоги `players/` и `world/` не переименовываются: data root —
+`root:root 0755`, ops работает от `tes3mp`, и `rename` каталога в корне вернул
+бы `EACCES`. Переносятся только записи внутри них, на одном mount
+(`ReadWritePaths=/tes3mp-easy`).
+
+### `snapshot rm` / `checkpoint rm` / `backups rm`
+
+Правила и JSON — `03-contracts.md` §4. Ops проверяет всю пачку до первого
+удаления: без `--force` защищённое имя даёт `archive_in_use`, exit 12, и не
+удаляется ничего. С `--force` база удаляется (если это не последний снапшот),
+её чекпоинты остаются с `available=false`, их имена попадают в `warnings`.
+Архив из `current.txt` и последний снапшот не удаляются никогда — только
+`skipped`. Retention после удаления не запускается: админ освобождает место, а
+не пересобирает политику.
 
 ### `mods import`
 
@@ -385,83 +529,51 @@ upload. Копирования между разными файловыми си
 1. Взять lock.
 2. Найти и проверить архив; для `--current` `current.txt` обязан быть
    каноническим, иначе `archive_invalid`.
-3. Проверить диск: state-бэкап + распаковка + запас.
-4. Сделать `state-predeploy-*` через `createStateBackupLocked`, чтобы был
-   откат.
-5. Запомнить, был ли сервер запущен; остановить `tes3mp.service` через
+3. Сравнить плагины архива с `mods/plugins/` и с `requiredDataFiles.json`
+   хранимых чекпоинтов. Удаление плагина, на который ссылается точка отката, —
+   `plugin_in_use`, exit 11. `--allow-plugin-removal` разрешает деплой и
+   возвращает имена таких чекпоинтов в `warnings`: их восстановление потребует
+   `--accept-mod-mismatch`.
+4. Посчитать diff по именам и sha256, без чтения содержимого: `added`,
+   `removed`, `changed` для плагинов и скриптов.
+5. Проверить диск: снапшот + распаковка + запас.
+6. Сделать `checkpoint-predeploy-*` через `createCheckpointLocked`, чтобы был
+   откат мира.
+7. Запомнить, был ли сервер запущен; остановить `tes3mp.service` через
    rootctl.
-6. Распаковать `plugins/` и `scripts/` в
+8. Распаковать `plugins/` и `scripts/` в
    `/tes3mp-easy/.staging/mods-<id>/` потоково, с теми же лимитами.
-7. Проверить распакованное ещё раз (пути, файлы, CRC плагинов из архива;
+9. Проверить распакованное ещё раз (пути, файлы, CRC плагинов из архива;
    базовые ESM в архиве отсутствуют).
-8. Подменить `mods/plugins` и `mods/scripts` через rename; старые каталоги
-   оставить как `mods/plugins.old-<id>` до успеха.
-9. Сгенерировать `configs/customScripts.lua` из `mods/scripts/*.lua`
-   (отсортировано, `require("custom.<name>")`).
-   Каталог `configs/` — `0700`, файл — `0600`: ровно это проверяет doctor.
-10. Записать `backups/mods/current.txt` в формате `<sha256> <filename>`.
-11. Запустить `tes3mp.service`, если он был запущен и не указан
+10. Подменить `mods/plugins` и `mods/scripts` через rename; старые каталоги
+    оставить как `mods/plugins.old-<id>` до успеха.
+11. Сгенерировать `configs/customScripts.lua` из `mods/scripts/*.lua`
+    (отсортировано, `require("custom.<name>")`).
+    Каталог `configs/` — `0700`, файл — `0600`: ровно это проверяет doctor.
+12. Записать `backups/mods/current.txt` в формате `<sha256> <filename>`.
+13. Создать `snapshot-*` с `reason=mods` через `createSnapshotLocked`: он
+    становится базой следующих чекпоинтов.
+14. Запустить `tes3mp.service`, если он был запущен и не указан
     `--no-restart`.
-12. Удалить `.old-*` и staging.
+15. Удалить `.old-*` и staging.
 
-Renames на шагах 8–10 выполняются в namespace панели, где
+Renames на шагах 10–12 выполняются в namespace панели, где
 `ReadWritePaths=/tes3mp-easy` даёт один mount для `.staging` и `mods/`.
 Granular-пути в unit вернули бы `EXDEV`; транзакция в этом случае откатилась бы.
 
-Если шаг 8–11 упал: вернуть старые `mods/`, старый `current.txt`, старый
+Если шаги 10–12 упали: вернуть старые `mods/`, `current.txt` и
 `customScripts.lua`, запустить сервер, если он работал до операции и не указан
 `--no-restart`, и вернуть ошибку. Это не «автоматический откат вообще всего», а
 завершение одной транзакции деплоя.
+
+Ошибка на шаге 13 деплой не отменяет: моды уже применены и `current.txt`
+записан. Имя снапшота попадает в `warnings`, а `checkpoint create` создаст базу
+сам при следующем запуске.
 
 `--no-restart` оставляет сервер остановленным. Если сервер был остановлен до
 операции, ops оставляет его остановленным; если работал — запускает после
 успешного деплоя. Штатный сценарий панели — деплой на работающем сервере;
 `--no-restart` нужен для аварийного режима.
-
-### `state deploy`
-
-`--latest` выбирает самый новый `state-*` или `state-manual-*` и **не**
-рассматривает `state-predeploy-*`: это внутренние точки отката, их
-восстанавливают только явным `--archive`.
-
-Порядок:
-
-1. Взять lock.
-2. Проверить архив: tar читается, нет опасных путей, есть ровно
-   `players/`, `world/{cell,world,map,recordstore,custom}/`,
-   `requiredDataFiles.json`, `current.txt`; иначе `archive_invalid`.
-3. Проверить `current.txt` внутри архива: канонический формат, sha256,
-   существующий архив модов; сравнить с текущим `backups/mods/current.txt`.
-4. Проверить диск.
-5. Сделать `state-predeploy-*`.
-6. Остановить `tes3mp.service`.
-7. Распаковать в `/tes3mp-easy/.staging/state-<id>/` с той же вложенной
-   структурой; плоские каталоги не раскладываются и не принимаются.
-8. Перенести содержимое текущих `players/` и `world/` в
-   `.staging/state-<id>/old/players` и `.staging/state-<id>/old/world`.
-9. Перенести содержимое staging-каталогов `players/` и `world/` на их место.
-10. Запустить `tes3mp.service`, если он был запущен и не указан
-    `--no-restart`.
-11. При успехе удалить staging вместе со старым содержимым; при ошибке вернуть
-    старые файлы и запустить сервер, если он работал до операции и не указан
-    `--no-restart`.
-
-Сами каталоги `players/` и `world/` не переименовываются: data root —
-`root:root 0755`, а ops работает от `tes3mp`, поэтому `rename` каталога в корне
-вернул бы `EACCES`. Перенос верхнеуровневых записей внутри `players/` и
-`world/` не требует записи в корень.
-
-Шаги 8–9 требуют, чтобы `.staging`, `players/` и `world/` были на одном mount.
-Это обеспечивает `ReadWritePaths=/tes3mp-easy` в panel unit; при granular-путях
-`rename` вернёт `EXDEV` и ops откатит транзакцию.
-
-`requiredDataFiles.json` и `current.txt` из архива должны соответствовать
-модам, с которыми делался бэкап. Ops не подменяет моды:
-
-- если `current.txt` указывает на другой архив, чем текущий
-  `backups/mods/current.txt`, — `archive_invalid` и подмены нет;
-- если `current.txt` отсутствует или в старом формате — `archive_invalid`;
-- `--force` нет: лучше остановиться, чем смешать файлы с разными CRC.
 
 ### `staff set`
 
@@ -478,8 +590,8 @@ tes3mp-easy-ops staff set --player "John Doe" --rank 2
 - Возвращает `{"player": "...", "rank": 2, "restart_required": true}`.
 - Сервер не перезапускает: панель показывает баннер «нужен рестарт».
 
-Полный state-бэкап перед сменой ранга не нужен: это один маленький JSON, и
-рядом остаётся `.bak`.
+Полный снапшот перед сменой ранга не нужен: это один маленький JSON, и рядом
+остаётся `.bak`.
 
 ### `config get` / `config set`
 
@@ -500,49 +612,79 @@ tes3mp-easy-ops staff set --player "John Doe" --rank 2
 - ключ должен быть в белом списке;
 - тип и диапазон проверяются (порт 1024–65535, `maxClientsPerIP` 1–10,
   `difficulty` -100..100 и т.п.);
+- `--values` принимает JSON-объект и применяет его целиком или никак: все ключи
+  проверяются до записи, при ошибке не меняется ни один; `--key`/`--value`
+  остаются для одной настройки;
 - строка `config.key = value` заменяется построчно, комментарии сохраняются;
 - перед записью — `.bak-<timestamp>`;
 - запись атомарная;
+- для `--file config` после записи создаётся `configs-<timestamp>.tar.gz`
+  (`03-contracts.md` §6.6); панель присылает сюда только изменённые поля формы,
+  но ops пишет файл целиком, а не патч;
 - возвращает `restart_required`; сервер не перезапускает — это делает панель или
   админ;
 - `customScripts.lua` через `config set` менять нельзя — он генерируется.
 
-Ошибка валидации → exit 9, `config_invalid`. Панель показывает её рядом с
-полем, а не общую «500».
+Ошибка валидации → exit 9, `config_invalid` с `field`; панель показывает её
+рядом с полем, а не общую «500».
+
+### `config restore`
+
+`--latest` берёт самую новую запись `configs-*`, `--archive` — явную.
+Порядок: проверить архив (manifest, sha256 четырёх файлов) → собрать текущие
+конфиги в `configs-*` с `reason=config_restore` → записать `.bak-<timestamp>`
+для каждого файла → распаковать четыре файла поверх `configs/` → вернуть
+`restart_required=true`. Сервер не перезапускается.
+
+`customScripts.lua` восстанавливается из архива, но `mods deploy` и `doctor`
+пересоздают его из `mods/scripts/`; расхождение — `warn`, не `error`.
 
 ## 7. Retention
 
-Алгоритм вызывается после `backups create`, `mods import` и создания
-`state-predeploy-*`, а также доступен `doctor` как проверка размера.
-Нормативная таблица — `03-contracts.md` §6.7.
+Алгоритм вызывается после `snapshot create`, `checkpoint create`,
+`config set --file config`, `config restore`, `mods import` и создания
+`checkpoint-predeploy-*`, а также `doctor` как проверка размера.
+Нормативная таблица — `03-contracts.md` §6.9.
 
-1. Прочитать архивы и их mtime.
-2. Защитить самый новый state-архив, текущий mods-архив, `current.txt` и все
-   месячные представители.
-3. Для автоматических `state-<timestamp>`: архивы 0–7 дней не трогать;
-   для 7–365 дней оставить последний за день; для 1–3 лет — последний за
-   ISO-неделю; для старше 3 лет — последний за месяц. Остальные — кандидаты.
-4. Для `state-manual-*` оставить 5 новейших, для `state-predeploy-*` — 2.
-5. Для `mods-<timestamp>` (кроме `mods-init-*`) оставить 5 новейших, для
-   `mods-init-*` — 2.
-6. Удалить кандидатов, затем проверить бюджеты `backups/state` 1 GiB и
-   `backups/mods` 512 MiB и свободный резерв 512 MiB.
-7. Если бюджеты превышены, включить pressure pruning:
-   - автоматические `state-<timestamp>` старше 24 часов, не последние за день;
-   - дневные представители, самые старые первыми;
-   - недельные представители, самые старые первыми.
-8. Месячные не удалять никогда. Если после pressure pruning бюджет всё ещё
-   превышен, вернуть `warnings`, но не удалять месячные.
+1. Прочитать имена архивов и mtime; содержимое архивов не открывается.
+2. Построить карту ссылок: для каждого `checkpoint-*` прочитать `base.name` из
+   манифеста. Чекпоинт с нечитаемым манифестом считается повреждённым: он
+   попадает в `warnings` и базу не защищает.
+3. Защитить самый новый чекпоинт, самый новый снапшот, закреплённые
+   чекпоинты, `current.txt` вместе с его архивом и самую новую запись
+   `configs-*`.
+4. Чекпоинты вне 7 дней сгруппировать по UTC-дате (7–365 дней), ISO-неделе
+   (1–3 года) и месяцу (старше 3 лет), оставив самого нового в каждой группе.
+   Остальные незакреплённые — кандидаты.
+5. `checkpoint-predeploy-*` — оставить 2 новейших.
+6. Снапшоты: `reason=manual` — 5 новейших, `reason=mods`/`reason=base` —
+   2 новейших, плюс все, на которые ссылается хранимый чекпоинт.
+7. `mods-*` (кроме `mods-init-*`) — 5 новейших, `mods-init-*` — 2,
+   `configs-*` — 20 новейших.
+8. Удалить кандидатов, затем проверить бюджеты: `snapshots` 1.5 GiB,
+   `checkpoints` 256 MiB, `configs` 32 MiB, `mods` 512 MiB и свободный резерв
+   512 MiB.
+9. Если бюджет превышен, включить pressure pruning в порядке из
+   `03-contracts.md` §6.9: predeploy сверх 2 → незащищённые снапшоты
+   `reason=base` → чекпоинты вне горячего окна (сначала не представители,
+   затем дневные, затем недельные) → самая старая защищённая база.
+10. При снятии защиты базы её чекпоинты остаются, получают `available=false`,
+    а имена базы и чекпоинтов попадают в `warnings`.
+11. Месячные представители, ручные снапшоты и закреплённые чекпоинты не
+    удаляются никогда. Если бюджет всё ещё превышен — вернуть `warnings`;
+    созданный архив при этом не откатывается.
 
 Удаление — `os.Remove` + `fsync` каталога. Ошибка удаления не отменяет уже
 созданный архив: имя попадает в `warnings`, а не в `pruned`, и `doctor`
 покажет проблему.
 
+`rm` из §6 политику не запускает: админ удаляет ровно то, что назвал.
+
 ## 8. Архивы и генерация
 
-Форматы `mods` и `state`, `requiredDataFiles.json`, `current.txt` и лимиты —
-только в `03-contracts.md` §6. Здесь остаётся то, что делает ops поверх этих
-форматов.
+Форматы `mods`, `snapshot`, `checkpoint`, `configs`, `requiredDataFiles.json`,
+`current.txt` и лимиты — только в `03-contracts.md` §6. Здесь остаётся то, что
+делает ops поверх этих форматов.
 
 ### Baseline от bootstrap
 
@@ -570,27 +712,17 @@ bootstrap создаёт `mods-init-*`, пишет канонический `cur
 ### Потоковая обработка
 
 - `archive/tar`, `compress/gzip` и `io.Copy` с буфером 32–64 KiB.
-- Никаких `bytes.Buffer` для архива, `io.ReadAll` для upload или
-  промежуточной копии state.
+- Никаких `bytes.Buffer` для архива, `io.ReadAll` для upload или промежуточной
+  копии мира.
 - `io.LimitReader` на gzip/tar и на каждый файл; счётчики записей и
   распакованного размера.
 - Временный файл в целевом каталоге; `fsync` файла и каталога; `rename`.
 - `mods import` делает rename upload → `backups/mods/`; при `EXDEV` между
   bind mounts — атомарное копирование через `.part` + `rename`.
-- `state` пишется прямо из `players/` и `world/`, без staging-копии.
+- `state/` снапшота и `players/` + `world/` чекпоинта пишутся прямо из data
+  root, без staging-копии.
 - `tar` детерминированный: сортировка путей, mtime из файлов, uid/gid 0, без
   лишних заголовков. Байт-в-байт совпадение с GNU tar не цель.
-
-### `customScripts.lua`
-
-Генерируется из `mods/scripts/*.lua`:
-
-```lua
-require("custom.test")
-require("custom.another")
-```
-
-Порядок — лексикографический. Файл read-only для панели.
 
 ## 9. Systemd-адаптер
 
@@ -618,7 +750,8 @@ type Runner interface {
   `sudo -n /usr/local/libexec/tes3mp-easy-rootctl <verb>`. Имя unit фиксировано
   в rootctl и через ops не передаётся.
 - Unit-константы: `tes3mp.service`, `tes3mp-panel.service`,
-  `tes3mp-easy-backup.service`, `tes3mp-easy-backup.timer`. Некорректное имя
+  `tes3mp-easy-backup.service`, `tes3mp-easy-backup.timer`,
+  `tes3mp-easy-guard.service`, `tes3mp-easy-guard.timer`. Некорректное имя
   unit или глагол отклоняется до запуска процесса (`ErrInvalidUnit`,
   `ErrInvalidAction`).
 - `CommandError` хранит команду, argv, exit code, stderr и cause. Текст ошибки
@@ -635,22 +768,28 @@ type Runner interface {
 |---|---|---|
 | Unit | tar, CRC, `requiredDataFiles.json`, `current.txt`, retention, config, pathguard, lock | нет |
 | Contract | запуск бинарника с `--root` и `--json`, коды выхода, envelope | fake |
-| Integration | lifecycle на temp-root, mods/state deploy | fake + temp-root |
-| Fault | битый архив, path traversal, lock, нет места, systemd error, rollback | fake |
-| E2E | чистая VM: установка, вход, бэкап, восстановление, клиент | настоящий |
+| Integration | lifecycle на temp-root, `mods deploy`, `snapshot restore`, `checkpoint restore` | fake + temp-root |
+| Fault | битый архив, path traversal, lock, нет места, base_missing, `rm` защищённого архива, systemd error, rollback | fake |
+| E2E | чистая VM: установка, вход, чекпоинт, восстановление, клиент | настоящий |
 | Docs | ссылки, отсутствие дублированных схем | нет |
 
 Ключевые фикстуры:
 
-- пустой state с обязательными каталогами;
-- state с игроками и всеми пятью world-каталогами;
-- state с плоскими каталогами (должен падать);
-- state без `current.txt` и без `requiredDataFiles.json`;
+- пустой мир с обязательными каталогами;
+- снапшот с игроками и всеми пятью world-каталогами;
+- чекпоинт с базой, чекпоинт без базы (`available=false`), закреплённый
+  чекпоинт;
+- чекпоинт, ссылающийся на снапшот, которого нет в каталоге;
+- мир с плоскими каталогами (должен падать);
+- снапшот без `configs/` и без `requiredDataFiles.json`;
 - `current.txt` только с sha256;
 - моды с CRC и без;
 - архив с `../evil`, абсолютным путём, symlink;
 - `current.txt`, указывающий на отсутствующий файл;
-- конфиги с комментариями и нестандартным порядком ключей.
+- конфиги с комментариями и нестандартным порядком ключей;
+- retention-набор из 700 чекпоинтов за 8 дней, чтобы проверить дневные
+  представители;
+- `rm` пачки, где одно имя защищено: ни один файл не должен исчезнуть.
 
 Temp-root: каждый тест создаёт `t.TempDir()`, кладёт туда `configs/`,
 `players/`, `world/`, `mods/`, `backups/` и fake systemd. Это позволяет
@@ -663,5 +802,6 @@ Temp-root: каждый тест создаёт `t.TempDir()`, кладёт ту
 - управление клиентом;
 - несколько серверов/проектов в одном запуске;
 - произвольные shell-команды;
-- удаление месячных бэкапов;
+- удаление месячных представителей и закреплённых чекпоинтов без явного
+  `--force`;
 - переход со старых форматов и клиентских конфигов.

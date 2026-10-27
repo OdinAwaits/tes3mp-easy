@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Макет: обзор — tes3mp-easy</title>
+  <link rel="stylesheet" href="../../../internal/panel/static/panel.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#">
+      <span class="brand-mark" aria-hidden="true">◆</span>
+      <span>TES3MP <strong>Easy</strong></span>
+    </a>
+    <nav class="nav" aria-label="Разделы панели">
+      <a href="#" aria-current="page">Обзор</a>
+      <a href="#">Логи</a>
+      <a href="#">Моды</a>
+      <a href="restore-points.html">Точки отката</a>
+      <a href="config-form.html">Настройки</a>
+      <a href="#">Staff</a>
+      <a href="#">Пароль</a>
+    </nav>
+    <form class="logout"><button class="button button--ghost button--small" type="button">Выйти</button></form>
+  </header>
+
+  <main class="page">
+    <div class="page-head">
+      <p class="eyebrow">Сервер</p>
+      <h1>Morrowind with friends</h1>
+      <p class="lead">Статус, ресурсы и последние события. Графики — 24 часа в памяти панели, на диск не пишутся.</p>
+    </div>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Сервер</h2>
+        <div class="status-line">
+          <span class="badge" data-status="running">Работает</span>
+          <span class="muted">с 12:31 UTC</span>
+        </div>
+        <dl class="meta-list">
+          <dt>Адрес</dt>
+          <dd><code>203.0.113.10:25565</code></dd>
+          <dt>Игроки</dt>
+          <dd>3 из 8</dd>
+          <dt>Моды</dt>
+          <dd><code>mods-2026-10-27_12-30-00.tar.gz</code></dd>
+          <dt>Версия</dt>
+          <dd>0.8.1</dd>
+        </dl>
+        <div class="actions">
+          <button class="button button--secondary" type="button">Перезапустить</button>
+          <button class="button button--danger" type="button">Остановить</button>
+          <a class="button button--ghost" href="#">Логи</a>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Таймеры и проверки</h2>
+        <dl class="meta-list">
+          <dt>Чекпоинт</dt>
+          <dd>16:30 UTC · следующий 16:45</dd>
+          <dt>Guard</dt>
+          <dd>16:41 UTC · свободно 480 MiB</dd>
+          <dt>doctor</dt>
+          <dd><span class="badge" data-status="warn">disk</span> <span class="badge" data-status="ok">memory</span> <span class="badge" data-status="ok">cgroup</span></dd>
+        </dl>
+        <p class="muted">disk: свободно меньше 512 MiB — новые архивы не создаются до освобождения места. Сервер guard не останавливал.</p>
+        <div class="actions">
+          <a class="button button--secondary" href="restore-points.html#checkpoints">Точки отката</a>
+        </div>
+      </section>
+    </div>
+
+    <p class="notice">Свободно 480 MiB — меньше порога 512 MiB. Retention продолжает работу, но новый чекпоинт вернёт <code>no_space</code>, пока место не освободится.</p>
+
+    <section class="card">
+      <div class="page-subhead">
+        <h2>Ресурсы</h2>
+        <nav class="tabs" aria-label="Окно графиков">
+          <a href="?window=1h" aria-current="page">1 ч</a>
+          <a href="?window=6h">6 ч</a>
+          <a href="?window=24h">24 ч</a>
+        </nav>
+      </div>
+
+      <div class="metric-row">
+        <div class="metric">
+          <span class="metric-value">312 MiB</span>
+          <span class="metric-meta">RAM игры · пик 362 MiB</span>
+        </div>
+        <div class="metric">
+          <span class="metric-value">18 %</span>
+          <span class="metric-meta">CPU игры · среднее 21 %</span>
+        </div>
+        <div class="metric">
+          <span class="metric-value">9 %</span>
+          <span class="metric-meta">CPU системы · среднее 10 %</span>
+        </div>
+        <div class="metric">
+          <span class="metric-value">438 / 512 MiB</span>
+          <span class="metric-meta">RAM системы</span>
+        </div>
+        <div class="metric">
+          <span class="metric-value">12 MiB</span>
+          <span class="metric-meta">swap использовано</span>
+        </div>
+        <div class="metric">
+          <span class="metric-value">480 MiB</span>
+          <span class="metric-meta">свободно на диске</span>
+        </div>
+      </div>
+
+      <h3>RAM игры</h3>
+      <p class="metric-meta">Лимит 448 MiB; разрыв линии — сервер остановлен.</p>
+      <svg class="chart" viewBox="0 0 600 170" role="img" aria-labelledby="ram-title">
+        <title id="ram-title">RAM игры за последний час: от 155 до 362 MiB</title>
+        <line class="chart-grid" x1="40" y1="20" x2="590" y2="20"></line>
+        <line class="chart-grid" x1="40" y1="75" x2="590" y2="75"></line>
+        <line class="chart-grid" x1="40" y1="130" x2="590" y2="130"></line>
+        <text class="chart-label" x="32" y="24" text-anchor="end">448</text>
+        <text class="chart-label" x="32" y="79" text-anchor="end">224</text>
+        <text class="chart-label" x="32" y="134" text-anchor="end">0</text>
+        <polyline class="chart-line" points="40,92 70,86 100,78 130,80 160,72 190,66 220,70 250,58 280,54"></polyline>
+        <polyline class="chart-line" points="310,60 340,48 370,52 400,44 430,45 460,46 490,41 520,42 550,41 590,53"></polyline>
+        <text class="chart-label" x="40" y="158">15:40</text>
+        <text class="chart-label" x="220" y="158" text-anchor="middle">16:00</text>
+        <text class="chart-label" x="400" y="158" text-anchor="middle">16:20</text>
+        <text class="chart-label" x="590" y="158" text-anchor="end">16:40</text>
+      </svg>
+
+      <h3>CPU игры и системы</h3>
+      <p class="metric-meta">Доля одного vCPU; сплошная линия — игра, пунктир — система.</p>
+      <svg class="chart" viewBox="0 0 600 170" role="img" aria-labelledby="cpu-title">
+        <title id="cpu-title">CPU игры и системы за последний час: игра 5–46 %, система 7–11 %</title>
+        <line class="chart-grid" x1="40" y1="20" x2="590" y2="20"></line>
+        <line class="chart-grid" x1="40" y1="75" x2="590" y2="75"></line>
+        <line class="chart-grid" x1="40" y1="130" x2="590" y2="130"></line>
+        <text class="chart-label" x="32" y="24" text-anchor="end">100 %</text>
+        <text class="chart-label" x="32" y="79" text-anchor="end">50 %</text>
+        <text class="chart-label" x="32" y="134" text-anchor="end">0</text>
+        <polyline class="chart-line chart-line--info" points="40,108 70,96 100,118 130,82 160,112 190,100 220,124 250,104 280,92 310,116 340,88 370,102 400,94 430,120 460,98 490,110 520,80 550,114 590,110"></polyline>
+        <polyline class="chart-line chart-line--muted" points="40,120 70,119 100,119 130,118 160,120 190,119 220,120 250,118 280,119 310,120 340,118 370,119 400,120 430,118 460,119 490,120 520,119 550,121 590,120"></polyline>
+        <text class="chart-label" x="40" y="158">15:40</text>
+        <text class="chart-label" x="220" y="158" text-anchor="middle">16:00</text>
+        <text class="chart-label" x="400" y="158" text-anchor="middle">16:20</text>
+        <text class="chart-label" x="590" y="158" text-anchor="end">16:40</text>
+      </svg>
+
+      <h3>Свободно на диске</h3>
+      <p class="metric-meta">Объём 7 GiB; порог guard 256 MiB — у нижнего края шкалы.</p>
+      <svg class="chart" viewBox="0 0 600 170" role="img" aria-labelledby="disk-title">
+        <title id="disk-title">Свободное место за последний час: снизилось с 5.2 GiB до 480 MiB</title>
+        <line class="chart-grid" x1="40" y1="20" x2="590" y2="20"></line>
+        <line class="chart-grid" x1="40" y1="75" x2="590" y2="75"></line>
+        <line class="chart-grid" x1="40" y1="130" x2="590" y2="130"></line>
+        <text class="chart-label" x="32" y="24" text-anchor="end">7 GiB</text>
+        <text class="chart-label" x="32" y="79" text-anchor="end">3.5</text>
+        <text class="chart-label" x="32" y="134" text-anchor="end">0</text>
+        <polyline class="chart-line chart-line--muted" points="40,45 70,48 100,52 130,56 160,60 190,64 220,69 250,73 280,78 310,82 340,87 370,92 400,97 430,102 460,107 490,111 520,115 550,118 590,122"></polyline>
+        <text class="chart-label" x="40" y="158">15:40</text>
+        <text class="chart-label" x="220" y="158" text-anchor="middle">16:00</text>
+        <text class="chart-label" x="400" y="158" text-anchor="middle">16:20</text>
+        <text class="chart-label" x="590" y="158" text-anchor="end">16:40</text>
+      </svg>
+      <noscript><p class="muted">Графики обновляются раз в 15 секунд через <code>admin.js</code>; без JavaScript показаны значения на момент загрузки.</p></noscript>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Последние события</h2>
+        <div class="log-panel">16:41:05 panel: action=guard.run free=503316480 result=ok
+16:30:00 panel: action=checkpoint.create archive=checkpoint-2026-10-27_16-30-00.tar.gz result=ok
+16:12:44 panel: action=server.restart result=ok actor=admin
+15:58:10 panel: action=mods.deploy archive=mods-2026-10-27_15-57-00.tar.gz result=ok
+15:45:00 panel: action=checkpoint.create archive=checkpoint-2026-10-27_15-45-00.tar.gz result=ok
+15:30:00 panel: action=checkpoint.create archive=checkpoint-2026-10-27_15-30-00.tar.gz result=ok</div>
+        <div class="actions">
+          <a class="button button--secondary" href="#">Открыть логи</a>
+          <span class="muted">Аудит без паролей и содержимого файлов</span>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Быстрые действия</h2>
+        <div class="actions">
+          <button class="button button--primary" type="button">Создать чекпоинт</button>
+          <button class="button button--secondary" type="button">Создать снапшот</button>
+          <a class="button button--ghost" href="#">Загрузить моды</a>
+          <a class="button button--ghost" href="restore-points.html">Восстановить</a>
+        </div>
+        <p class="muted">Мутации блокируются, пока <code>doctor</code> в статусе <code>error</code>. Метрики на это не влияют.</p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

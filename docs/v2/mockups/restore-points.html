@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Макет: точки отката — tes3mp-easy</title>
+  <link rel="stylesheet" href="../../../internal/panel/static/panel.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#">
+      <span class="brand-mark" aria-hidden="true">◆</span>
+      <span>TES3MP <strong>Easy</strong></span>
+    </a>
+    <nav class="nav" aria-label="Разделы панели">
+      <a href="#">Обзор</a>
+      <a href="#">Логи</a>
+      <a href="#">Моды</a>
+      <a href="#" aria-current="page">Точки отката</a>
+      <a href="config-form.html">Настройки</a>
+      <a href="#">Staff</a>
+      <a href="#">Пароль</a>
+    </nav>
+    <form class="logout"><button class="button button--ghost button--small" type="button">Выйти</button></form>
+  </header>
+
+  <main class="page">
+    <div class="page-head">
+      <p class="eyebrow">Резервные копии</p>
+      <h1>Точки отката</h1>
+      <p class="lead">Чекпоинт — мир каждые 15 минут. Снапшот — мир, моды и конфиги. Восстановление откатывает всех игроков.</p>
+    </div>
+
+    <p class="notice">Нужен перезапуск сервера, чтобы применить изменения конфигов.</p>
+
+    <section class="card card--warning">
+      <h2>Сервер остановлен guard-ом: мало места</h2>
+      <p>Свободно 180 MiB. Guard остановил <code>tes3mp.service</code> при пороге 256 MiB. Новые архивы не создаются.</p>
+      <div class="actions">
+        <a class="button button--secondary" href="#checkpoints">Освободить место</a>
+        <button class="button button--primary" type="button">Запустить сервер</button>
+      </div>
+      <p class="muted">Запуск снимет маркер guard. Если место не освободилось, сервер остановится снова на следующем тике.</p>
+    </section>
+
+    <div class="toolbar">
+      <div class="actions">
+        <button class="button button--primary" type="button">Создать чекпоинт</button>
+        <button class="button button--secondary" type="button">Создать снапшот</button>
+      </div>
+      <div class="field">
+        <label for="limit">Записей на страницу</label>
+        <input id="limit" type="number" min="1" max="500" value="200">
+      </div>
+    </div>
+
+    <section class="card" id="checkpoints">
+      <h2>Чекпоинты</h2>
+      <p class="muted">Мир без модов и конфигов. Дневная история хранится бессрочно, закреплённые точки не удаляются.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Архив</th>
+              <th>Дата (UTC)</th>
+              <th>Размер</th>
+              <th>Игроки</th>
+              <th>База</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>checkpoint-2026-10-27_16-45-00.tar.gz</code> <span class="badge" data-status="ok">закреплён</span></td>
+              <td><time datetime="2026-10-27T16:45:00Z">2026-10-27 16:45</time></td>
+              <td>148 KB</td>
+              <td>12</td>
+              <td><code>snapshot-2026-10-27_16-40-00.tar.gz</code></td>
+              <td><div class="actions">
+                <button class="button button--danger button--small" type="button">Восстановить</button>
+                <button class="button button--secondary button--small" type="button">Открепить</button>
+              </div></td>
+            </tr>
+            <tr>
+              <td><code>checkpoint-2026-10-27_16-30-00.tar.gz</code></td>
+              <td><time datetime="2026-10-27T16:30:00Z">2026-10-27 16:30</time></td>
+              <td>147 KB</td>
+              <td>12</td>
+              <td><code>snapshot-2026-10-27_16-40-00.tar.gz</code></td>
+              <td><div class="actions">
+                <button class="button button--danger button--small" type="button">Восстановить</button>
+                <button class="button button--secondary button--small" type="button">Закрепить</button>
+                <button class="button button--ghost button--small" type="button">Удалить</button>
+              </div></td>
+            </tr>
+            <tr>
+              <td><code>checkpoint-2026-09-01_00-00-00.tar.gz</code> <span class="tag tag--danger">база удалена</span></td>
+              <td><time datetime="2026-09-01T00:00:00Z">2026-09-01 00:00</time></td>
+              <td>96 KB</td>
+              <td>4</td>
+              <td><span class="muted">нет базы</span></td>
+              <td><div class="actions">
+                <button class="button button--danger button--small" type="button">Восстановить мир</button>
+                <button class="button button--ghost button--small" type="button">Удалить</button>
+              </div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+
+    <section class="card">
+      <h2>Снапшоты</h2>
+      <p class="muted">Полная точка: <code>state/</code>, <code>mods/</code>, <code>configs/</code>. Снапшот защищён, пока на него ссылается чекпоинт.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Архив</th>
+              <th>Причина</th>
+              <th>Дата (UTC)</th>
+              <th>Размер</th>
+              <th>Ссылок</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>snapshot-2026-10-27_16-40-00.tar.gz</code></td>
+              <td><span class="tag">mods</span></td>
+              <td><time datetime="2026-10-27T16:40:00Z">2026-10-27 16:40</time></td>
+              <td>312 MB</td>
+              <td>96</td>
+              <td><div class="actions">
+                <button class="button button--danger button--small" type="button">Восстановить</button>
+                <span class="muted">защищён</span>
+              </div></td>
+            </tr>
+            <tr>
+              <td><code>snapshot-2026-09-01_10-00-00.tar.gz</code></td>
+              <td><span class="tag">manual</span></td>
+              <td><time datetime="2026-09-01T10:00:00Z">2026-09-01 10:00</time></td>
+              <td>298 MB</td>
+              <td>0</td>
+              <td><div class="actions">
+                <button class="button button--danger button--small" type="button">Восстановить</button>
+                <button class="button button--ghost button--small" type="button">Удалить</button>
+              </div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>История конфигов</h2>
+      <p class="muted">Создаётся при каждом изменении <code>config.lua</code>. Восстановление требует перезапуска.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Архив</th>
+              <th>Причина</th>
+              <th>Дата (UTC)</th>
+              <th>Размер</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>configs-2026-10-27_16-40-00.tar.gz</code></td>
+              <td><span class="tag">config_set</span></td>
+              <td><time datetime="2026-10-27T16:40:00Z">2026-10-27 16:40</time></td>
+              <td>24 KB</td>
+              <td><button class="button button--secondary button--small" type="button">Восстановить</button></td>
+            </tr>
+            <tr>
+              <td><code>configs-2026-10-26_09-12-00.tar.gz</code></td>
+              <td><span class="tag">config_restore</span></td>
+              <td><time datetime="2026-10-26T09:12:00Z">2026-10-26 09:12</time></td>
+              <td>23 KB</td>
+              <td><button class="button button--secondary button--small" type="button">Восстановить</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card card--warning">
+      <h2>Восстановление чекпоинта</h2>
+      <p><strong>Все игроки откатятся к 27.10.2026 16:45.</strong> Текущий мир будет сохранён как <code>checkpoint-predeploy-*</code>, сервер перезапустится.</p>
+      <div class="field">
+        <label for="restore-name">Подтвердите имя архива</label>
+        <input id="restore-name" value="checkpoint-2026-09-01_00-00-00.tar.gz">
+      </div>
+      <p class="muted">База удалена. Точка восстановится на текущие моды, список отсутствующих плагинов придёт в отчёте.</p>
+      <div class="field">
+        <label for="accept-mismatch">Восстановить только мир, оставить текущие моды (<code>--accept-mod-mismatch</code>)</label>
+        <select id="accept-mismatch">
+          <option value="false">Нет</option>
+          <option value="true" selected>Да, я понимаю риск</option>
+        </select>
+      </div>
+      <div class="actions">
+        <button class="button button--danger" type="button">Восстановить</button>
+        <button class="button button--secondary" type="button">Отмена</button>
+      </div>
+    </section>
+
+    <section class="card card--warning">
+      <h2>Удаление</h2>
+      <p>Удаление необратимо и не запускает retention. Введите имя архива целиком, чтобы включить кнопку.</p>
+      <div class="field">
+        <label for="delete-name">Имя архива</label>
+        <input id="delete-name" placeholder="checkpoint-2026-09-01_00-00-00.tar.gz">
+      </div>
+      <div class="field">
+        <label for="delete-force">Удалить базу вместе с защитой (<code>--force</code>)</label>
+        <select id="delete-force">
+          <option value="false" selected>Нет</option>
+          <option value="true">Да, чекпоинты станут невосстановимыми</option>
+        </select>
+      </div>
+      <div class="actions">
+        <button class="button button--danger" type="button" disabled>Удалить</button>
+        <button class="button button--ghost" type="button">Проверить план (--dry-run)</button>
+      </div>
+    </section>
+
+    <p class="pagination"><a class="button button--secondary" href="#">Показать более старые</a></p>
+  </main>
+</body>
+</html>

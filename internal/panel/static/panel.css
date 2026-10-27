@@ -1107,6 +1107,67 @@ body.auth {
   }
 }
 
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: .5rem 0 0;
+  color: var(--accent);
+}
+
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-line--muted {
+  color: var(--muted);
+  stroke-dasharray: 4 4;
+}
+
+.chart-line--info {
+  color: var(--info);
+}
+
+.chart-label {
+  fill: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 11px;
+}
+
+.metric-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem 1.75rem;
+  margin: .75rem 0;
+}
+
+.metric {
+  display: grid;
+  gap: .1rem;
+}
+
+.metric-value {
+  color: var(--text);
+  font-size: 1.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-meta {
+  color: var(--muted);
+  font-size: .78rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
