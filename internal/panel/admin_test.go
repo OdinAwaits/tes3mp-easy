@@ -598,8 +598,14 @@ func TestAdminStatePageGroupsAndValidatesInput(t *testing.T) {
 		backups: map[string]Backups{"state": stateBackupsFixture()},
 	})
 	rec := env.request(t, http.MethodGet, "/admin/state", nil)
+	if rec.Code != http.StatusMovedPermanently ||
+		rec.Header().Get("Location") != "/admin/restore-points" {
+		t.Fatalf("GET /admin/state = %d %q", rec.Code, rec.Header().Get("Location"))
+	}
+
+	rec = env.request(t, http.MethodGet, "/admin/restore-points", nil)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /admin/state = %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("GET /admin/restore-points = %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
@@ -611,17 +617,17 @@ func TestAdminStatePageGroupsAndValidatesInput(t *testing.T) {
 		}
 	}
 
-	rec = env.request(t, http.MethodGet, "/admin/state?before=../bad.tar.gz", nil)
+	rec = env.request(t, http.MethodGet, "/admin/restore-points?before=../bad.tar.gz", nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("unsafe before = %d, want 400", rec.Code)
 	}
-	rec = env.request(t, http.MethodGet, "/admin/state?limit=999", nil)
+	rec = env.request(t, http.MethodGet, "/admin/restore-points?limit=999", nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("invalid limit = %d, want 400", rec.Code)
 	}
 
 	rec = env.request(t, http.MethodGet,
-		"/admin/state?before=state-2026-10-20_12-00-00.tar.gz", nil)
+		"/admin/restore-points?before=state-2026-10-20_12-00-00.tar.gz", nil)
 	if rec.Code != http.StatusOK ||
 		env.ops.lastBefore != "state-2026-10-20_12-00-00.tar.gz" {
 		t.Fatalf("before was not forwarded: %d %q", rec.Code, env.ops.lastBefore)
@@ -733,6 +739,40 @@ func TestAdminConfigPageAndSave(t *testing.T) {
 	if rec.Code != http.StatusOK || len(env.ops.configSets) != 2 ||
 		env.ops.configSets[1].value != "false" {
 		t.Fatalf("unchecked bool save = %d calls=%+v", rec.Code, env.ops.configSets)
+	}
+}
+
+func TestAdminConfigSavesWholeFormDiff(t *testing.T) {
+	env := newAdminTestEnv(t, &fakeAdminOps{
+		configSnapshots: adminConfigSnapshots(),
+	})
+	form := url.Values{
+		"hostname":            {"Morrowind with friends"},
+		"port":                {"25566"},
+		"maximumPlayers":      {"8"},
+		"password":            {""},
+		"logLevel":            {"1"},
+		"masterServerEnabled": {"false"},
+	}
+	rec := env.request(t, http.MethodPost, "/admin/config/server", form)
+	if rec.Code != http.StatusOK || len(env.ops.configSets) != 1 {
+		t.Fatalf("full form save = %d calls=%+v", rec.Code, env.ops.configSets)
+	}
+	call := env.ops.configSets[0]
+	if call.key != "port" || call.value != 25566 {
+		t.Fatalf("full form changed %+v, want only port", call)
+	}
+	if !strings.Contains(rec.Body.String(), "Сохранено полей: 1") {
+		t.Fatalf("full form page has no diff count:\n%s", rec.Body.String())
+	}
+
+	env.ops.configSnapshots["server"].Values["port"] = 25566
+	rec = env.request(t, http.MethodPost, "/admin/config/server", form)
+	if rec.Code != http.StatusOK || len(env.ops.configSets) != 1 {
+		t.Fatalf("second unchanged form = %d calls=%+v", rec.Code, env.ops.configSets)
+	}
+	if !strings.Contains(rec.Body.String(), "Изменений нет") {
+		t.Fatalf("unchanged form page has no notice:\n%s", rec.Body.String())
 	}
 }
 

@@ -10,12 +10,12 @@
 
   <main class="page">
     <div class="page-head">
-      <p class="eyebrow">Панель управления</p>
+      <p class="eyebrow">Сервер</p>
       <h1>{{.ServerName}}</h1>
-      <p class="lead">Панель запущена. Управление сервером доступно ниже.</p>
+      <p class="lead">Панель запущена. Статус, ресурсы и последние события. Графики — 24 часа в памяти панели, на диск не пишутся.</p>
     </div>
 
-    {{if .Notice}}<p role="status">{{.Notice}}</p>{{end}}
+    {{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
     {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
     {{if .RestartRequired}}<p class="notice">Нужен перезапуск сервера, чтобы применить изменения.</p>{{end}}
 
@@ -23,64 +23,178 @@
       <section class="card">
         <h2>Сервер</h2>
         {{if .StatusError}}<p role="alert">{{.StatusError}}</p>{{end}}
-        <p class="status-line">
-          Статус:
+        <div class="status-line">
           <span class="badge" id="server-status" data-status="{{.Status}}">{{.StatusLabel}}</span>
-        </p>
-        <p>Health: <span class="badge" id="server-health" data-status="{{.Health}}">{{.Health}}</span></p>
-        {{if .StartedAt}}<p class="muted">Запущен: <time datetime="{{.StartedAt}}">{{.StartedAt}}</time></p>{{end}}
+          {{if .StartedAt}}<span class="muted">с <time datetime="{{.StartedAt}}" id="server-started">{{.StartedAt}}</time></span>{{end}}
+        </div>
+        <dl class="meta-list">
+          <dt>Адрес</dt>
+          <dd><code>{{.Address}}:{{.Port}}</code></dd>
+          <dt>Health</dt>
+          <dd><span class="badge" id="server-health" data-status="{{.Health}}">{{.Health}}</span></dd>
+          <dt>Моды</dt>
+          <dd>
+            {{if .Mods}}<code>{{.Mods.Name}}</code> <span class="muted">{{.Mods.SizeLabel}}</span>
+            {{else}}<span role="alert">{{.ModsError}}</span>{{end}}
+          </dd>
+        </dl>
         <div class="actions">
           <form method="post" action="/admin/server/start">
             <input type="hidden" name="_csrf" value="{{.CSRF}}">
-            <button type="submit">Запустить</button>
+            <button class="button button--primary" type="submit">Запустить</button>
+          </form>
+          <form method="post" action="/admin/server/restart">
+            <input type="hidden" name="_csrf" value="{{.CSRF}}">
+            <button class="button button--secondary" type="submit">Перезапустить</button>
           </form>
           <form method="post" action="/admin/server/stop">
             <input type="hidden" name="_csrf" value="{{.CSRF}}">
             <button class="button button--danger" type="submit">Остановить</button>
           </form>
-          <form method="post" action="/admin/server/restart">
-            <input type="hidden" name="_csrf" value="{{.CSRF}}">
-            <button class="button button--ghost" type="submit">Перезапустить</button>
-          </form>
+          <a class="button button--ghost" href="/admin/logs">Логи</a>
         </div>
       </section>
 
       <section class="card">
-        <h2>Автобэкапы</h2>
-        <p>Таймер: <strong id="backup-timer">{{.Timer}}</strong></p>
+        <h2>Таймеры и проверки</h2>
+        <dl class="meta-list">
+          <dt>Чекпоинты</dt>
+          <dd><span class="badge" id="backup-timer" data-status="{{.Timer}}">{{.Timer}}</span></dd>
+          <dt>Guard</dt>
+          <dd><span class="badge" id="guard-timer" data-status="{{.GuardTimer}}">{{.GuardTimer}}</span></dd>
+          <dt>doctor</dt>
+          <dd>
+            {{if .Doctor}}
+              {{range .Doctor.Checks}}<span class="badge" data-status="{{.Status}}">{{.Name}}</span> {{end}}
+            {{else}}<span class="muted">нет данных</span>{{end}}
+          </dd>
+        </dl>
         {{if .TimerError}}<p role="alert">{{.TimerError}}</p>{{end}}
-        <form method="post" action="/admin/state/create">
-          <input type="hidden" name="_csrf" value="{{.CSRF}}">
-          <button type="submit">Создать бэкап сейчас</button>
-        </form>
-      </section>
-
-      <section class="card">
-        <h2>Диагностика</h2>
+        {{if .GuardError}}<p role="alert">{{.GuardError}}</p>{{end}}
         {{if .DoctorError}}<p role="alert">{{.DoctorError}}</p>{{end}}
         {{if .Doctor}}
-          <p>Итог: <span class="badge" data-status="{{.Doctor.Status}}">{{.Doctor.Status}}</span></p>
           <ul class="check-list">
             {{range .Doctor.Checks}}
-              <li>
-                <span class="badge" data-status="{{.Status}}">{{.Status}}</span>
-                <strong>{{.Name}}</strong>{{if .Message}} <span class="muted">— {{.Message}}</span>{{end}}
-              </li>
+              <li><span class="badge" data-status="{{.Status}}">{{.Status}}</span>
+                <strong>{{.Name}}</strong>{{if .Message}} <span class="muted">— {{.Message}}</span>{{end}}</li>
             {{end}}
           </ul>
-        {{else if not .DoctorError}}
-          <p class="muted">Диагностика недоступна.</p>
         {{end}}
+        <div class="actions">
+          <a class="button button--secondary" href="/admin/restore-points">Точки отката</a>
+        </div>
+      </section>
+    </div>
+
+    <p class="notice">Мутации блокируются, пока <code>doctor</code> в статусе <code>error</code>. Метрики на это не влияют.</p>
+
+    <section class="card" id="resources" data-window="{{.Window}}">
+      <div class="page-subhead">
+        <h2>Ресурсы</h2>
+        <nav class="tabs" aria-label="Окно графиков">
+          <a href="/admin?window=1h"{{if eq .Window "1h"}} aria-current="page"{{end}}>1 ч</a>
+          <a href="/admin?window=6h"{{if eq .Window "6h"}} aria-current="page"{{end}}>6 ч</a>
+          <a href="/admin?window=24h"{{if eq .Window "24h"}} aria-current="page"{{end}}>24 ч</a>
+        </nav>
+      </div>
+      {{if .MetricsError}}<p role="alert">{{.MetricsError}}</p>{{end}}
+      {{if .Metrics.Available}}
+        <div class="metric-row">
+          <div class="metric"><span class="metric-value" data-metric="ram">{{.Metrics.CurrentRAM}}</span><span class="metric-meta">RAM игры</span></div>
+          <div class="metric"><span class="metric-value" data-metric="game-cpu">{{.Metrics.CurrentGameCPU}}</span><span class="metric-meta">CPU игры</span></div>
+          <div class="metric"><span class="metric-value" data-metric="sys-cpu">{{.Metrics.CurrentSysCPU}}</span><span class="metric-meta">CPU системы</span></div>
+          <div class="metric"><span class="metric-value" data-metric="sys-ram">{{.Metrics.CurrentSysRAM}}</span><span class="metric-meta">RAM системы</span></div>
+          <div class="metric"><span class="metric-value" data-metric="swap">{{.Metrics.CurrentSwap}}</span><span class="metric-meta">swap</span></div>
+          <div class="metric"><span class="metric-value" data-metric="disk">{{.Metrics.CurrentDisk}}</span><span class="metric-meta">свободно на диске</span></div>
+        </div>
+      {{else}}
+        <p class="muted">cgroup игры не читается: сервер остановлен. Системные метрики доступны.</p>
+      {{end}}
+
+      <h3>RAM игры</h3>
+      <p class="metric-meta">0…{{.Metrics.RAMChart.MaxLabel}}; пики видны, пропуски — разрыв.</p>
+      <svg class="chart" id="chart-ram" viewBox="0 0 600 170" role="img" aria-labelledby="ram-title">
+        <title id="ram-title">{{.Metrics.RAMChart.Title}}</title>
+        <line class="chart-grid" x1="40" y1="20" x2="590" y2="20"></line>
+        <line class="chart-grid" x1="40" y1="75" x2="590" y2="75"></line>
+        <line class="chart-grid" x1="40" y1="130" x2="590" y2="130"></line>
+        <text class="chart-label" x="32" y="24" text-anchor="end">{{.Metrics.RAMChart.MaxLabel}}</text>
+        <text class="chart-label" x="32" y="79" text-anchor="end">{{.Metrics.RAMChart.MidLabel}}</text>
+        <text class="chart-label" x="32" y="134" text-anchor="end">0</text>
+        <g data-chart-lines="ram">
+          {{range .Metrics.RAMChart.Lines}}<polyline class="{{.Class}}" points="{{.Points}}"></polyline>{{end}}
+        </g>
+        <text class="chart-label" x="40" y="158">{{.Metrics.RAMChart.StartLabel}}</text>
+        <text class="chart-label" x="315" y="158" text-anchor="middle">{{.Metrics.RAMChart.MidTime}}</text>
+        <text class="chart-label" x="590" y="158" text-anchor="end">{{.Metrics.RAMChart.EndLabel}}</text>
+      </svg>
+
+      <h3>CPU игры и системы</h3>
+      <p class="metric-meta">Игра — <span class="tag">янтарный</span>, система — <span class="tag">синий</span>.</p>
+      <svg class="chart" id="chart-cpu" viewBox="0 0 600 170" role="img" aria-labelledby="cpu-title">
+        <title id="cpu-title">{{.Metrics.CPUChart.Title}}</title>
+        <line class="chart-grid" x1="40" y1="20" x2="590" y2="20"></line>
+        <line class="chart-grid" x1="40" y1="75" x2="590" y2="75"></line>
+        <line class="chart-grid" x1="40" y1="130" x2="590" y2="130"></line>
+        <text class="chart-label" x="32" y="24" text-anchor="end">100 %</text>
+        <text class="chart-label" x="32" y="79" text-anchor="end">50 %</text>
+        <text class="chart-label" x="32" y="134" text-anchor="end">0</text>
+        <g data-chart-lines="cpu">
+          {{range .Metrics.CPUChart.Lines}}<polyline class="{{.Class}}" points="{{.Points}}"></polyline>{{end}}
+        </g>
+        <text class="chart-label" x="40" y="158">{{.Metrics.CPUChart.StartLabel}}</text>
+        <text class="chart-label" x="315" y="158" text-anchor="middle">{{.Metrics.CPUChart.MidTime}}</text>
+        <text class="chart-label" x="590" y="158" text-anchor="end">{{.Metrics.CPUChart.EndLabel}}</text>
+      </svg>
+
+      <h3>Свободно на диске</h3>
+      <p class="metric-meta">График показывает свободное место в выбранном окне.</p>
+      <svg class="chart" id="chart-disk" viewBox="0 0 600 170" role="img" aria-labelledby="disk-title">
+        <title id="disk-title">{{.Metrics.DiskChart.Title}}</title>
+        <line class="chart-grid" x1="40" y1="20" x2="590" y2="20"></line>
+        <line class="chart-grid" x1="40" y1="75" x2="590" y2="75"></line>
+        <line class="chart-grid" x1="40" y1="130" x2="590" y2="130"></line>
+        <text class="chart-label" x="32" y="24" text-anchor="end">{{.Metrics.DiskChart.MaxLabel}}</text>
+        <text class="chart-label" x="32" y="79" text-anchor="end">{{.Metrics.DiskChart.MidLabel}}</text>
+        <text class="chart-label" x="32" y="134" text-anchor="end">0</text>
+        <g data-chart-lines="disk">
+          {{range .Metrics.DiskChart.Lines}}<polyline class="{{.Class}}" points="{{.Points}}"></polyline>{{end}}
+        </g>
+        <text class="chart-label" x="40" y="158">{{.Metrics.DiskChart.StartLabel}}</text>
+        <text class="chart-label" x="315" y="158" text-anchor="middle">{{.Metrics.DiskChart.MidTime}}</text>
+        <text class="chart-label" x="590" y="158" text-anchor="end">{{.Metrics.DiskChart.EndLabel}}</text>
+      </svg>
+      <noscript><p class="muted">Графики обновляются раз в 15 секунд через <code>admin.js</code>; без JavaScript показаны значения на момент загрузки.</p></noscript>
+    </section>
+
+
+    <div class="grid">
+      <section class="card">
+        <h2>Последние события</h2>
+        {{if .EventsError}}<p role="alert">{{.EventsError}}</p>{{end}}
+        {{if .Events}}<div class="log-panel">{{range .Events}}{{.}}
+{{end}}</div>{{else}}<p class="muted">Событий пока нет.</p>{{end}}
+        <div class="actions">
+          <a class="button button--secondary" href="/admin/logs">Открыть логи</a>
+          <span class="muted">Аудит без паролей и содержимого файлов</span>
+        </div>
       </section>
 
       <section class="card">
-        <h2>Текущие моды</h2>
-        {{if .Mods}}
-          <p><code>{{.Mods.Name}}</code> ({{.Mods.SizeLabel}})</p>
-          <p class="muted">sha256: <code>{{.Mods.SHA256}}</code></p>
-        {{else}}
-          <p role="alert">{{.ModsError}}</p>
-        {{end}}
+        <h2>Быстрые действия</h2>
+        <div class="actions">
+          <form method="post" action="/admin/restore-points/checkpoint/create">
+            <input type="hidden" name="_csrf" value="{{.CSRF}}">
+            <button class="button button--primary" type="submit">Создать чекпоинт</button>
+          </form>
+          <form method="post" action="/admin/restore-points/snapshot/create">
+            <input type="hidden" name="_csrf" value="{{.CSRF}}">
+            <button class="button button--secondary" type="submit">Создать снапшот</button>
+          </form>
+          <a class="button button--ghost" href="/admin/mods">Загрузить моды</a>
+          <a class="button button--ghost" href="/admin/restore-points">Восстановить</a>
+        </div>
+        <p class="muted">Мутации блокируются, пока <code>doctor</code> в статусе <code>error</code>. Метрики на это не влияют.</p>
       </section>
     </div>
   </main>

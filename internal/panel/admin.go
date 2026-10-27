@@ -43,6 +43,12 @@ type opsSnapshotter interface {
 	ConfigSnapshot(context.Context, string) (ConfigSnapshot, error)
 }
 
+// opsConfigBatch is optional: production ops can apply a whole form with one
+// command, while an older client falls back to one ConfigSet per changed field.
+type opsConfigBatch interface {
+	ConfigSetMany(context.Context, string, map[string]any) error
+}
+
 // currentDoctor caches `ops doctor` for one minute so the dashboard poll does
 // not spawn a subprocess every five seconds. Mutations share the same cache to
 // refuse operations that doctor already marked as doomed.
@@ -100,18 +106,27 @@ type adminPage struct {
 
 type dashboardPageData struct {
 	adminPage
-	ServerName  string
-	Status      string
-	StatusLabel string
-	Health      string
-	StartedAt   string
-	StatusError string
-	Timer       string
-	TimerError  string
-	Doctor      *Doctor
-	DoctorError string
-	Mods        *modsCurrent
-	ModsError   string
+	ServerName   string
+	Address      string
+	Port         int
+	Status       string
+	StatusLabel  string
+	Health       string
+	StartedAt    string
+	StatusError  string
+	Timer        string
+	TimerError   string
+	Events       []string
+	EventsError  string
+	Doctor       *Doctor
+	DoctorError  string
+	GuardTimer   string
+	GuardError   string
+	Mods         *modsCurrent
+	ModsError    string
+	Metrics      metricsView
+	MetricsError string
+	Window       string
 }
 
 type adminLogsPageData struct {
@@ -238,7 +253,8 @@ func adminActiveNav(path string) string {
 		return "logs"
 	case path == "/admin/mods" || strings.HasPrefix(path, "/admin/mods/"):
 		return "mods"
-	case path == "/admin/state" || strings.HasPrefix(path, "/admin/state/"):
+	case path == "/admin/restore-points" || strings.HasPrefix(path, "/admin/restore-points/"),
+		path == "/admin/state" || strings.HasPrefix(path, "/admin/state/"):
 		return "state"
 	case path == "/admin/config" || strings.HasPrefix(path, "/admin/config/"):
 		return "config"
@@ -344,8 +360,26 @@ func (h *panelHandler) ensureOpsPage(w http.ResponseWriter, r *http.Request,
 }
 
 func (h *panelHandler) handleDashboard(w http.ResponseWriter, r *http.Request, session sessionState) {
+	if !validMetricsWindowQuery(r) {
+		data := h.dashboardData(r, session)
+		data.MetricsError = "Параметр window должен быть одним из: 1h, 6h, 24h."
+		h.render(w, http.StatusBadRequest, "dashboard.html", data)
+		return
+	}
 	data := h.dashboardData(r, session)
 	h.render(w, http.StatusOK, "dashboard.html", data)
+}
+
+func validMetricsWindowQuery(r *http.Request) bool {
+	values := r.URL.Query()["window"]
+	if len(values) == 0 {
+		return true
+	}
+	if len(values) != 1 {
+		return false
+	}
+	_, ok := metricsWindowSpecFor(values[0])
+	return ok
 }
 
 func (h *panelHandler) dashboardData(r *http.Request,
@@ -359,9 +393,12 @@ func (h *panelHandler) dashboardData(r *http.Request,
 		Timer:       "unknown",
 	}
 	data.ServerName = defaultServerName
-	if name, _ := h.serverNamePort(); name != "" {
+	name, port := h.serverNamePort()
+	if name != "" {
 		data.ServerName = name
 	}
+	data.Address = publicAddress(h.cfg, r)
+	data.Port = port
 
 	if h.ops == nil {
 		data.Status = "service_unavailable"
@@ -406,6 +443,20 @@ func (h *panelHandler) dashboardData(r *http.Request,
 			}
 		}
 
+		guard, guardErr := h.ops.Status(r.Context(), "tes3mp-easy-guard.timer")
+		if guardErr != nil {
+			data.GuardTimer = "unknown"
+			data.GuardError = "Состояние guard-таймера недоступно."
+		} else {
+			data.GuardTimer = guard.State
+			if data.GuardTimer == "" {
+				data.GuardTimer = "unknown"
+			}
+			if data.GuardTimer != "running" && data.GuardTimer != "starting" {
+				data.GuardError = "Guard не работает: защита от переполнения диска выключена."
+			}
+		}
+
 		if _, ok := h.ops.(opsDoctor); ok {
 			report, doctorErr := h.currentDoctor(r.Context())
 			if report.Status != "" || len(report.Checks) > 0 {
@@ -432,6 +483,27 @@ func (h *panelHandler) dashboardData(r *http.Request,
 			SizeLabel: humanSize(current.Size),
 		}
 	}
+
+	window := r.URL.Query().Get("window")
+	if window == "" {
+		window = "1h"
+	}
+	if h.metrics == nil {
+		data.MetricsError = "Сбор метрик не запущен."
+	} else if metrics, ok := h.metrics.snapshot(window); ok {
+		data.Metrics = metrics.view
+		data.Window = metrics.Window
+	} else {
+		data.MetricsError = "Неизвестное окно метрик."
+	}
+
+	if h.ops != nil {
+		if lines, err := h.ops.Logs(r.Context(), 8); err != nil {
+			data.EventsError = "Последние события недоступны."
+		} else {
+			data.Events = lines
+		}
+	}
 	return data
 }
 
@@ -450,16 +522,23 @@ func (h *panelHandler) handleAdminStatus(w http.ResponseWriter, r *http.Request,
 	if timerErr == nil && timer.State != "" {
 		timerState = timer.State
 	}
+	guard, guardErr := h.ops.Status(r.Context(), "tes3mp-easy-guard.timer")
+	guardState := "unknown"
+	if guardErr == nil && guard.State != "" {
+		guardState = guard.State
+	}
 	response := struct {
 		Status      string  `json:"status"`
 		Health      string  `json:"health"`
 		StartedAt   *string `json:"started_at"`
 		BackupTimer string  `json:"backup_timer"`
+		GuardTimer  string  `json:"guard_timer"`
 	}{
 		Status:      status.State,
 		Health:      status.Health,
 		StartedAt:   status.StartedAt,
 		BackupTimer: timerState,
+		GuardTimer:  guardState,
 	}
 	if response.Status == "" {
 		response.Status = "unknown"
@@ -468,6 +547,32 @@ func (h *panelHandler) handleAdminStatus(w http.ResponseWriter, r *http.Request,
 		response.Health = "unknown"
 	}
 	writeJSON(w, http.StatusOK, "no-store", response)
+}
+
+func (h *panelHandler) handleAdminMetrics(w http.ResponseWriter, r *http.Request,
+	_ sessionState,
+) {
+	if !validMetricsWindowQuery(r) {
+		writeAPIError(w, http.StatusBadRequest, "invalid_argument",
+			"window must be one of 1h, 6h, 24h")
+		return
+	}
+	window := r.URL.Query().Get("window")
+	if h.metrics == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "service_unavailable",
+			"metrics collector is not running")
+		return
+	}
+	data, ok := h.metrics.snapshot(window)
+	if !ok {
+		writeAPIError(w, http.StatusBadRequest, "invalid_argument",
+			"window must be one of 1h, 6h, 24h")
+		return
+	}
+	writeJSON(w, http.StatusOK, "no-store", struct {
+		OK   bool              `json:"ok"`
+		Data metricsWindowData `json:"data"`
+	}{OK: true, Data: data})
 }
 
 func (h *panelHandler) handleServerAction(w http.ResponseWriter, r *http.Request,
@@ -962,7 +1067,7 @@ func (h *panelHandler) statePageData(r *http.Request, session sessionState,
 	data := adminStatePageData{
 		adminPage: adminPageFor(r, session),
 		Limit:     limit,
-		StateURL:  "/admin/state",
+		StateURL:  "/admin/restore-points",
 		ModsURL:   "/admin/mods",
 		ServerURL: "/admin",
 	}
@@ -993,9 +1098,17 @@ func (h *panelHandler) statePageData(r *http.Request, session sessionState,
 		values := url.Values{}
 		values.Set("before", *backups.NextBefore)
 		values.Set("limit", strconv.Itoa(limit))
-		data.NextURL = "/admin/state?" + values.Encode()
+		data.NextURL = "/admin/restore-points?" + values.Encode()
 	}
 	return data, nil
+}
+
+func (h *panelHandler) redirectToRestorePoints(w http.ResponseWriter, r *http.Request) {
+	target := "/admin/restore-points"
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+	http.Redirect(w, r, target, http.StatusMovedPermanently)
 }
 
 func (h *panelHandler) handleState(w http.ResponseWriter, r *http.Request,
@@ -1009,9 +1122,9 @@ func (h *panelHandler) handleState(w http.ResponseWriter, r *http.Request,
 			page.Error = "Параметр limit должен быть числом от 1 до 500."
 			data := adminStatePageData{
 				adminPage: page, Limit: adminBackupPageSize,
-				StateURL: "/admin/state", ModsURL: "/admin/mods", ServerURL: "/admin",
+				StateURL: "/admin/restore-points", ModsURL: "/admin/mods", ServerURL: "/admin",
 			}
-			h.render(w, http.StatusBadRequest, "admin_state.html", data)
+			h.render(w, http.StatusBadRequest, "restore_points.html", data)
 			return
 		}
 		limit = parsed
@@ -1022,19 +1135,19 @@ func (h *panelHandler) handleState(w http.ResponseWriter, r *http.Request,
 		page.Error = "Некорректное имя архива в параметре before."
 		data := adminStatePageData{
 			adminPage: page, Limit: limit,
-			StateURL: "/admin/state", ModsURL: "/admin/mods", ServerURL: "/admin",
+			StateURL: "/admin/restore-points", ModsURL: "/admin/mods", ServerURL: "/admin",
 		}
-		h.render(w, http.StatusBadRequest, "admin_state.html", data)
+		h.render(w, http.StatusBadRequest, "restore_points.html", data)
 		return
 	}
 	data, err := h.statePageData(r, session, before, limit)
 	if err != nil {
 		status, message, _ := adminFailure(err)
 		data.Error = message
-		h.render(w, status, "admin_state.html", data)
+		h.render(w, status, "restore_points.html", data)
 		return
 	}
-	h.render(w, http.StatusOK, "admin_state.html", data)
+	h.render(w, http.StatusOK, "restore_points.html", data)
 }
 
 func (h *panelHandler) handleStateCreate(w http.ResponseWriter, r *http.Request,
@@ -1049,17 +1162,24 @@ func (h *panelHandler) handleStateCreate(w http.ResponseWriter, r *http.Request,
 		h.renderStateFailure(w, r, session, http.StatusServiceUnavailable, message, "")
 		return
 	}
+	action := "state.create"
+	switch {
+	case strings.Contains(r.URL.Path, "/checkpoint/"):
+		action = "checkpoint.create"
+	case strings.Contains(r.URL.Path, "/snapshot/"):
+		action = "snapshot.create"
+	}
 	backup, err := h.ops.BackupCreate(r.Context(), "state", true)
 	if err != nil {
 		status, message, field := adminFailure(err)
-		h.logger.Printf("audit: action=state.create result=error code=%s",
-			adminErrorCode(err))
+		h.logger.Printf("audit: action=%s result=error code=%s",
+			action, adminErrorCode(err))
 		h.renderStateFailure(w, r, session, status, message, field)
 		return
 	}
-	h.logger.Printf("audit: action=state.create archive=%s result=ok",
-		backup.Archive)
-	http.Redirect(w, r, "/admin/state?ok=backup_created", http.StatusSeeOther)
+	h.logger.Printf("audit: action=%s archive=%s result=ok",
+		action, backup.Archive)
+	http.Redirect(w, r, "/admin/restore-points?ok=backup_created", http.StatusSeeOther)
 }
 
 func (h *panelHandler) handleStateDeploy(w http.ResponseWriter, r *http.Request,
@@ -1095,7 +1215,7 @@ func (h *panelHandler) handleStateDeploy(w http.ResponseWriter, r *http.Request,
 	}
 	h.logger.Printf("audit: action=state.deploy archive=%s result=ok restarted=%t",
 		result.Archive, result.Restarted)
-	http.Redirect(w, r, "/admin/state?ok=state_deployed", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/restore-points?ok=state_deployed", http.StatusSeeOther)
 }
 
 func (h *panelHandler) renderStateFailure(w http.ResponseWriter, r *http.Request,
@@ -1105,7 +1225,7 @@ func (h *panelHandler) renderStateFailure(w http.ResponseWriter, r *http.Request
 	data, _ := h.statePageData(r, session, "", adminBackupPageSize)
 	data.Error = message
 	data.ErrorField = field
-	h.render(w, status, "admin_state.html", data)
+	h.render(w, status, "restore_points.html", data)
 }
 
 type adminConfigFieldDef struct {
@@ -1295,6 +1415,10 @@ func (h *panelHandler) handleConfigPost(w http.ResponseWriter, r *http.Request,
 			"Некорректная форма.", "")
 		return
 	}
+	if _, legacy := r.PostForm["key"]; !legacy {
+		h.handleConfigForm(w, r, session, file)
+		return
+	}
 	key := r.PostForm.Get("key")
 	if key == "" {
 		h.renderConfigFailure(w, r, session, http.StatusBadRequest,
@@ -1340,6 +1464,129 @@ func (h *panelHandler) handleConfigPost(w http.ResponseWriter, r *http.Request,
 	}
 	data.Sections = sections
 	h.render(w, http.StatusOK, "admin_config.html", data)
+}
+
+func (h *panelHandler) handleConfigForm(w http.ResponseWriter, r *http.Request,
+	session sessionState, file string,
+) {
+	snapshot, err := h.configSnapshot(r.Context(), file)
+	if err != nil {
+		status, message, _ := adminFailure(err)
+		h.renderConfigFailure(w, r, session, status, message, "")
+		return
+	}
+
+	changed := make(map[string]any)
+	if file == "banlist" {
+		for _, key := range []string{"playerNames", "ipAddresses"} {
+			raw, ok := r.PostForm[key]
+			if !ok {
+				continue
+			}
+			value := normalizeListValue(raw[0])
+			if strings.Join(stringList(snapshot.Values[key]), "\n") != value {
+				changed[key] = value
+			}
+		}
+	} else {
+		for _, def := range adminConfigFields[file] {
+			raw, ok := r.PostForm[def.Key]
+			if !ok {
+				if def.Kind == "bool" {
+					raw = []string{"false"}
+				} else {
+					continue
+				}
+			}
+			value, changedField, parseErr := configFormValue(def.Kind, raw[0],
+				snapshot.Values[def.Key])
+			if parseErr != nil {
+				h.renderConfigFailure(w, r, session, http.StatusBadRequest,
+					"Проверьте значение поля "+def.Label+".", def.Key)
+				return
+			}
+			if changedField {
+				changed[def.Key] = value
+			}
+		}
+	}
+
+	if len(changed) == 0 {
+		data := adminConfigPageData{adminPage: adminPageFor(r, session)}
+		data.Notice = "Изменений нет."
+		data.Sections, _ = h.configSections(r)
+		h.render(w, http.StatusOK, "admin_config.html", data)
+		return
+	}
+
+	if batch, ok := h.ops.(opsConfigBatch); ok {
+		if err := batch.ConfigSetMany(r.Context(), file, changed); err != nil {
+			status, message, field := adminFailure(err)
+			h.logger.Printf("audit: action=config.set file=%s keys=%d result=error code=%s",
+				file, len(changed), adminErrorCode(err))
+			h.renderConfigFailure(w, r, session, status, message, field)
+			return
+		}
+	} else {
+		for key, value := range changed {
+			if err := h.ops.ConfigSet(r.Context(), file, key, value); err != nil {
+				status, message, field := adminFailure(err)
+				if field == "" {
+					field = key
+				}
+				h.logger.Printf("audit: action=config.set file=%s key=%s result=error code=%s",
+					file, key, adminErrorCode(err))
+				h.renderConfigFailure(w, r, session, status, message, field)
+				return
+			}
+			h.logger.Printf("audit: action=config.set file=%s key=%s result=ok", file, key)
+		}
+	}
+
+	data := adminConfigPageData{adminPage: adminPageFor(r, session)}
+	data.Notice = fmt.Sprintf("Сохранено полей: %d.", len(changed))
+	data.RestartRequired = true
+	data.Sections, err = h.configSections(r)
+	if err != nil {
+		status, message, _ := adminFailure(err)
+		data.Error = message
+		h.render(w, status, "admin_config.html", data)
+		return
+	}
+	h.render(w, http.StatusOK, "admin_config.html", data)
+}
+
+func normalizeListValue(value string) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	return strings.TrimRight(value, "\n")
+}
+
+func configFormValue(kind, raw string, current any) (any, bool, error) {
+	switch kind {
+	case "bool":
+		value := raw == "true" || raw == "1" || raw == "on"
+		existing, _ := current.(bool)
+		return value, value != existing, nil
+	case "int":
+		value, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil {
+			return nil, false, err
+		}
+		existing := 0
+		switch typed := current.(type) {
+		case float64:
+			existing = int(typed)
+		case int:
+			existing = typed
+		}
+		return value, value != existing, nil
+	case "password":
+		existing, _ := current.(string)
+		return raw, raw != existing, nil
+	default:
+		existing := fmt.Sprint(current)
+		return raw, raw != existing, nil
+	}
 }
 
 func (h *panelHandler) renderConfigFailure(w http.ResponseWriter, r *http.Request,

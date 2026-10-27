@@ -24,9 +24,10 @@ const (
 // and Serve are separate so tests and operators can learn the actual ephemeral
 // address before traffic starts.
 type Server struct {
-	cfg    Config
-	logger *log.Logger
-	certs  *certificateManager
+	cfg     Config
+	logger  *log.Logger
+	certs   *certificateManager
+	metrics *metricsStore
 
 	httpsSrv *http.Server
 
@@ -52,6 +53,7 @@ func New(cfg Config, handler http.Handler, logger *log.Logger) (*Server, error) 
 		return nil, err
 	}
 
+	var metrics *metricsStore
 	if handler == nil {
 		auth, authErr := openAuthStore(cfg, logger)
 		if authErr != nil {
@@ -64,17 +66,20 @@ func New(cfg Config, handler http.Handler, logger *log.Logger) (*Server, error) 
 		if opsErr != nil {
 			return nil, fmt.Errorf("build ops client: %w", opsErr)
 		}
-		handler, err = newHandler(cfg, auth, opsClient, logger, time.Now)
-		if err != nil {
-			return nil, fmt.Errorf("build panel handler: %w", err)
+		h, handlerErr := newPanelHandler(cfg, auth, opsClient, logger, time.Now)
+		if handlerErr != nil {
+			return nil, fmt.Errorf("build panel handler: %w", handlerErr)
 		}
+		handler = h.routes()
+		metrics = h.metrics
 	}
 
 	secureHandler := withSecurityHeaders(handler)
 	server := &Server{
-		cfg:    cfg,
-		logger: logger,
-		certs:  certs,
+		cfg:     cfg,
+		logger:  logger,
+		certs:   certs,
+		metrics: metrics,
 	}
 	server.httpsSrv = &http.Server{
 		Addr:              cfg.HTTPSAddr,
@@ -151,6 +156,9 @@ func (s *Server) Serve(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go s.certs.Run(runCtx)
+	if s.metrics != nil {
+		s.metrics.start(runCtx.Done())
+	}
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- s.httpsSrv.ServeTLS(httpsLn, "", "") }()

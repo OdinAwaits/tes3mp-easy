@@ -3,6 +3,7 @@
 <head>
 {{template "head"}}
   <title>Настройки — tes3mp-easy</title>
+  <script defer src="/static/admin.js"></script>
 </head>
 <body>
   {{template "adminNav" .}}
@@ -11,48 +12,51 @@
     <div class="page-head">
       <p class="eyebrow">Конфигурация</p>
       <h1>Настройки</h1>
-      <p class="lead">Изменения сохраняются в конфиги сервера. Для применения нужен перезапуск.</p>
+      <p class="lead">Форма отправляется целиком. Панель сравнивает поля и передаёт только изменения.</p>
     </div>
 
-    {{if .Notice}}<p role="status">{{.Notice}}</p>{{end}}
+    {{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
     {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
     {{if .RestartRequired}}<p class="notice">Нужен перезапуск сервера, чтобы применить изменения.</p>{{end}}
+    <p class="muted">Если ничего не менять, кнопка неактивна и показано «Изменений нет»; лишняя мутация не выполняется.</p>
 
     <div class="stack">
       {{range .Sections}}
-        {{$section := .}}
         <section class="card">
           <h2>{{.Title}}</h2>
           {{if .Note}}<p class="muted">{{.Note}}</p>{{end}}
           {{if .Error}}<p role="alert">Проверьте поле: {{.Error}}</p>{{end}}
 
-          {{range .Fields}}
-            <form class="config-row" method="post" action="/admin/config/{{$section.File}}">
-              <input type="hidden" name="_csrf" value="{{$.CSRF}}">
-              <input type="hidden" name="key" value="{{.Key}}">
-              <label for="{{.Key}}">{{.Label}}</label>
-              {{if eq .Kind "bool"}}
-                <select id="{{.Key}}" name="value">
-                  <option value="true"{{if .Checked}} selected{{end}}>Да</option>
-                  <option value="false"{{if not .Checked}} selected{{end}}>Нет</option>
-                </select>
-              {{else}}
-                <input id="{{.Key}}" name="value" value="{{.Value}}"
-                       type="{{if eq .Kind "password"}}password{{else if eq .Kind "int"}}number{{else}}text{{end}}">
+          <form method="post" action="/admin/config/{{.File}}" data-config-form>
+            <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+            <div class="grid">
+              {{range .Fields}}
+                <div class="config-row">
+                  <label for="{{.Key}}">{{.Label}}</label>
+                  {{if eq .Kind "bool"}}
+                    <select id="{{.Key}}" name="{{.Key}}">
+                      <option value="true"{{if .Checked}} selected{{end}}>Да</option>
+                      <option value="false"{{if not .Checked}} selected{{end}}>Нет</option>
+                    </select>
+                  {{else}}
+                    <input id="{{.Key}}" name="{{.Key}}" value="{{.Value}}"
+                           type="{{if eq .Kind "password"}}password{{else if eq .Kind "int"}}number{{else}}text{{end}}">
+                  {{end}}
+                </div>
               {{end}}
-              <button class="button button--secondary" type="submit">{{$section.SaveLabel}}</button>
-            </form>
-          {{end}}
-
-          {{range .Banlist}}
-            <form class="config-row config-row--stack" method="post" action="/admin/config/{{$section.File}}">
-              <input type="hidden" name="_csrf" value="{{$.CSRF}}">
-              <input type="hidden" name="key" value="{{.Key}}">
-              <label for="{{.Key}}">{{.Label}}</label>
-              <textarea id="{{.Key}}" name="value" rows="6">{{.Value}}</textarea>
-              <button class="button button--secondary" type="submit">Сохранить</button>
-            </form>
-          {{end}}
+              {{range .Banlist}}
+                <div class="config-row config-row--stack">
+                  <label for="{{.Key}}">{{.Label}}</label>
+                  <textarea id="{{.Key}}" name="{{.Key}}" rows="6">{{.Value}}</textarea>
+                </div>
+              {{end}}
+            </div>
+            <div class="actions">
+              <button class="button button--primary" type="submit" data-config-submit>Сохранить изменения</button>
+              <button class="button button--secondary" type="reset">Отменить</button>
+              <span class="muted" data-config-status>Изменений нет</span>
+            </div>
+          </form>
 
           {{if .ReadOnly}}
             <h3>Только для чтения</h3>

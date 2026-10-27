@@ -27,6 +27,7 @@ type panelHandler struct {
 	templates *template.Template
 	logger    *log.Logger
 	now       func() time.Time
+	metrics   *metricsStore
 
 	doctorMu     sync.Mutex
 	doctorReport Doctor
@@ -87,6 +88,7 @@ func newPanelHandler(cfg Config, auth *authStore, opsClient Ops, logger *log.Log
 		templates: templates,
 		logger:    logger,
 		now:       now,
+		metrics:   newMetricsStore(cfg.Root),
 	}, nil
 }
 
@@ -97,6 +99,7 @@ func (h *panelHandler) routes() http.Handler {
 	mux.HandleFunc("GET /backups", h.handleBackups)
 	mux.HandleFunc("GET /backups/mods/{name}", h.handleBackupDownload("mods"))
 	mux.HandleFunc("GET /backups/state/{name}", h.handleBackupDownload("state"))
+	mux.HandleFunc("GET /backups/checkpoints/{name}", h.handleBackupDownload("checkpoints"))
 	mux.HandleFunc("GET /api/v1/server", h.handleServerInfo)
 	mux.HandleFunc("GET /api/v1/mods/current", h.handleModsCurrent)
 	mux.HandleFunc("GET /api/v1/mods/current/archive", h.handleModsArchive)
@@ -112,7 +115,13 @@ func (h *panelHandler) routes() http.Handler {
 	mux.HandleFunc("POST /admin/mods/upload", h.authenticated(false, h.handleModsUpload))
 	mux.HandleFunc("POST /admin/mods/deploy", h.authenticated(false, h.handleModsDeploy))
 	mux.HandleFunc("POST /admin/mods/rollback", h.authenticated(false, h.handleModsRollback))
-	mux.HandleFunc("GET /admin/state", h.authenticated(false, h.handleState))
+	mux.HandleFunc("GET /admin/restore-points", h.authenticated(false, h.handleState))
+	mux.HandleFunc("GET /admin/state", h.redirectToRestorePoints)
+	mux.HandleFunc("POST /admin/restore-points/checkpoint/create", h.authenticated(false, h.handleStateCreate))
+	mux.HandleFunc("POST /admin/restore-points/snapshot/create", h.authenticated(false, h.handleStateCreate))
+	mux.HandleFunc("POST /admin/restore-points/restore", h.authenticated(false, h.handleStateDeploy))
+	// Old POST addresses remain as aliases for bookmarks and tests; GET /admin/state
+	// is a permanent redirect to the new page.
 	mux.HandleFunc("POST /admin/state/create", h.authenticated(false, h.handleStateCreate))
 	mux.HandleFunc("POST /admin/state/deploy", h.authenticated(false, h.handleStateDeploy))
 	mux.HandleFunc("GET /admin/config", h.authenticated(false, h.handleConfig))
@@ -121,6 +130,7 @@ func (h *panelHandler) routes() http.Handler {
 	mux.HandleFunc("POST /admin/staff/{player}", h.authenticated(false, h.handleStaffSet))
 	mux.HandleFunc("GET /api/v1/admin/logs", h.authenticated(false, h.handleLogsAPI))
 	mux.HandleFunc("GET /api/v1/admin/status", h.authenticated(false, h.handleAdminStatus))
+	mux.HandleFunc("GET /api/v1/admin/metrics", h.authenticated(false, h.handleAdminMetrics))
 	mux.Handle("GET /static/", http.FileServer(http.FS(staticFS)))
 	return mux
 }
