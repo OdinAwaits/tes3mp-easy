@@ -150,6 +150,43 @@ func TestAuthStoreChangePassword(t *testing.T) {
 	}
 }
 
+func TestAuthStoreReleasesArgon2Memory(t *testing.T) {
+	store, current, _ := newTestAuthStore(t)
+
+	released := 0
+	original := releaseHashMemory
+	releaseHashMemory = func() {
+		released++
+		if len(store.hashSem) != 0 {
+			t.Errorf("releaseHashMemory called while hashSem is held")
+		}
+	}
+	t.Cleanup(func() { releaseHashMemory = original })
+
+	if !store.verify(current) {
+		t.Fatal("verify rejected the initial password")
+	}
+	if released != 1 {
+		t.Fatalf("releaseHashMemory calls after verify = %d, want 1", released)
+	}
+
+	if store.verify("wrong panel password") {
+		t.Fatal("verify accepted a wrong password")
+	}
+	if released != 2 {
+		t.Fatalf("releaseHashMemory calls after failed verify = %d, want 2", released)
+	}
+
+	next := "a brand new panel password"
+	if err := store.changePassword(current, next); err != nil {
+		t.Fatalf("changePassword: %v", err)
+	}
+	// One release for the current-password check, one for the new hash.
+	if released != 4 {
+		t.Fatalf("releaseHashMemory calls after changePassword = %d, want 4", released)
+	}
+}
+
 func TestResetPasswordOverwritesCorruptStore(t *testing.T) {
 	_, oldPassword, cfg := newTestAuthStore(t)
 

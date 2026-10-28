@@ -31,7 +31,8 @@ bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/in
 Установщик сам находит последний серверный релиз (`server-v<version>`);
 клиентские релизы его не сбивают.
 
-После установки откройте `https://<IP-сервера>/`. Временный пароль:
+После установки bootstrap печатает временный пароль панели в конце вывода
+(`[panel] temporary password: ...`). Если он потерялся, пароль лежит рядом:
 
 ```bash
 sudo cat /tes3mp-easy/panel-data/initial-password.txt

@@ -22,7 +22,7 @@
             {{range .Items}}
               <li class="archive-item">
                 <div class="archive-item-head">
-                  <time class="archive-date" datetime="{{.Mtime}}">{{.MtimeLabel}}</time>
+                  <time class="archive-date" datetime="{{.Mtime}}" title="{{.MtimeLabel}}">{{if .MtimeAgo}}{{.MtimeAgo}}{{else}}{{.MtimeLabel}}{{end}}</time>
                   {{if .Current}}<span class="tag">текущий</span>{{end}}
                 </div>
                 <p class="archive-name"><code>{{.Name}}</code></p>
@@ -65,7 +65,7 @@
             {{range .Items}}
               <li class="archive-item">
                 <div class="archive-item-head">
-                  <time class="archive-date" datetime="{{.Mtime}}">{{.MtimeLabel}}</time>
+                  <time class="archive-date" datetime="{{.Mtime}}" title="{{.MtimeLabel}}">{{if .MtimeAgo}}{{.MtimeAgo}}{{else}}{{.MtimeLabel}}{{end}}</time>
                   {{if .Current}}<span class="tag">текущий</span>{{end}}
                 </div>
                 <p class="archive-name"><code>{{.Name}}</code></p>

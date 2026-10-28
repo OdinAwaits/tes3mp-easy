@@ -43,7 +43,11 @@ show)
 		memory_high=402653184
 		memory_max=469762048
 		;;
-	tes3mp-panel.service|tes3mp-easy-backup.service)
+	tes3mp-panel.service)
+		memory_high=50331648
+		memory_max=67108864
+		;;
+	tes3mp-easy-backup.service)
 		memory_high=50331648
 		memory_max=67108864
 		;;

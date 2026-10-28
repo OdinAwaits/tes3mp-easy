@@ -23,6 +23,8 @@ HTTP-контракты — в `03-contracts.md`; при расхождении 
 - `html/template` + `embed` для HTML, CSS и минимального JS.
 - Никакого Node.js, SPA-фреймворка и сборки фронтенда.
 - Argon2id для пароля (`golang.org/x/crypto/argon2`), память 32 MiB, 1 поток.
+  Буфер возвращается ОС сразу после хеша (`debug.FreeOSMemory`), иначе Go держит
+  эти 32 MiB у себя и панель выглядит на ~37 MiB толще, чем есть.
 - TLS: встроенный `github.com/go-acme/lego/v4` получает и продлевает
   сертификат Let's Encrypt для публичного IP (RFC 8738, профиль `shortlived`).
   Внешний ACME-клиент не нужен. Режим `files` служит готовую пару.
@@ -73,7 +75,7 @@ journald. На время ACME HTTP-01 challenge она занимает `:80` �
 осознанно.
 
 Systemd-лимиты: `MemoryHigh=48M`, `MemoryMax=64M`, `GOMAXPROCS=1`,
-`GOMEMLIMIT=64MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE` для `:443` и
+`GOMEMLIMIT=48MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE` для `:443` и
 временного `:80`; bounding set дополнительно содержит
 `CAP_SETUID`/`CAP_SETGID`/`CAP_AUDIT_WRITE`/`CAP_SYS_RESOURCE`, иначе setuid-`sudo`
 не сможет переключиться на `tes3mp` и применить PAM-лимиты.
@@ -190,13 +192,17 @@ State перед отдачей проверяется на текущий layou
 | POST | `/admin/staff/<player>` | Сменить ранг |
 | GET/POST | `/admin/password` | Сменить пароль |
 | GET | `/api/v1/admin/logs?tail=200` | Логи для автообновления |
-| GET | `/api/v1/admin/status` | Статус сервера для автообновления (плюс `backup_timer`) |
+| GET | `/api/v1/admin/status` | Статус сервера для автообновления (плюс `backup_timer`, подписи и флаги кнопок) |
 | GET | `/api/v1/admin/metrics?window=1h\|6h\|24h` | RAM/CPU/диск для графиков дашборда |
 
 Все админские GET требуют сессию, а POST — ещё и CSRF. Дашборд и страница логов
 обновляют статус и журнал через `/api/v1/admin/{status,logs}` раз в 5 секунд,
 метрики — через `/api/v1/admin/metrics` раз в 15 секунд
-(`internal/panel/static/admin.js`, без inline-скриптов). Upload идёт потоково:
+(`internal/panel/static/admin.js`, без inline-скриптов). Подписи статуса,
+health и времени приходят с сервера (`status_label`, `health_label`,
+`started_at_label`), а `can_start`/`can_stop` управляют доступностью кнопок:
+пока сервер работает или запускается, «Запустить» выключена, «Остановить»
+включена. Upload идёт потоково:
 `MaxBytesReader` на 512 MiB для модов и 1 ГиБ для ZIP/state restore,
 `MultipartReader`, UUID-имя в `panel-data/uploads/`, CSRF-поле проверяется в том
 же проходе, а файл удаляется после импорта. ZIP распаковывается в
@@ -224,11 +230,17 @@ journald (`action=mods.deploy archive=... result=ok`) без паролей, с�
 - При первом запуске генерируется случайный пароль (24 символа base64url),
   пишется в `panel-data/initial-password.txt` с правами `0600` и один раз
   печатается в journald.
+- Bootstrap после установки печатает тот же пароль в stdout
+  (`[panel] temporary password: ...`), чтобы не искать файл вручную.
 - При первом входе панель требует сменить пароль.
 - После успешной смены пароля панель удаляет `initial-password.txt`.
 - Хранение — только хеш; открытый пароль после смены нигде не остаётся.
 - Argon2id: 32 MiB, 1 поток, `time=3`. Это осознанно меньше, чем на большой
-  машине: панель должна укладываться в 64 MiB вместе с Go-рантаймом.
+  машине: спайк 32 MiB должен укладываться в лимит панели (`MemoryHigh=48M`,
+  `MemoryMax=64M`) вместе с Go-рантаймом. Поэтому хеш идёт под семафором (две
+  проверки не выделят 64 MiB разом), а сразу после него панель отдаёт буфер ОС
+  через `debug.FreeOSMemory` — это 0.2–0.4 ms против ~170 ms самого Argon2, зато
+  в простое панель занимает ~5 MiB вместо ~37 MiB.
 - Сброс — через SSH:
 
   ```bash

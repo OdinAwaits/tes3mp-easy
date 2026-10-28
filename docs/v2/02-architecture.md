@@ -58,7 +58,7 @@ best-effort и не входят в поддерживаемую конфигу�
 | Unit | User | Память | Дополнительно |
 |---|---|---|---|
 | `tes3mp.service` | `tes3mp` | `MemoryHigh=384M`, `MemoryMax=448M` | `OOMScoreAdjust=-500`, `Restart=on-failure` |
-| `tes3mp-panel.service` | `tes3mp-panel` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=64MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE`, bounding `CAP_SETUID`/`CAP_SETGID`/`CAP_AUDIT_WRITE`/`CAP_SYS_RESOURCE` для sudo, `EnvironmentFile=-/etc/tes3mp-easy/panel.env` |
+| `tes3mp-panel.service` | `tes3mp-panel` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=48MiB`, `OOMScoreAdjust=+500`, `CAP_NET_BIND_SERVICE`, bounding `CAP_SETUID`/`CAP_SETGID`/`CAP_AUDIT_WRITE`/`CAP_SYS_RESOURCE` для sudo, `EnvironmentFile=-/etc/tes3mp-easy/panel.env` |
 | `tes3mp-easy-backup.service` | `tes3mp` | `MemoryHigh=48M`, `MemoryMax=64M` | `GOMAXPROCS=1`, `GOMEMLIMIT=64MiB`, `Nice=19`, `IOSchedulingClass=idle`, `OOMScoreAdjust=+500` |
 | `tes3mp-easy-backup.timer` | — | — | `OnBootSec=2min`, `OnUnitActiveSec=15min`, `AccuracySec=30s` |
 
@@ -475,13 +475,20 @@ cgroup-лимитами, её потребление видно на графи�
 |---|---|---|
 | Базовая ОС, systemd, journald | 80–120 MiB | — |
 | `tes3mp.service` | 250–380 MiB | `MemoryHigh=384M`, `MemoryMax=448M` |
-| `tes3mp-panel.service` | 26–46 MiB | `MemoryHigh=48M`, `MemoryMax=64M` |
+| `tes3mp-panel.service` | 5–40 MiB | `MemoryHigh=48M`, `MemoryMax=64M` |
 | `tes3mp-easy-backup.service` | 15–40 MiB | `MemoryHigh=48M`, `MemoryMax=64M` |
 | Page cache | по остатку | вытесняется |
 
 - `GOMAXPROCS=1` у панели и backup-сервиса: на одном vCPU больше не нужно.
-- `GOMEMLIMIT=64MiB` заставляет Go-процессы агрессивнее собирать мусор, а не
-  раздувать RSS.
+- `GOMEMLIMIT` у панели — `48MiB`, у backup-сервиса — `64MiB`: значение
+  заставляет Go-процессы агрессивнее собирать мусор, а не раздувать RSS. У
+  панели оно выше пика одного логина (~40 MiB), иначе рантайм собирал бы мусор
+  по кругу, пока жива Argon2-куча. Сам спайк в 32 MiB панель отдаёт обратно ОС
+  сразу после хеша (`debug.FreeOSMemory` в `internal/panel/auth.go`), поэтому в
+  простое она занимает ~5 MiB. Без этого вызова Go оставлял освобождённые
+  страницы у себя: на VPS замерено 37.6 MiB `anon` после первого входа, пик
+  39.5 MiB, а с `GOMEMLIMIT=64MiB` куча дорастала до ~66 MiB, логин упирался в
+  `MemoryMax=64M` и занимал 10.5–16 s вместо 0.17 s.
 - Кольцевой буфер метрик занимает ~0.6 MiB (5760 сэмплов по 15 секунд за
   24 часа): это учтено в строке панели и не пишется на диск.
 - `tes3mp` получает `OOMScoreAdjust=-500`, панель и backup — `+500`:

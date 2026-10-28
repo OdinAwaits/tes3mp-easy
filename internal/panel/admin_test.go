@@ -469,10 +469,15 @@ func TestAdminStatusAPI(t *testing.T) {
 		t.Fatalf("GET status = %d: %s", rec.Code, rec.Body.String())
 	}
 	var response struct {
-		Status      string  `json:"status"`
-		Health      string  `json:"health"`
-		StartedAt   *string `json:"started_at"`
-		BackupTimer string  `json:"backup_timer"`
+		Status         string  `json:"status"`
+		StatusLabel    string  `json:"status_label"`
+		Health         string  `json:"health"`
+		HealthLabel    string  `json:"health_label"`
+		StartedAt      *string `json:"started_at"`
+		StartedAtLabel *string `json:"started_at_label"`
+		CanStart       bool    `json:"can_start"`
+		CanStop        bool    `json:"can_stop"`
+		BackupTimer    string  `json:"backup_timer"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode status: %v", err)
@@ -482,11 +487,75 @@ func TestAdminStatusAPI(t *testing.T) {
 		response.BackupTimer != "stopped" {
 		t.Fatalf("status response = %+v", response)
 	}
+	// The dashboard polls this endpoint and renders the labels verbatim, so the
+	// machine state and the Russian label must both be present.
+	if response.StatusLabel != "работает" || response.HealthLabel != "в порядке" {
+		t.Fatalf("labels = %q/%q", response.StatusLabel, response.HealthLabel)
+	}
+	if response.StartedAtLabel == nil || *response.StartedAtLabel != "2 часа назад" {
+		t.Fatalf("started_at_label = %v", response.StartedAtLabel)
+	}
+	if response.CanStart || !response.CanStop {
+		t.Fatalf("can_start=%v can_stop=%v, want start blocked while running",
+			response.CanStart, response.CanStop)
+	}
 
 	anon := panelRequest(t, env.handler, http.MethodGet, "/api/v1/admin/status",
 		nil, nil, nil)
 	if anon.Code != http.StatusSeeOther {
 		t.Fatalf("anonymous status API = %d, want login redirect", anon.Code)
+	}
+}
+
+func TestAdminDashboardRendersLabelsAndActions(t *testing.T) {
+	started := "2026-10-23T10:00:00Z"
+	tests := []struct {
+		state       string
+		statusLabel string
+		canStart    bool
+		canStop     bool
+		withStarted bool
+	}{
+		{state: "running", statusLabel: "работает", canStop: true, withStarted: true},
+		{state: "starting", statusLabel: "запускается", canStop: true},
+		{state: "stopped", statusLabel: "остановлен", canStart: true},
+		{state: "unhealthy", statusLabel: "нездоров", canStart: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.state, func(t *testing.T) {
+			status := Status{Unit: "tes3mp.service", State: tt.state, Health: "healthy"}
+			if tt.withStarted {
+				status.StartedAt = &started
+			}
+			env := newAdminTestEnv(t, &fakeAdminOps{statuses: map[string]Status{
+				"tes3mp.service": status,
+			}})
+			rec := env.request(t, http.MethodGet, "/admin", nil)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET /admin = %d: %s", rec.Code, rec.Body.String())
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body,
+				`data-status="`+tt.state+`">`+tt.statusLabel+`<`) {
+				t.Fatalf("status badge is not %q (%q):\n%s", tt.statusLabel,
+					tt.state, body)
+			}
+			if !strings.Contains(body, `data-status="healthy">в порядке<`) {
+				t.Fatalf("health badge is not localized:\n%s", body)
+			}
+			// A disabled button is the negation of the matching permission.
+			if startDisabled := strings.Contains(body,
+				`data-server-action="start" disabled`); startDisabled == tt.canStart {
+				t.Fatalf("start button disabled=%v for state %q", startDisabled, tt.state)
+			}
+			if stopDisabled := strings.Contains(body,
+				`data-server-action="stop" disabled`); stopDisabled == tt.canStop {
+				t.Fatalf("stop button disabled=%v for state %q", stopDisabled, tt.state)
+			}
+			if tt.withStarted && !strings.Contains(body, "2 часа назад") {
+				t.Fatalf("started_at is not human readable:\n%s", body)
+			}
+		})
 	}
 }
 

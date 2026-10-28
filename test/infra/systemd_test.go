@@ -48,7 +48,7 @@ func TestSystemdAssetsContainRequiredSettings(t *testing.T) {
 				"RestartSec=60s",
 				"TimeoutStartSec=5min",
 				"Environment=GOMAXPROCS=1",
-				"Environment=GOMEMLIMIT=64MiB",
+				"Environment=GOMEMLIMIT=48MiB",
 				"MemoryHigh=48M",
 				"MemoryMax=64M",
 				"OOMScoreAdjust=500",

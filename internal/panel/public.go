@@ -87,6 +87,7 @@ type archiveItem struct {
 	SizeLabel       string
 	Mtime           string
 	MtimeLabel      string
+	MtimeAgo        string
 	Current         bool
 	ModsArchive     string
 	ModsAvailable   bool
@@ -108,7 +109,9 @@ type archiveOptions struct {
 	CurrentMods string
 }
 
-func archiveItems(items []BackupItem, typ string, opt archiveOptions) []archiveItem {
+func archiveItems(items []BackupItem, typ string, opt archiveOptions,
+	now time.Time,
+) []archiveItem {
 	views := make([]archiveItem, 0, len(items))
 	for _, item := range items {
 		mtime, mtimeLabel := backupTime(item.Mtime)
@@ -118,6 +121,7 @@ func archiveItems(items []BackupItem, typ string, opt archiveOptions) []archiveI
 			SizeLabel:   humanSize(item.Size),
 			Mtime:       mtime,
 			MtimeLabel:  mtimeLabel,
+			MtimeAgo:    timeLabel(item.Mtime, now),
 			Current:     item.Current,
 			DownloadURL: archiveDownloadURL(typ, item.Name, opt.Admin),
 		}
@@ -387,9 +391,10 @@ func (h *panelHandler) handleBackups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	now := h.now()
 	data := backupsPageData{
-		StateGroups: groupArchiveItems(archiveItems(stateBackups.Items, "state", archiveOptions{}), h.now()),
-		ModsGroups:  groupArchiveItems(archiveItems(modsBackups.Items, "mods", archiveOptions{}), h.now()),
+		StateGroups: groupArchiveItems(archiveItems(stateBackups.Items, "state", archiveOptions{}, now), now),
+		ModsGroups:  groupArchiveItems(archiveItems(modsBackups.Items, "mods", archiveOptions{}, now), now),
 		StateEmpty:  len(stateBackups.Items) == 0,
 		ModsEmpty:   len(modsBackups.Items) == 0,
 		Limit:       limit,
@@ -688,31 +693,118 @@ func humanSize(size int64) string {
 	return fmt.Sprintf("%d B", size)
 }
 
+// backupGroupLabel groups archives by day for the last week, by ISO week for
+// the last year and by month after that. The labels are meant for humans; the
+// exact timestamp stays in <time datetime>.
 func backupGroupLabel(raw string, now time.Time) string {
 	at, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
 		return "Другие"
 	}
 	at = at.UTC()
+	now = now.UTC()
 	age := now.Sub(at)
 	switch {
+	case sameUTCDay(at, now):
+		return "Сегодня"
+	case sameUTCDay(at, now.AddDate(0, 0, -1)):
+		return "Вчера"
 	case age <= 7*24*time.Hour:
-		return at.Format("2006-01-02")
+		return at.Format("02.01.2006")
 	case age <= 365*24*time.Hour:
 		year, week := at.ISOWeek()
-		return fmt.Sprintf("%d-W%02d", year, week)
+		return fmt.Sprintf("Неделя %d, %d", week, year)
 	default:
-		return at.Format("2006-01")
+		return monthNames[at.Month()-1] + " " + at.Format("2006")
 	}
 }
 
+var monthNames = [...]string{
+	"Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+	"Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+}
+
+func sameUTCDay(a, b time.Time) bool {
+	ay, am, ad := a.UTC().Date()
+	by, bm, bd := b.UTC().Date()
+	return ay == by && am == bm && ad == bd
+}
+
+// backupTime returns the machine-readable timestamp and the short absolute
+// label used in tables ("23.10.2026 11:00 UTC").
 func backupTime(raw string) (string, string) {
 	at, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
 		return raw, raw
 	}
 	at = at.UTC()
-	return at.Format(time.RFC3339), at.Format("2006-01-02 15:04 UTC")
+	return at.Format(time.RFC3339), at.Format("02.01.2006 15:04 UTC")
+}
+
+// timeLabel renders a timestamp relative to now ("5 минут назад"). It is used
+// where the exact value matters less than the age; invalid input is returned
+// unchanged so the page never hides data.
+func timeLabel(raw string, now time.Time) string {
+	at, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return raw
+	}
+	return humanAgo(at, now)
+}
+
+// humanAgo renders how long ago at happened in whole Russian units.
+func humanAgo(at, now time.Time) string {
+	if !at.Before(now) {
+		return "только что"
+	}
+	age := now.Sub(at)
+	var value int
+	var one, few, many string
+	switch {
+	case age < time.Minute:
+		return "только что"
+	case age < time.Hour:
+		value, one, few, many = int(age/time.Minute), "минуту", "минуты", "минут"
+	case age < 24*time.Hour:
+		value, one, few, many = int(age/time.Hour), "час", "часа", "часов"
+	case age < 30*24*time.Hour:
+		value, one, few, many = int(age/(24*time.Hour)), "день", "дня", "дней"
+	case age < 365*24*time.Hour:
+		value, one, few, many = int(age/(30*24*time.Hour)), "месяц", "месяца", "месяцев"
+	default:
+		value, one, few, many = int(age/(365*24*time.Hour)), "год", "года", "лет"
+	}
+	if value < 1 {
+		value = 1
+	}
+	return fmt.Sprintf("%d %s назад", value, pluralRu(value, one, few, many))
+}
+
+func pluralRu(value int, one, few, many string) string {
+	value %= 100
+	if value >= 11 && value <= 14 {
+		return many
+	}
+	switch value % 10 {
+	case 1:
+		return one
+	case 2, 3, 4:
+		return few
+	default:
+		return many
+	}
+}
+
+// healthLabel turns the ops health verdict into an operator-facing word.
+func healthLabel(health string) string {
+	switch health {
+	case "healthy":
+		return "в порядке"
+	case "unhealthy":
+		return "проблемы"
+	default:
+		return "неизвестно"
+	}
 }
 
 func safeArchiveName(name string) bool {

@@ -95,7 +95,8 @@ TES3MP_EASY_VERSION=0.2.4 bash <(curl -Ls https://raw.githubusercontent.com/Saag
    включает и запускает `tes3mp.service`, `tes3mp-easy-backup.timer` и
    `tes3mp-panel.service`. Исходники и Go на VPS не нужны.
 
-4. Прочитайте временный пароль панели и войдите:
+4. Войдите в панель. Bootstrap печатает временный пароль в конце вывода
+   (`[panel] temporary password: ...`), а тот же пароль лежит в файле:
 
    ```bash
    sudo cat /tes3mp-easy/panel-data/initial-password.txt

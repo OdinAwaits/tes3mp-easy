@@ -105,21 +105,25 @@ type adminPage struct {
 
 type dashboardPageData struct {
 	adminPage
-	ServerName   string
-	Address      string
-	Port         int
-	Status       string
-	StatusLabel  string
-	Health       string
-	StartedAt    string
-	StatusError  string
-	Events       []string
-	EventsError  string
-	Mods         *modsCurrent
-	ModsError    string
-	Metrics      metricsView
-	MetricsError string
-	Window       string
+	ServerName     string
+	Address        string
+	Port           int
+	Status         string
+	StatusLabel    string
+	Health         string
+	HealthLabel    string
+	StartedAt      string
+	StartedAtLabel string
+	CanStart       bool
+	CanStop        bool
+	StatusError    string
+	Events         []string
+	EventsError    string
+	Mods           *modsCurrent
+	ModsError      string
+	Metrics        metricsView
+	MetricsError   string
+	Window         string
 }
 
 type adminLogsPageData struct {
@@ -334,6 +338,7 @@ func (h *panelHandler) dashboardData(r *http.Request,
 		Status:      "unknown",
 		StatusLabel: statusLabel("unknown"),
 		Health:      "unknown",
+		HealthLabel: healthLabel("unknown"),
 	}
 	data.ServerName = defaultServerName
 	name, port := h.serverNamePort()
@@ -374,6 +379,12 @@ func (h *panelHandler) dashboardData(r *http.Request,
 
 	}
 
+	data.HealthLabel = healthLabel(data.Health)
+	if data.StartedAt != "" {
+		data.StartedAtLabel = timeLabel(data.StartedAt, h.now())
+	}
+	data.CanStart, data.CanStop = serverActions(data.Status)
+
 	if current, err := h.readCurrentMods(); err != nil {
 		data.ModsError = "Текущий архив модов не найден."
 	} else {
@@ -406,6 +417,18 @@ func (h *panelHandler) dashboardData(r *http.Request,
 	return data
 }
 
+// serverActions maps the ops state to the buttons that make sense. "starting"
+// counts as running: systemd already accepted the start job, so a second start
+// would only fail and stop is still meaningful.
+func serverActions(status string) (canStart, canStop bool) {
+	switch status {
+	case "running", "starting":
+		return false, true
+	default:
+		return true, false
+	}
+}
+
 func (h *panelHandler) handleAdminStatus(w http.ResponseWriter, r *http.Request, _ sessionState) {
 	if !h.ensureOps(w, r) {
 		return
@@ -422,10 +445,15 @@ func (h *panelHandler) handleAdminStatus(w http.ResponseWriter, r *http.Request,
 		timerState = timer.State
 	}
 	response := struct {
-		Status      string  `json:"status"`
-		Health      string  `json:"health"`
-		StartedAt   *string `json:"started_at"`
-		BackupTimer string  `json:"backup_timer"`
+		Status         string  `json:"status"`
+		StatusLabel    string  `json:"status_label"`
+		Health         string  `json:"health"`
+		HealthLabel    string  `json:"health_label"`
+		StartedAt      *string `json:"started_at"`
+		StartedAtLabel *string `json:"started_at_label"`
+		CanStart       bool    `json:"can_start"`
+		CanStop        bool    `json:"can_stop"`
+		BackupTimer    string  `json:"backup_timer"`
 	}{
 		Status:      status.State,
 		Health:      status.Health,
@@ -438,6 +466,13 @@ func (h *panelHandler) handleAdminStatus(w http.ResponseWriter, r *http.Request,
 	if response.Health == "" {
 		response.Health = "unknown"
 	}
+	response.StatusLabel = statusLabel(response.Status)
+	response.HealthLabel = healthLabel(response.Health)
+	if response.StartedAt != nil {
+		label := timeLabel(*response.StartedAt, h.now())
+		response.StartedAtLabel = &label
+	}
+	response.CanStart, response.CanStop = serverActions(response.Status)
 	writeJSON(w, http.StatusOK, "no-store", response)
 }
 
@@ -607,7 +642,7 @@ func (h *panelHandler) modsPageData(r *http.Request,
 	data.Items = archiveItems(backups.Items, "mods", archiveOptions{
 		Admin:       true,
 		CurrentMods: data.Current,
-	})
+	}, h.now())
 	data.Empty = len(data.Items) == 0
 	data.Previous = previousModsArchive(backups)
 	return data, nil
@@ -984,10 +1019,11 @@ func (h *panelHandler) statePageData(r *http.Request, session sessionState,
 	data.CurrentMods = currentMods
 	data.MissingMods = currentMods == ""
 
+	now := h.now()
 	data.Groups = groupArchiveItems(archiveItems(backups.Items, "state", archiveOptions{
 		Admin:       true,
 		CurrentMods: currentMods,
-	}), h.now())
+	}, now), now)
 	data.Empty = len(backups.Items) == 0
 	if backups.NextBefore != nil && *backups.NextBefore != "" {
 		values := url.Values{}

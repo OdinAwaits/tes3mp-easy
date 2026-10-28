@@ -464,7 +464,10 @@ func TestPublicBackupsPage(t *testing.T) {
 		"mods-2026-10-23_11-00-00.tar.gz",
 		"mods-2026-10-01_11-00-00.tar.gz",
 		"mods-2025-01-15_11-00-00.tar.gz",
-		"2026-10-23 11:00 UTC", "2026-W40", "2025-01",
+		// Human-readable timestamps: relative age in the card, absolute UTC in
+		// the title, day/week/month group headings.
+		"1 час назад", `title="23.10.2026 11:00 UTC"`,
+		"Сегодня", "Неделя 40, 2026", "Январь 2025",
 		"Состояния", "Моды", "Моды:",
 		"/backups/state/state-manual-2026-10-23_11-00-00.tar.gz",
 		"/backups/state/state-manual-2026-10-23_11-00-00.tar.gz/bundle",
@@ -853,6 +856,56 @@ func TestPublicHomePage(t *testing.T) {
 	rec = panelRequest(t, env.handler, http.MethodPost, "/", nil, nil, nil)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST / = %d, want 405", rec.Code)
+	}
+}
+
+func TestHumanAgo(t *testing.T) {
+	now := sessionTestNow
+	tests := []struct {
+		offset time.Duration
+		want   string
+	}{
+		{offset: 0, want: "только что"},
+		{offset: 30 * time.Second, want: "только что"},
+		{offset: time.Minute, want: "1 минуту назад"},
+		{offset: 2 * time.Minute, want: "2 минуты назад"},
+		{offset: 5 * time.Minute, want: "5 минут назад"},
+		{offset: 11 * time.Minute, want: "11 минут назад"},
+		{offset: 21 * time.Minute, want: "21 минуту назад"},
+		{offset: time.Hour, want: "1 час назад"},
+		{offset: 3 * time.Hour, want: "3 часа назад"},
+		{offset: 24 * time.Hour, want: "1 день назад"},
+		{offset: 5 * 24 * time.Hour, want: "5 дней назад"},
+		{offset: 30 * 24 * time.Hour, want: "1 месяц назад"},
+		{offset: 365 * 24 * time.Hour, want: "1 год назад"},
+	}
+	for _, tt := range tests {
+		if got := humanAgo(now.Add(-tt.offset), now); got != tt.want {
+			t.Errorf("humanAgo(-%s) = %q, want %q", tt.offset, got, tt.want)
+		}
+	}
+	if got := humanAgo(now.Add(time.Hour), now); got != "только что" {
+		t.Errorf("humanAgo(future) = %q, want %q", got, "только что")
+	}
+}
+
+func TestBackupGroupLabel(t *testing.T) {
+	now := sessionTestNow
+	tests := []struct {
+		raw  string
+		want string
+	}{
+		{raw: "2026-10-23T11:00:00Z", want: "Сегодня"},
+		{raw: "2026-10-22T23:00:00Z", want: "Вчера"},
+		{raw: "2026-10-19T12:00:00Z", want: "19.10.2026"},
+		{raw: "2026-10-01T11:00:00Z", want: "Неделя 40, 2026"},
+		{raw: "2025-01-15T11:00:00Z", want: "Январь 2025"},
+		{raw: "not-a-time", want: "Другие"},
+	}
+	for _, tt := range tests {
+		if got := backupGroupLabel(tt.raw, now); got != tt.want {
+			t.Errorf("backupGroupLabel(%q) = %q, want %q", tt.raw, got, tt.want)
+		}
 	}
 }
 

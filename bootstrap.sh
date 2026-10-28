@@ -1599,6 +1599,31 @@ wait_for_panel_health() {
     abort_panel_startup "panel did not become healthy in 300s"
 }
 
+# report_initial_password prints the temporary panel password that the panel
+# writes on its first start. The file disappears after the first password
+# change, so a rerun of the installer only points at the recovery steps.
+report_initial_password() {
+    local file="$DATA_ROOT/panel-data/initial-password.txt"
+    local password=""
+    if [[ -s $file ]]; then
+        password=$(cat "$file" 2>/dev/null) || password=""
+    fi
+    if [[ -z $password ]]; then
+        info "panel: open https://$PUBLIC_ADDRESS/"
+        if [[ -e $file ]]; then
+            info "panel: the temporary password is empty; read $file"
+        else
+            info "panel: the temporary password is already gone, sign in with your own password"
+            info "panel: if it is lost, reset it as described in docs/v2/08-runbook.md (reset-password)"
+        fi
+        return
+    fi
+    info "panel: open https://$PUBLIC_ADDRESS/"
+    printf '%s[panel]%s temporary password: %s\n' \
+        "$C_GREEN" "$C_RESET" "$password"
+    info "panel: change it after the first login; the panel then deletes $file"
+}
+
 start_runtime_services() {
     # `enable` makes the game and timer survive a reboot; `start` is
     # deliberately not `restart`, so rerunning the installer never disconnects
@@ -1631,7 +1656,7 @@ start_runtime_services() {
         fi
         wait_for_panel_health
         pass "service: tes3mp-panel.service active"
-        info "panel: open https://$PUBLIC_ADDRESS/ and read $DATA_ROOT/panel-data/initial-password.txt"
+        report_initial_password
     else
         info "panel: tes3mp-panel.service remains inactive until /opt/tes3mp-easy/bin/tes3mp-easy-panel is installed"
     fi

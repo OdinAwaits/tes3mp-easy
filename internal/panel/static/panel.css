@@ -640,7 +640,10 @@ pre code {
 }
 
 .badge[data-status="warn"],
-.badge[data-status="warning"] {
+.badge[data-status="warning"],
+.badge[data-status="starting"],
+.badge[data-status="activating"],
+.badge[data-status="reloading"] {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent-strong);

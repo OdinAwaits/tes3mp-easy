@@ -8,14 +8,24 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 
 	"github.com/Saagilat/tes3mp-easy/internal/atomicfile"
 )
 
+// releaseHashMemory hands the 32 MiB Argon2 working buffer back to the kernel.
+// Go keeps freed spans in its own heap, so without this call the panel's RSS
+// stays at ~37 MiB after the first password check even though only ~5 MiB is
+// live. Measured cost is 0.2–0.4 ms (full GC of a tiny live set plus madvise),
+// i.e. noise next to the ~170 ms Argon2 work, and it is what keeps the panel
+// inside its 64 MiB cgroup. It is a variable so tests can observe the call.
+var releaseHashMemory = debug.FreeOSMemory
+
 // authStore owns the password hash and the temporary-password marker. Argon2
-// work is serialized through hashSem: one 32 MiB hash at a time keeps the panel
-// inside its 64 MiB cgroup even during a burst of login requests.
+// work is serialized through hashSem and the 32 MiB buffer is released to the
+// OS after every hash: one hash at a time plus an immediate release keeps the
+// panel at a few MiB when idle and around 40 MiB only while a login runs.
 type authStore struct {
 	mu         sync.RWMutex
 	params     argonParams
@@ -93,6 +103,7 @@ func openAuthStore(cfg Config, logger *log.Logger) (*authStore, error) {
 		if genErr != nil {
 			return nil, genErr
 		}
+		releaseHashMemory()
 		authData, genErr := marshalAuthRecord(record)
 		if genErr != nil {
 			return nil, genErr
@@ -147,6 +158,7 @@ func ResetPassword(cfg Config) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	releaseHashMemory()
 	authData, err := marshalAuthRecord(record)
 	if err != nil {
 		return "", err
@@ -214,16 +226,29 @@ func (a *authStore) verify(password string) bool {
 	hash := a.hash
 	a.mu.RUnlock()
 
-	a.hashSem <- struct{}{}
-	defer func() { <-a.hashSem }()
+	var ok bool
+	a.hashLocked(func() {
+		derived := hashPassword(password, salt, params)
+		defer func() {
+			for i := range derived {
+				derived[i] = 0
+			}
+		}()
+		ok = subtle.ConstantTimeCompare(derived, hash) == 1
+	})
+	return ok
+}
 
-	derived := hashPassword(password, salt, params)
-	defer func() {
-		for i := range derived {
-			derived[i] = 0
-		}
+// hashLocked runs one Argon2 operation under hashSem and releases the working
+// buffer after the semaphore is dropped, so goroutines waiting for their turn
+// never wait for the GC as well.
+func (a *authStore) hashLocked(fn func()) {
+	func() {
+		a.hashSem <- struct{}{}
+		defer func() { <-a.hashSem }()
+		fn()
 	}()
-	return subtle.ConstantTimeCompare(derived, hash) == 1
+	releaseHashMemory()
 }
 
 func (a *authStore) mustChangePassword() bool {
@@ -236,9 +261,13 @@ func (a *authStore) mustChangePassword() bool {
 // verify, so a login and a password change cannot allocate two 32 MiB Argon2
 // buffers at once.
 func (a *authStore) hashWithSemaphore(password string) (authRecord, []byte, []byte, error) {
-	a.hashSem <- struct{}{}
-	defer func() { <-a.hashSem }()
-	return newAuthRecord(password)
+	var (
+		record     authRecord
+		salt, hash []byte
+		err        error
+	)
+	a.hashLocked(func() { record, salt, hash, err = newAuthRecord(password) })
+	return record, salt, hash, err
 }
 
 // changePassword verifies the current password, writes a new hash and removes

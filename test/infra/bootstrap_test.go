@@ -1094,6 +1094,7 @@ func TestBootstrapInstallsReleaseBinariesAndStartsPanel(t *testing.T) {
 		"panel: HTTPS /healthz is ready",
 		"service: tes3mp-panel.service active",
 		"panel: open https://203.0.113.10/",
+		"panel: the temporary password is already gone",
 	} {
 		assertContains(t, got.stdout, want)
 	}
@@ -1165,6 +1166,20 @@ func TestBootstrapClearsFailedPanelBeforeACME(t *testing.T) {
 	} {
 		assertContains(t, logText, want)
 	}
+}
+
+func TestBootstrapPrintsInitialPanelPassword(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	password := "OWY0NTA2MDktc2VjcmV0LXBhc3N3b3Jk"
+	h.writeFile(filepath.Join(h.dataRoot, "panel-data", "initial-password.txt"),
+		password+"\n", 0o600)
+
+	got := h.run(t)
+
+	assertExit(t, got, 0)
+	assertContains(t, got.stdout, "panel: open https://203.0.113.10/")
+	assertContains(t, got.stdout, "temporary password: "+password)
 }
 
 func TestBootstrapReportsPanelACMERateLimit(t *testing.T) {

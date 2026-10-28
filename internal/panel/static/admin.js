@@ -4,14 +4,29 @@
   var status = document.getElementById("server-status");
   var health = document.getElementById("server-health");
   var started = document.getElementById("server-started");
+  var startedWrap = document.getElementById("server-started-wrap");
 
-  var setBadge = function (node, value, fallback) {
+  // data-status keeps the machine-readable state for the stylesheet, while the
+  // visible text comes from the localized label the API already renders.
+  var setBadge = function (node, value, label, fallback) {
     if (!node) {
       return;
     }
     var next = value || fallback;
-    node.textContent = next;
+    node.textContent = label || next;
     node.setAttribute("data-status", next);
+  };
+
+  var actions = document.querySelectorAll("[data-server-action]");
+  var syncActions = function (canStart, canStop) {
+    actions.forEach(function (button) {
+      var action = button.getAttribute("data-server-action");
+      if (action === "start") {
+        button.disabled = !canStart;
+      } else if (action === "stop") {
+        button.disabled = !canStop;
+      }
+    });
   };
 
   if (status && window.fetch) {
@@ -26,14 +41,25 @@
         }
         return response.json();
       }).then(function (data) {
-        setBadge(status, data.status, "unknown");
-        setBadge(health, data.health, "unknown");
-        if (started && data.started_at) {
-          started.textContent = data.started_at;
-          started.setAttribute("datetime", data.started_at);
+        var running = data.status === "running" || data.status === "starting";
+        setBadge(status, data.status, data.status_label, "unknown");
+        setBadge(health, data.health, data.health_label, "unknown");
+        syncActions(
+          data.can_start === undefined ? !running : data.can_start,
+          data.can_stop === undefined ? running : data.can_stop);
+        if (started && startedWrap) {
+          if (data.started_at) {
+            startedWrap.removeAttribute("hidden");
+            started.textContent = data.started_at_label || data.started_at;
+            started.setAttribute("datetime", data.started_at);
+            started.setAttribute("title", data.started_at);
+          } else {
+            startedWrap.setAttribute("hidden", "");
+          }
         }
       }).catch(function () {
-        setBadge(status, "service_unavailable", "service_unavailable");
+        setBadge(status, "service_unavailable", "недоступен", "service_unavailable");
+        syncActions(true, false);
       });
     };
     refreshStatus();

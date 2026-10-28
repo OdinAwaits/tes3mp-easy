@@ -18,7 +18,12 @@ Restart=on-failure
 RestartSec=60s
 TimeoutStartSec=5min
 Environment=GOMAXPROCS=1
-Environment=GOMEMLIMIT=64MiB
+# Argon2id needs a 32 MiB buffer per verification, so GOMEMLIMIT must stay above
+# the ~40 MiB peak of a running login; below that the runtime collects in a loop
+# while the buffer is live. The panel returns the buffer to the OS right after
+# every hash (debug.FreeOSMemory in internal/panel/auth.go), which keeps the idle
+# footprint at ~5 MiB instead of ~37 MiB and fits the service back into 64M.
+Environment=GOMEMLIMIT=48MiB
 MemoryHigh=48M
 MemoryMax=64M
 OOMScoreAdjust=500
