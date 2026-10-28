@@ -66,13 +66,17 @@ func TestFontXMLHasLatinAndCyrillicRanges(t *testing.T) {
 	xml := string(FontXML())
 	for _, want := range []string{
 		`<Resource type="ResourceTrueTypeFont" name="Magic Cards">`,
-		`<Code range="1040 1103"/>`,
 		`<Code range="1025 1105"/>`,
+		`<Code range="8470"/>`,
+		`<Code range="8211 8212"/>`,
 		`<Property key="Source" value="NotoSans.ttf"/>`,
 	} {
 		if !strings.Contains(xml, want) {
 			t.Fatalf("FontXML missing %q:\n%s", want, xml)
 		}
+	}
+	if count := strings.Count(xml, `<Code range="1025 1105"/>`); count != 2 {
+		t.Fatalf("Cyrillic range count = %d, want 2", count)
 	}
 }
 

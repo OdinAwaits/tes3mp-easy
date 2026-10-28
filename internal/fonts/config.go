@@ -50,9 +50,12 @@ func fontXML(assets []Asset) []byte {
 		ranges   []string
 	}{
 		{"Magic Cards", assets[0].Name,
-			[]string{"33 126", "161 255", "1025", "1040 1103", "1105"}},
+			[]string{"33 126", "161 255", "8211 8212", "8216 8217",
+				"8230", "8470", "1025 1105"}},
 		{"Daedric", assets[1].Name, []string{"32 126"}},
-		{"MonoFont", assets[2].Name, []string{"33 126", "192 382", "1025 1105"}},
+		{"MonoFont", assets[2].Name,
+			[]string{"33 126", "192 382", "8211 8212", "8230", "8470",
+				"1025 1105"}},
 	}
 	for _, font := range fonts {
 		builder.WriteString(fmt.Sprintf(
