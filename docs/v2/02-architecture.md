@@ -86,8 +86,10 @@ ops дополнительно пропускает state backup, если иг�
 `tes3mp-panel.service`:
 
 - `WorkingDirectory=/opt/tes3mp-easy`;
-- `EnvironmentFile=-/etc/tes3mp-easy/panel.env` задаёт `TES3MP_PANEL_TLS_MODE=acme`
-  и `TES3MP_PANEL_PUBLIC_ADDRESS`;
+- `EnvironmentFile=-/etc/tes3mp-easy/panel.env` задаёт `TES3MP_PANEL_TLS_MODE`
+  (`acme` или `files`), `TES3MP_PANEL_PUBLIC_ADDRESS` и, для режима `staging`,
+  `TES3MP_PANEL_ACME_DIRECTORY` staging-CA. Собственного режима `staging` панель
+  не знает: bootstrap пишет `acme` и подменяет CA;
 - `ExecStart=/opt/tes3mp-easy/bin/tes3mp-easy-panel`;
 - `AmbientCapabilities=CAP_NET_BIND_SERVICE`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_SYS_RESOURCE`;
   ambient capability нужна для `:443` и временного `:80` во время ACME HTTP-01;
@@ -107,10 +109,13 @@ ops дополнительно пропускает state backup, если иг�
 - `ProtectControlGroups` и `ProtectKernelTunables` не включаются: панель читает
   `/sys/fs/cgroup/system.slice/tes3mp.service/{memory.current,cpu.stat}` и
   `/proc/{meminfo,stat}` для графиков, но никогда туда не пишет;
-- `Restart=on-failure`, `RestartSec=60s`, `StartLimitBurst=2`: падение ACME не
-  должно превращаться в шквал запросов к Let's Encrypt. Let's Encrypt считает
-  пять неудачных проверок на hostname в час, поэтому после двух попыток юнит
-  останавливается, а оператор исправляет `80/tcp` и перезапускает bootstrap.
+- `Restart=on-failure`, `RestartSec=60s`, `StartLimitBurst=4`: падение ACME не
+  должно превращаться в шквал запросов к Let's Encrypt (лимит — пять неудачных
+  проверок на hostname в час). systemd считает и ручные `systemctl restart`,
+  поэтому лимит из четырёх запусков за 30 минут оставляет оператору запас на
+  диагностику: после четвёртой неудачной попытки юнит останавливается, оператор
+  исправляет `80/tcp` и перезапускает bootstrap, который снимает
+  `start-limit-hit` через `systemctl reset-failed`.
 - `TimeoutStartSec=5min` ограничивает запуск процесса; готовность HTTPS после
   первого выпуска сертификата проверяет `bootstrap.sh` (до 300 с), а не
   systemd, потому что юнит имеет `Type=simple`.
@@ -379,9 +384,8 @@ tes3mp-easy-backup.timer ──каждые 15 минут──► tes3mp-easy-b
   сначала активирует пакет, на который ссылается выбранное состояние
 
 Браузер ──POST /admin/state/deploy──► ops state deploy --archive <state>
-  ops: lock → проверка архива и активного пакета модов → state-predeploy →
-       stop → staging → players/ + world/ + configs/ → start →
-       при ошибке вернуть старое
+  панель сначала включает пакет строки, если он не активен (mods deploy),
+  затем вызывает state deploy; ошибка включения останавливает восстановление
 ```
 
 State-архив не содержит модов: он ссылается на пакет через `current.txt`.

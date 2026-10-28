@@ -52,7 +52,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/in
 Конкретную версию серверного релиза можно закрепить:
 
 ```bash
-TES3MP_EASY_VERSION=0.2.5 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
+TES3MP_EASY_VERSION=0.3.0 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
 ```
 
 Ручной путь, если архив нужно скачать заранее:
@@ -62,7 +62,7 @@ TES3MP_EASY_VERSION=0.2.5 bash <(curl -Ls https://raw.githubusercontent.com/Saag
    релизы помечены тегом `server-v<version>`:
 
    ```bash
-   VERSION=0.2.5
+   VERSION=0.3.0
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/server-v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz"
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/server-v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
    sha256sum -c "tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
@@ -73,7 +73,7 @@ TES3MP_EASY_VERSION=0.2.5 bash <(curl -Ls https://raw.githubusercontent.com/Saag
    Локальная сборка релиза:
 
    ```bash
-   go run ./cmd/tes3mp-easy-pack --version 0.2.5
+   go run ./cmd/tes3mp-easy-pack --version 0.3.0
    ```
 
 2. Проверьте хост без изменений:
@@ -182,11 +182,13 @@ Source bootstrap:
 - настраивает journald (`SystemMaxUse=100M`, `RuntimeMaxUse=32M`) и
   `vm.swappiness=10`;
 - включает в автозагрузку и запускает `tes3mp.service` и
-  `tes3mp-easy-backup.timer`, затем проверяет
-  `is-active`; при наличии установленной панели определяет публичный IPv4,
-  проверяет свободный `80/tcp`, пишет `/etc/tes3mp-easy/panel.env`, включает и
-  перезапускает `tes3mp-panel.service` и ждёт HTTPS `/healthz` (включая первый
-  ACME-выпуск).
+  `tes3mp-easy-backup.timer`, затем проверяет `is-active`; при наличии
+  установленной панели в режиме `acme`/`staging` определяет публичный IPv4,
+  проверяет свободный `80/tcp` и пишет `/etc/tes3mp-easy/panel.env`. Режим
+  `files` (`--tls-mode files --tls-cert … --tls-key …`) не ищет публичный адрес
+  и не проверяет `80/tcp`: он копирует готовую пару сертификатов. Затем
+  bootstrap включает и перезапускает `tes3mp-panel.service` и ждёт HTTPS
+  `/healthz` (включая первый ACME-выпуск).
 
 3. Соберите и установите серверные бинарники из каталога `/opt/tes3mp-easy`.
    Сборку можно выполнить на этой же машине или кросс-компиляцией на другой:
@@ -233,6 +235,10 @@ Source bootstrap:
    `https://<IP>/`, войдите с временным паролем и сразу смените его. После
    успешной смены панель удаляет `initial-password.txt`; если файл остался,
    удалите его вручную.
+
+   Нестандартные TLS-сценарии задаются флагом bootstrap (подробности — §13):
+   `--tls-mode staging` для staging-CA и `--tls-mode files --tls-cert PATH
+   --tls-key PATH` для готовой пары без ACME и без публичного IPv4.
 
 5. Проверьте:
 
@@ -467,9 +473,9 @@ runtime не меняется: state, конфиги и моды остаютс�
 
 ### Через панель
 
-`/admin/mods` → «Загрузить архив» → выбрать `.tar.gz` (до 512 MiB) → дождаться
-импорта → «Deploy». Панель сама вызовет ops и перезапустит сервер, если он
-был запущен.
+`/admin/backups#mods` → «Загрузить архив» → выбрать `.tar.gz` (до 512 MiB) →
+дождаться импорта → «Включить» у нужного пакета. Панель сама вызовет ops и
+перезапустит сервер, если он был запущен.
 
 ### Через CLI
 
@@ -518,7 +524,7 @@ sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
 
 Восстановить скачанный архив через панель:
 
-1. `/admin/state` → «Восстановить из скачанного архива».
+1. `/admin/backups` → «Восстановить из скачанного архива».
 2. Выберите ZIP «состояние + моды» (с `/backups`) или отдельный state
    `.tar.gz`.
 3. Дождитесь redirect с сообщением «Состояние и моды восстановлены…».
@@ -526,6 +532,10 @@ sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
 Панель для ZIP сама импортирует моды под их исходным именем, задеплоит их,
 импортирует state и выполнит `state deploy`. Отдельный state принимается
 только на уже активном пакете модов. Временные загрузки удаляются.
+
+Восстановление строкой в списке — один клик: панель включает пакет состояния
+(`mods deploy`), затем вызывает `state deploy`. Ручной шаг «сначала включить
+моды» больше не нужен.
 
 То же через CLI:
 
@@ -795,9 +805,9 @@ sudo systemctl restart tes3mp-panel.service
 - проверьте sudo: `sudo -u tes3mp-panel sudo -n -u tes3mp \
   /opt/tes3mp-easy/bin/tes3mp-easy-ops --root /tes3mp-easy --json status`.
 - если `systemctl restart` отвечает `Start request repeated too quickly` или в
-  journald `start-limit-hit`, сработал `StartLimitBurst=2` (защита Let's Encrypt
-  от шквала ACME-запросов: лимит считает и ручные рестарты). Сбросьте состояние и
-  запустите панель: `sudo systemctl reset-failed tes3mp-panel.service` и
+  journald `start-limit-hit`, сработал `StartLimitBurst=4`: systemd считает и
+  ручные рестарты (четыре запуска за 30 минут). Сбросьте состояние и запустите
+  панель: `sudo systemctl reset-failed tes3mp-panel.service` и
   `sudo systemctl start tes3mp-panel.service`. `bootstrap.sh` делает этот сброс
   сам.
 
@@ -875,39 +885,55 @@ HTTP-01 challenge панель занимает `80/tcp`; после прове�
 - при ошибке выпуска `bootstrap.sh` завершается с последними строками журнала
   панели и подсказкой `journalctl`; повторный запуск безопасен.
 
-Для отладки используйте staging, чтобы не расходовать production-лимиты:
+### Staging-CA
+
+Для отладки используйте staging-CA, чтобы не расходовать production-лимиты:
 
 ```bash
-sudo systemctl edit tes3mp-panel.service
-# [Service]
-# Environment=TES3MP_PANEL_ACME_DIRECTORY=https://acme-staging-v02.api.letsencrypt.org/directory
-sudo systemctl restart tes3mp-panel.service
+sudo /opt/tes3mp-easy/bootstrap.sh --tls-mode staging
+curl -kI https://<IP>/     # сертификат staging-CA недоверенный, -k обязателен
 ```
 
-Режим готовой пары (`--tls-mode files`) оставлен для нестандартных установок:
-положите `cert.pem` и `key.pem` в `/tes3mp-easy/panel-data/tls/` с правами
-`0600` и укажите `TES3MP_PANEL_TLS_MODE=files`. Штатная установка этого не
-требует.
+Bootstrap пишет `TES3MP_PANEL_TLS_MODE=acme` и
+`TES3MP_PANEL_ACME_DIRECTORY=https://acme-staging-v02.api.letsencrypt.org/directory`
+и предупреждает, что сертификат недоверенный. Режиму нужны те же `80/tcp` и
+публичный IPv4, что и `acme`. Staging действует только в момент выпуска: пока
+текущий production-сертификат валиден и не в окне продления, панель продолжает
+его отдавать. Не запускайте staging в окне продления — панель заменит доверенную
+пару недоверенной. Вернуться к доверенному сертификату:
+`sudo /opt/tes3mp-easy/bootstrap.sh --tls-mode acme` (панель выпустит новый
+production-сертификат, если старый не покрывает IP или в окне продления; иначе
+оставит прежний).
 
-Так поднимают панель на стенде без доступа к `80/tcp` или когда лимит для IP
-исчерпан (самоподписанный сертификат, браузер покажет предупреждение):
+### Своя пара сертификатов (NAT, частная сеть)
+
+Режим `--tls-mode files` для установок без публичного IPv4, без доступа к
+`80/tcp` или с уже выпущенным сертификатом:
 
 ```bash
 sudo openssl req -x509 -newkey rsa:2048 -days 365 -nodes \
-  -keyout /tmp/key.pem -out /tmp/cert.pem \
+  -keyout /tmp/panel.key -out /tmp/panel.crt \
   -subj "/CN=<IP>" -addext "subjectAltName=IP:<IP>"
-sudo install -m 0600 -o tes3mp-panel -g tes3mp-panel /tmp/cert.pem \
-  /tes3mp-easy/panel-data/tls/cert.pem
-sudo install -m 0600 -o tes3mp-panel -g tes3mp-panel /tmp/key.pem \
-  /tes3mp-easy/panel-data/tls/key.pem
-sudo sed -i 's/^TES3MP_PANEL_TLS_MODE=.*/TES3MP_PANEL_TLS_MODE=files/' \
-  /etc/tes3mp-easy/panel.env
-sudo systemctl reset-failed tes3mp-panel.service
-sudo systemctl start tes3mp-panel.service
+sudo /opt/tes3mp-easy/bootstrap.sh --tls-mode files \
+  --tls-cert /tmp/panel.crt --tls-key /tmp/panel.key \
+  --public-address <IP>
+rm -f /tmp/panel.crt /tmp/panel.key
 ```
 
-Повторный запуск `bootstrap.sh` перепишет `panel.env` обратно на `acme`; для
-стенда правьте файл после установки.
+Bootstrap не определяет публичный IPv4 и не проверяет `80/tcp`: он копирует пару
+в `/etc/tes3mp-easy/panel.crt` и `/etc/tes3mp-easy/panel.key` (0640
+`root:tes3mp-panel`), пишет `TES3MP_PANEL_TLS_MODE=files` и пути к файлам.
+`--public-address` необязателен: он влияет только на ссылки и `/api/v1/server`
+и принимает в этом режиме и частный IP, и имя. Самоподписанный сертификат
+браузер не признает — предупреждение ожидаемо.
+
+Панель читает пару при старте, поэтому после замены файлов нужен
+`sudo systemctl restart tes3mp-panel.service`. Ручная альтернатива без
+bootstrap: положите `cert.pem` и `key.pem` в `/tes3mp-easy/panel-data/tls/`
+с правами `0600` и укажите `TES3MP_PANEL_TLS_MODE=files` в `panel.env`.
+Повторный запуск `bootstrap.sh` без `--tls-mode` перепишет `panel.env` обратно
+на `acme`, удалит скопированную пару из `/etc/tes3mp-easy` и вернёт панель к
+`panel-data/tls`.
 
 ## 14. Копия бэкапов на другую машину
 
@@ -1016,8 +1042,8 @@ git tag -a server-v0.3.0 -m "tes3mp-easy server 0.3.0"
 git push origin server-v0.3.0
 
 # клиентский релиз
-git tag -a client-v0.3.0 -m "tes3mp-easy client 0.3.0"
-git push origin client-v0.3.0
+git tag -a client-v0.2.6 -m "tes3mp-easy client 0.2.6"
+git push origin client-v0.2.6
 ```
 
 - Версию подставляет workflow через `-ldflags -X
