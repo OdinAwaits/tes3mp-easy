@@ -17,7 +17,6 @@
 | [06-client.md](06-client.md) | Go + Fyne клиент: мастер, моды, шрифты, запуск |
 | [07-testing.md](07-testing.md) | Наборы тестов, фикстуры, failure injection, приёмка, CI |
 | [08-runbook.md](08-runbook.md) | Установка, восстановление, TLS, аварийные команды |
-| [mockups/](mockups/README.md) | HTML-макеты новых страниц панели на общем `panel.css` |
 
 Если документы расходятся, **прав `03-contracts.md`**. Если расходятся
 `02-architecture.md` и `03-contracts.md`, сначала меняем контракт, затем
