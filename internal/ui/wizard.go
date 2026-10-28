@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/Saagilat/tes3mp-easy/internal/app"
@@ -84,7 +85,19 @@ func (s *shell) showSetup() {
 	s.openWizard(step)
 }
 
-func (s *shell) openWizard(step wizardStep) {
+// openWizard builds the setup dialog at step, shows it and starts the check of
+// that step.
+func (s *shell) openWizard(step wizardStep) *setupWizard {
+	w := s.newWizard(step)
+	w.popup.Show()
+	w.enterStep()
+	return w
+}
+
+// newWizard builds the setup dialog at step without showing it and without
+// starting its background check, so callers (and tests) can inspect the step
+// that is on screen before any scan or download runs.
+func (s *shell) newWizard(step wizardStep) *setupWizard {
 	tr := s.service.Translator()
 	cfg := s.service.Config()
 	w := &setupWizard{shell: s, step: step}
@@ -96,7 +109,10 @@ func (s *shell) openWizard(step wizardStep) {
 	w.title = widget.NewLabelWithStyle("", fyne.TextAlignLeading,
 		fyne.TextStyle{Bold: true})
 	w.stepNo = widget.NewLabel("")
-	w.body = container.NewVBox()
+	// The body is a stack, not a VBox: a VBox gives its child the child's
+	// MinSize, which squeezed a scrollable step into the 32 px floor of a
+	// scroll and left the dialog mostly empty.
+	w.body = container.NewStack()
 	w.problem = widget.NewLabel("")
 	w.problem.Wrapping = fyne.TextWrapWord
 	w.retry = widget.NewButton(tr.T(i18n.KeyWizardRetry), func() {
@@ -119,18 +135,83 @@ func (s *shell) openWizard(step wizardStep) {
 	footer := container.NewBorder(nil, nil, w.back, w.next)
 	var spinnerRow fyne.CanvasObject
 	w.spinner, spinnerRow = newWizardSpinner()
-	content := container.NewBorder(
+	body := container.NewBorder(
 		container.NewVBox(w.title, w.stepNo),
 		container.NewVBox(spinnerRow, problemRow, footer),
 		nil, nil,
-		container.NewVScroll(w.body),
+		w.body,
 	)
+	size := wizardSize(s.window)
+	content := container.New(cappedMinLayout{cap: wizardContentCap(size)}, body)
 	w.popup = dialog.NewCustom(tr.T(i18n.KeyWizardTitle),
 		tr.T(i18n.KeyWizardCancel), content, s.window)
-	w.popup.Resize(fyne.NewSize(780, 580))
+	w.popup.Resize(size)
 	w.renderStep()
-	w.popup.Show()
-	w.enterStep()
+	return w
+}
+
+// wizardSize is the dialog size of the wizard: the launcher window size, shrunk
+// for a smaller window but never below the size the last step needs. Step 3
+// keeps a sample column beside a form of four values. The padding keeps the
+// modal off the window edges.
+func wizardSize(window fyne.Window) fyne.Size {
+	size := launcherSize
+	if window != nil {
+		if canvas := window.Canvas().Size(); canvas.Width > 0 && canvas.Height > 0 {
+			size.Width = max(min(size.Width, canvas.Width), wizardMinWidth)
+			size.Height = max(min(size.Height, canvas.Height), wizardMinHeight)
+		}
+	}
+	padding := theme.Padding() * 2
+	return fyne.NewSize(size.Width-padding, size.Height-padding)
+}
+
+// wizardMinWidth and wizardMinHeight keep the wizard usable in a small window:
+// below them the two columns of step 3 would be clipped instead of scrolled.
+const (
+	wizardMinWidth  float32 = 780
+	wizardMinHeight float32 = 580
+)
+
+// dialogChromeWidth and dialogChromeHeight are what a Fyne dialog adds around
+// its content: 32 px of horizontal padding, plus the title row, the button row
+// and the padding between them. The cap subtracts them so the dialog keeps the
+// size it was given.
+const (
+	dialogChromeWidth  float32 = 56
+	dialogChromeHeight float32 = 150
+)
+
+// wizardContentCap is the largest MinSize the dialog content may report. Without
+// it step 3 asked for 803 px of height in a 700 px window: Fyne sizes a dialog by
+// the MinSize of its content, a vertical scroll reports the full height of what
+// it scrolls, and the window edge cut the form instead of the step scrolling.
+func wizardContentCap(size fyne.Size) fyne.Size {
+	return fyne.NewSize(max(size.Width-dialogChromeWidth, 0),
+		max(size.Height-dialogChromeHeight, 0))
+}
+
+// cappedMinLayout stretches one object to the whole area and reports a MinSize
+// no larger than cap, which is how a scrollable step stays inside the dialog.
+type cappedMinLayout struct {
+	cap fyne.Size
+}
+
+func (l cappedMinLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, object := range objects {
+		object.Move(fyne.NewPos(0, 0))
+		object.Resize(size)
+	}
+}
+
+func (l cappedMinLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	size := fyne.NewSize(0, 0)
+	for _, object := range objects {
+		min := object.MinSize()
+		size.Width = max(size.Width, min.Width)
+		size.Height = max(size.Height, min.Height)
+	}
+	return fyne.NewSize(min(size.Width, l.cap.Width), min(size.Height, l.cap.Height))
 }
 
 func wizardTitleKey(step wizardStep) string {
@@ -151,25 +232,31 @@ func (w *setupWizard) renderStep() {
 	w.title.SetText(tr.T(wizardTitleKey(w.step)))
 	w.stepNo.SetText(tr.Tf(i18n.KeyWizardStep, int(w.step)+1,
 		int(wizardStepCount)))
-	w.body.Objects = w.stepObjects(tr)
+	w.body.Objects = []fyne.CanvasObject{w.stepContent(tr)}
 	w.body.Refresh()
 	w.popup.SetDismissText(tr.T(i18n.KeyWizardCancel))
 	w.updateButtons()
 }
 
-func (w *setupWizard) stepObjects(tr *i18n.Translator) []fyne.CanvasObject {
+// stepContent builds the body of the current step as one object. The first two
+// steps scroll as a whole; the fonts step splits the body into two scrolls, so
+// the sample stays on screen while the form of four values is scrolled.
+func (w *setupWizard) stepContent(tr *i18n.Translator) fyne.CanvasObject {
 	switch w.step {
 	case wizardMorrowind:
-		return w.morrowindObjects(tr)
+		return container.NewVScroll(container.NewVBox(w.morrowindObjects(tr)...))
 	case wizardTES3MP:
-		return w.tes3mpObjects(tr)
+		return container.NewVScroll(container.NewVBox(w.tes3mpObjects(tr)...))
 	default:
-		return w.fontsObjects(tr)
+		return w.fontsStepContent(tr)
 	}
 }
 
-func wizardHint(tr *i18n.Translator, key string) *widget.Label {
-	label := widget.NewLabel(tr.T(key))
+// wizardHint is a step caption: it wraps instead of being cut by the wizard
+// width, and it is built from the finished text so a formatted string never
+// reaches the window with a placeholder in it.
+func wizardHint(text string) *widget.Label {
+	label := widget.NewLabel(text)
 	label.Wrapping = fyne.TextWrapWord
 	return label
 }
@@ -192,14 +279,24 @@ func (w *setupWizard) morrowindObjects(tr *i18n.Translator) []fyne.CanvasObject 
 	})
 	w.morrowindActions = []fyne.Disableable{find, choose, check}
 	return []fyne.CanvasObject{
-		wizardHint(tr, i18n.KeyWizardMorrowindHint),
+		wizardHint(tr.T(i18n.KeyWizardMorrowindHint)),
 		w.morrowind,
 		container.NewHBox(find, choose, check),
 		w.morrowindStatus,
 	}
 }
 
-func (w *setupWizard) fontsObjects(tr *i18n.Translator) []fyne.CanvasObject {
+// tes3mpHint names the version the step installs. It used to be rendered with
+// T(), so the caption showed a literal %s instead of the version.
+func tes3mpHint(tr *i18n.Translator) string {
+	return tr.Tf(i18n.KeyWizardTES3MPHint, tes3mp.Version)
+}
+
+// fontsStepContent is the last step: everything the user edits is in the left
+// column, the sample keeps the right one. The step body is shorter than both
+// columns, so each column scrolls on its own and the sample stays on screen
+// while a settings.cfg value is edited.
+func (w *setupWizard) fontsStepContent(tr *i18n.Translator) fyne.CanvasObject {
 	w.fontsStatus = widget.NewLabel("")
 	w.fontsStatus.Wrapping = fyne.TextWrapWord
 	w.fontSetID = w.shell.service.FontSet()
@@ -217,32 +314,37 @@ func (w *setupWizard) fontsObjects(tr *i18n.Translator) []fyne.CanvasObject {
 	w.uiVideoForm.onChanged(w.uiVideoChanged)
 	w.uiVideoChanged()
 
-	sets := container.NewVBox(
+	settings := container.NewVBox(
 		widget.NewLabelWithStyle(tr.T(i18n.KeyFontsSet),
 			fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		chooser.picker,
 		w.fontsStatus,
 		w.uiVideoStatus,
-	)
-	values := container.NewVBox(
-		w.fontPreview.object(),
 		uiVideoFormCard(tr, w.uiVideoForm),
 	)
-	license := licenseLabel(tr)
-	return []fyne.CanvasObject{
-		wizardHint(tr, i18n.KeyWizardFontsHint),
-		fontsStepLayout(sets, values),
-		license,
-	}
+	leading, trailing := fontsColumns(settings, w.fontPreview.object())
+	return container.NewBorder(
+		wizardHint(tr.T(i18n.KeyWizardFontsHint)),
+		nil, nil, nil,
+		fontsStepLayout(leading, trailing),
+	)
 }
 
-// fontsStepLayout puts the set list beside the sample and the settings form:
-// widget.Select opens its popup downwards, so a sample under the list was
-// covered exactly while the user compared sets. The splitter keeps the step
-// usable in a smaller window instead of clipping one of the columns.
-func fontsStepLayout(sets, values fyne.CanvasObject) fyne.CanvasObject {
-	split := container.NewHSplit(sets, values)
-	split.SetOffset(0.32)
+// fontsColumns wraps the two halves of the fonts step in their own scrolls. The
+// sample used to be pinned above the form in the same column, where it was
+// taller than the step body and painted over the footer buttons; a column of its
+// own keeps it visible while the form scrolls, and a scroll clips it instead.
+func fontsColumns(settings, sample fyne.CanvasObject) (fyne.CanvasObject, fyne.CanvasObject) {
+	return container.NewVScroll(settings), container.NewVScroll(sample)
+}
+
+// fontsStepLayout puts the editable half beside the sample: widget.Select opens
+// its popup downwards, so a sample under the list was covered exactly while the
+// user compared sets. The splitter keeps the step usable in a smaller window
+// instead of clipping one of the columns.
+func fontsStepLayout(settings, sample fyne.CanvasObject) fyne.CanvasObject {
+	split := container.NewHSplit(settings, sample)
+	split.SetOffset(0.55)
 	return split
 }
 
@@ -292,7 +394,7 @@ func (w *setupWizard) tes3mpObjects(tr *i18n.Translator) []fyne.CanvasObject {
 			tes3mp.Version))
 	}
 	return []fyne.CanvasObject{
-		wizardHint(tr, i18n.KeyWizardTES3MPHint),
+		wizardHint(tes3mpHint(tr)),
 		w.tes3mpStatus,
 		container.NewBorder(nil, nil, nil, install, w.tes3mpProgress),
 	}

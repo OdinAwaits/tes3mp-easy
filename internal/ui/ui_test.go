@@ -26,11 +26,8 @@ func TestRunRejectsNilService(t *testing.T) {
 func TestThemeToggleLabels(t *testing.T) {
 	for _, language := range i18n.Supported() {
 		translator := i18n.New(language)
-		if got := translator.T(i18n.KeySettingsTheme); got == "" {
-			t.Fatalf("%s has no theme caption", language)
-		}
 		if got := translator.T(i18n.KeySettingsDarkTheme); got == "" {
-			t.Fatalf("%s has no dark theme toggle caption", language)
+			t.Fatalf("%s has no dark theme caption", language)
 		}
 		if got := translator.T(i18n.KeySettingsLanguage); got == "" {
 			t.Fatalf("%s has no language caption", language)
@@ -105,7 +102,6 @@ func TestPlayButtonLabel(t *testing.T) {
 func TestThemeLabels(t *testing.T) {
 	translator := i18n.New(i18n.English)
 	for key, want := range map[string]string{
-		i18n.KeySettingsTheme:     "Theme",
 		i18n.KeySettingsLanguage:  "Language",
 		i18n.KeySettingsDarkTheme: "Dark theme",
 	} {

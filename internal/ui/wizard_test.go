@@ -14,6 +14,7 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 	"github.com/Saagilat/tes3mp-easy/internal/morrowind"
 	"github.com/Saagilat/tes3mp-easy/internal/openmwcfg"
+	"github.com/Saagilat/tes3mp-easy/internal/tes3mp"
 )
 
 // newTestWizard builds the parts of the wizard the first step touches, without
@@ -124,26 +125,145 @@ func TestWizardFooterKeepsSpinnerSpace(t *testing.T) {
 	}
 }
 
-// TestFontsStepPutsSampleBesideTheList is the BL-020 rule: the set list and the
-// sample never sit in one vertical container, because the dropdown of the list
-// opens downwards and covered the sample while the user compared sets.
-func TestFontsStepPutsSampleBesideTheList(t *testing.T) {
-	sets := widget.NewLabel("sets")
+// TestFontsStepPutsSampleBesideTheForm is the BL-020 rule: the settings and the
+// sample never share one vertical container, because the dropdown of the set
+// list opens downwards and covered the sample while the user compared sets.
+func TestFontsStepPutsSampleBesideTheForm(t *testing.T) {
+	settings := widget.NewLabel("settings")
 	sample := widget.NewLabel("sample")
-	form := widget.NewLabel("form")
+	leading, trailing := fontsColumns(settings, sample)
 
-	split, ok := fontsStepLayout(sets,
-		container.NewVBox(sample, form)).(*container.Split)
+	split, ok := fontsStepLayout(leading, trailing).(*container.Split)
 	if !ok {
 		t.Fatal("the fonts step is not a horizontal split")
 	}
-	left := labelTexts(split.Leading)
-	right := labelTexts(split.Trailing)
-	if !left["sets"] || left["sample"] || left["form"] {
-		t.Fatalf("left column = %v, want only the set list", left)
+	if !labelTexts(split.Leading)["settings"] || labelTexts(split.Leading)["sample"] {
+		t.Fatalf("left column = %v, want only the settings", labelTexts(split.Leading))
 	}
-	if !right["sample"] || !right["form"] || right["sets"] {
-		t.Fatalf("right column = %v, want the sample and the form", right)
+	if !labelTexts(split.Trailing)["sample"] || labelTexts(split.Trailing)["settings"] {
+		t.Fatalf("right column = %v, want only the sample", labelTexts(split.Trailing))
+	}
+}
+
+// TestFontsColumnsScrollOnTheirOwn freezes the fix of the clipped step 3: the
+// sample used to be pinned above the form in the same column, where it was taller
+// than the step body and painted over the footer buttons. Each half now has its
+// own scroll, which clips it to its column.
+func TestFontsColumnsScrollOnTheirOwn(t *testing.T) {
+	leading, trailing := fontsColumns(widget.NewLabel("form"), widget.NewLabel("sample"))
+
+	leftScroll, ok := leading.(*container.Scroll)
+	if !ok {
+		t.Fatal("the form column is not scrollable")
+	}
+	if !labelTexts(leftScroll.Content)["form"] {
+		t.Fatal("the form is not inside its scroll")
+	}
+	rightScroll, ok := trailing.(*container.Scroll)
+	if !ok {
+		t.Fatal("the sample column is not scrollable")
+	}
+	if !labelTexts(rightScroll.Content)["sample"] {
+		t.Fatal("the sample is not inside its scroll")
+	}
+}
+
+// TestWizardHintsUseTheRealValues covers two complaints about steps 2 and 3: the
+// TES3MP caption went through T(), so a literal %s reached the window, and both
+// captions explained in a paragraph what one sentence says.
+func TestWizardHintsUseTheRealValues(t *testing.T) {
+	for _, language := range i18n.Supported() {
+		tr := i18n.New(language)
+		hint := tes3mpHint(tr)
+		if strings.Contains(hint, "%") {
+			t.Fatalf("%s TES3MP hint still has a placeholder: %q", language, hint)
+		}
+		if !strings.Contains(hint, tes3mp.Version) {
+			t.Fatalf("%s TES3MP hint does not name the version: %q",
+				language, hint)
+		}
+		lower := strings.ToLower(hint)
+		if strings.Contains(lower, "server") || strings.Contains(lower, "сервер") {
+			t.Fatalf("%s TES3MP hint talks about server details: %q",
+				language, hint)
+		}
+		if got := tr.T(i18n.KeyWizardFontsHint); len([]rune(got)) > 140 {
+			t.Fatalf("%s fonts hint is %d characters, want one short line",
+				language, len([]rune(got)))
+		}
+	}
+}
+
+// TestWizardFillsTheLauncherWindow keeps step 3 readable: the dialog used to be
+// 780×580, where the form of four values had to be scrolled under the sample.
+func TestWizardFillsTheLauncherWindow(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	s.window.Resize(launcherSize)
+
+	size := wizardSize(s.window)
+	if size.Width < launcherSize.Width-16 || size.Height < launcherSize.Height-16 {
+		t.Fatalf("wizard size = %.0f×%.0f, want the launcher window %.0f×%.0f",
+			size.Width, size.Height, launcherSize.Width, launcherSize.Height)
+	}
+	if size.Width > launcherSize.Width || size.Height > launcherSize.Height {
+		t.Fatalf("wizard size = %.0f×%.0f is larger than the window %.0f×%.0f",
+			size.Width, size.Height, launcherSize.Width, launcherSize.Height)
+	}
+	// A window smaller than the wizard still gets the two columns of step 3.
+	s.window.Resize(fyne.NewSize(600, 400))
+	small := wizardSize(s.window)
+	if small.Width < wizardMinWidth-16 || small.Height < wizardMinHeight-16 {
+		t.Fatalf("wizard size in a 600×400 window = %.0f×%.0f, want at least %.0f×%.0f",
+			small.Width, small.Height, wizardMinWidth, wizardMinHeight)
+	}
+}
+
+// TestWizardContentFitsTheDialog is the "content runs past the window" rule.
+// Fyne sizes a dialog by the MinSize of its content and a vertical scroll reports
+// the full height of what it scrolls, so step 3 asked for a taller dialog than
+// the launcher window and its form was cut by the window edge instead of
+// scrolling inside the step.
+func TestWizardContentFitsTheDialog(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	s.window.Resize(launcherSize)
+
+	size := wizardSize(s.window)
+	// newWizard builds the steps without starting a background check, and a
+	// check finishes with a fyne.Do update that would race with renderStep.
+	w := s.newWizard(wizardTES3MP)
+	defer w.popup.Hide()
+
+	for _, step := range []wizardStep{wizardMorrowind, wizardTES3MP, wizardFonts} {
+		w.step = step
+		w.renderStep()
+		min := w.popup.MinSize()
+		if min.Width > size.Width || min.Height > size.Height {
+			t.Fatalf("step %d asks for a %.0f×%.0f dialog, window dialog is %.0f×%.0f",
+				int(step), min.Width, min.Height, size.Width, size.Height)
+		}
+	}
+}
+
+// TestWizardSizeShrinksWithTheWindow keeps the modal inside a window the user
+// made smaller than the launcher default, and off the window edges otherwise.
+func TestWizardSizeShrinksWithTheWindow(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+
+	s.window.Resize(fyne.NewSize(900, 620))
+	size := wizardSize(s.window)
+	if size.Width >= launcherSize.Width || size.Height >= launcherSize.Height {
+		t.Fatalf("wizard size = %.0f×%.0f, want less than the launcher %.0f×%.0f",
+			size.Width, size.Height, launcherSize.Width, launcherSize.Height)
+	}
+
+	s.window.Resize(launcherSize)
+	size = wizardSize(s.window)
+	if size.Width > launcherSize.Width || size.Height > launcherSize.Height {
+		t.Fatalf("wizard size = %.0f×%.0f does not fit the window %.0f×%.0f",
+			size.Width, size.Height, launcherSize.Width, launcherSize.Height)
 	}
 }
 

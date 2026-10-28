@@ -450,19 +450,19 @@ func boolToInt(value bool) int {
 }
 
 // TestHeaderHasLanguageAndThemeSwitches pins the header contract: one language
-// list that shows the current language and one two-position theme toggle.
+// list that shows the current language and one two-position theme switch.
 func TestHeaderHasLanguageAndThemeSwitches(t *testing.T) {
 	s := testShell(t)
 	defer s.window.Close()
 	tr := s.service.Translator()
 
-	var checks []*widget.Check
+	var toggles []*switchToggle
 	var selects []*widget.Select
 	buttons := 0
 	walkObjects(s.headerActions(tr), func(item fyne.CanvasObject) {
 		switch typed := item.(type) {
-		case *widget.Check:
-			checks = append(checks, typed)
+		case *switchToggle:
+			toggles = append(toggles, typed)
 		case *widget.Select:
 			selects = append(selects, typed)
 		case *widget.Button:
@@ -488,16 +488,15 @@ func TestHeaderHasLanguageAndThemeSwitches(t *testing.T) {
 		t.Fatalf("language list selection = %q, want %q",
 			selects[0].Selected, want)
 	}
-	if len(checks) != 1 {
-		t.Fatalf("header has %d check boxes, want 1 theme toggle", len(checks))
+	if len(toggles) != 1 {
+		t.Fatalf("header has %d theme switches, want 1", len(toggles))
 	}
-	want := tr.T(i18n.KeySettingsDarkTheme)
-	if checks[0].Text != want {
-		t.Fatalf("theme toggle = %q, want %q", checks[0].Text, want)
-	}
-	if got, want := checks[0].Checked,
+	if got, want := toggles[0].Checked(),
 		style.IsDark(s.service.Config().Theme); got != want {
-		t.Fatalf("theme toggle checked = %t, want %t", got, want)
+		t.Fatalf("theme switch checked = %t, want %t", got, want)
+	}
+	if !labelTexts(s.headerActions(tr))[tr.T(i18n.KeySettingsDarkTheme)] {
+		t.Fatal("the theme switch has no caption: a pill alone names nothing")
 	}
 }
 

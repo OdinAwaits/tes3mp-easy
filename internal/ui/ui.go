@@ -23,6 +23,11 @@ import (
 
 const appID = "io.github.saagilat.tes3mp-easy"
 
+// launcherSize is the window the client opens with. The setup wizard fills it:
+// its last step holds a sample above a form of four values, which does not fit
+// a small dialog.
+var launcherSize = fyne.NewSize(1000, 700)
+
 // Run starts the desktop shell and blocks until the last window is closed.
 func Run(service *app.Service) error {
 	if service == nil {
@@ -31,7 +36,7 @@ func Run(service *app.Service) error {
 	fyneApp := fyneapp.NewWithID(appID)
 	fyneApp.Settings().SetTheme(style.ThemeFor(service.Config().Theme))
 	window := fyneApp.NewWindow(service.Translator().T(i18n.KeyAppTitle))
-	window.Resize(fyne.NewSize(1000, 700))
+	window.Resize(launcherSize)
 	shell := &shell{
 		service:  service,
 		window:   window,
@@ -209,18 +214,46 @@ func (s *shell) headerActions(tr *i18n.Translator) fyne.CanvasObject {
 	return container.NewHBox(s.languageSwitch(tr), s.themeSwitch(tr))
 }
 
-// headerControlWidth is shared by both header controls, so the group keeps its
-// size when a longer translation or another language arrives.
-const headerControlWidth float32 = 190
+// headerControlWidth and headerControlHeight are shared by both header
+// controls, so the group keeps its size when a longer translation or another
+// language arrives and the two captions stay on one line.
+const (
+	headerControlWidth  float32 = 190
+	headerControlHeight float32 = 32
+)
+
+// headerSlot packs one control into a fixed cell: the language list fills the
+// width, the 44 px switch keeps its own size. Both start on the same left edge,
+// so the captions above them line up and neither control stretches the pill.
+type headerSlot struct {
+	stretch bool
+}
+
+func (l headerSlot) MinSize([]fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(headerControlWidth, headerControlHeight)
+}
+
+func (l headerSlot) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, object := range objects {
+		natural := object.MinSize()
+		width := natural.Width
+		if l.stretch {
+			width = size.Width
+		}
+		object.Resize(fyne.NewSize(width, natural.Height))
+		object.Move(fyne.NewPos(0, (size.Height-natural.Height)/2))
+	}
+}
 
 // headerControl stacks a caption above its control. A caption placed sideways in
 // a Border reads as part of the value ("ТемаСистемная"); above it, it names the
 // setting. Both header groups use the same structure, so they keep one height.
-func headerControl(caption string, control fyne.CanvasObject) fyne.CanvasObject {
+func headerControl(caption string, control fyne.CanvasObject,
+	stretch bool,
+) fyne.CanvasObject {
 	return container.NewVBox(
 		style.MutedLabel(caption),
-		container.NewGridWrap(
-			fyne.NewSize(headerControlWidth, control.MinSize().Height), control),
+		container.New(headerSlot{stretch: stretch}, control),
 	)
 }
 
@@ -244,7 +277,7 @@ func (s *shell) languageSwitch(tr *i18n.Translator) fyne.CanvasObject {
 	if len(languages) < 2 {
 		selector.Disable()
 	}
-	return headerControl(tr.T(i18n.KeySettingsLanguage), selector)
+	return headerControl(tr.T(i18n.KeySettingsLanguage), selector, true)
 }
 
 // languageByLabel maps a list entry back to its language without relying on the
@@ -262,9 +295,8 @@ func languageByLabel(label string) (i18n.Language, bool) {
 // light one. A config that still says "system" shows the variant the desktop
 // actually paints, and the first click writes an explicit dark or light mode.
 func (s *shell) themeSwitch(tr *i18n.Translator) fyne.CanvasObject {
-	toggle := widget.NewCheck(tr.T(i18n.KeySettingsDarkTheme), nil)
-	toggle.SetChecked(style.IsDark(s.service.Config().Theme))
-	toggle.OnChanged = func(checked bool) {
+	toggle := newSwitchToggle(style.IsDark(s.service.Config().Theme), nil)
+	toggle.onChange = func(checked bool) {
 		mode := style.ModeLight
 		if checked {
 			mode = style.ModeDark
@@ -276,7 +308,7 @@ func (s *shell) themeSwitch(tr *i18n.Translator) fyne.CanvasObject {
 			toggle.SetChecked(!checked)
 		}
 	}
-	return headerControl(tr.T(i18n.KeySettingsTheme), toggle)
+	return headerControl(tr.T(i18n.KeySettingsDarkTheme), toggle, false)
 }
 
 // setTheme persists the theme and applies it in place. The window is not

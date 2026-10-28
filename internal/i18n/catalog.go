@@ -176,7 +176,6 @@ const (
 
 	KeySettingsWorkDir   = "settings.work_dir"
 	KeySettingsProton    = "settings.proton"
-	KeySettingsTheme     = "settings.theme"
 	KeySettingsLanguage  = "settings.language"
 	KeySettingsDarkTheme = "settings.dark_theme"
 
@@ -432,7 +431,7 @@ var catalogs = map[Language]map[string]string{
 		KeyInstallUIVideoNoFile:        "settings.cfg appears after the first launch; you can configure it now.",
 		KeyInstallUIVideoDefaults:      "Not configured yet: OpenMW defaults are used.",
 		KeyInstallUIVideoTitle:         "UI and video",
-		KeyInstallUIVideoHint:          "Only the four values below are changed. Comments, other keys and line endings in settings.cfg stay as they are; changes apply to the next launch.",
+		KeyInstallUIVideoHint:          "Only these four values change; the rest of settings.cfg stays as it is. They apply on the next launch.",
 		KeyInstallUIVideoTTF:           "TTF resolution",
 		KeyInstallUIVideoTTFHint:       "Glyph atlas size: higher means crisper letters at a large font size and more video memory. This is what removes the blurry stock text.",
 		KeyInstallUIVideoFontSize:      "Font size",
@@ -504,7 +503,6 @@ var catalogs = map[Language]map[string]string{
 		KeyModsUpToDate:    "Mods are up to date.",
 		KeyModsDone:        "Mods are installed.",
 
-		KeySettingsTheme:     "Theme",
 		KeySettingsLanguage:  "Language",
 		KeySettingsDarkTheme: "Dark theme",
 		KeySettingsWorkDir:   "Work folder",
@@ -600,7 +598,7 @@ var catalogs = map[Language]map[string]string{
 		KeyWizardMorrowindTitle:    "Morrowind",
 		KeyWizardMorrowindHint:     "Select the original game folder. The client only reads it.",
 		KeyWizardFontsTitle:        "Fonts and interface",
-		KeyWizardFontsHint:         "The files replace the low-resolution stock fonts in My Games/OpenMW/Fonts and openmw.cfg gets the matching fallback= lines — text stops looking blurry at high resolution and Cyrillic stops showing as boxes. The set is checked before every launch; a failed download is retried on the next Play. The four values below are the same ones the Configure dialog writes to settings.cfg, with their range in the label.",
+		KeyWizardFontsHint:         "Replaces the stock fonts in My Games/OpenMW/Fonts and adds the matching fallback= lines to openmw.cfg.",
 		KeyWizardFontsPending:      "The %s font set will be downloaded in the background after setup; Play is not blocked by it.",
 		KeyWizardFontsPartial:      "Some fonts are missing (%s). They will be downloaded again in the background.",
 		KeyFontsPreviewHint:        "The sample shows the three files of the chosen set at the size the game draws them; missing files are downloaded in the background, and only a failed download falls back to the launcher font.",
@@ -614,7 +612,7 @@ var catalogs = map[Language]map[string]string{
 		KeyFontsPreviewSize:        "In game: %d × %s = %d px",
 		KeyFontsPreviewSizeClipped: "In game: %d × %s = %d px, shown at %d px",
 		KeyWizardTES3MPTitle:       "TES3MP",
-		KeyWizardTES3MPHint:        "The client downloads and verifies TES3MP %s. No server details are needed for this step.",
+		KeyWizardTES3MPHint:        "The client downloads and verifies TES3MP %s.",
 
 		KeySetupFind:                "Find automatically",
 		KeySetupChoose:              "Choose folder",
@@ -760,7 +758,7 @@ var catalogs = map[Language]map[string]string{
 		KeyInstallUIVideoNoFile:        "settings.cfg появится после первого запуска; настроить можно уже сейчас.",
 		KeyInstallUIVideoDefaults:      "Пока не настроено: используются значения OpenMW по умолчанию.",
 		KeyInstallUIVideoTitle:         "Интерфейс и видео",
-		KeyInstallUIVideoHint:          "Меняются только четыре значения ниже. Комментарии, остальные ключи и переводы строк в settings.cfg остаются как были; изменения применятся при следующем запуске.",
+		KeyInstallUIVideoHint:          "Меняются только эти четыре значения; остальное в settings.cfg остаётся как было. Они применятся при следующем запуске.",
 		KeyInstallUIVideoTTF:           "Разрешение TTF",
 		KeyInstallUIVideoTTFHint:       "Размер атласа глифов: выше — чётче буквы при крупном шрифте и больше видеопамяти. Именно это убирает размытый стандартный текст.",
 		KeyInstallUIVideoFontSize:      "Размер шрифта",
@@ -832,7 +830,6 @@ var catalogs = map[Language]map[string]string{
 		KeyModsUpToDate:    "Моды уже актуальны.",
 		KeyModsDone:        "Моды установлены.",
 
-		KeySettingsTheme:     "Тема",
 		KeySettingsLanguage:  "Язык",
 		KeySettingsDarkTheme: "Тёмная тема",
 		KeySettingsWorkDir:   "Рабочая папка",
@@ -928,7 +925,7 @@ var catalogs = map[Language]map[string]string{
 		KeyWizardMorrowindTitle:    "Morrowind",
 		KeyWizardMorrowindHint:     "Выберите папку с оригинальной игрой. Клиент только читает её.",
 		KeyWizardFontsTitle:        "Шрифты и интерфейс",
-		KeyWizardFontsHint:         "Файлы заменяют низкоприоритетные стандартные шрифты в My Games/OpenMW/Fonts, а в openmw.cfg добавляются строки fallback= — текст перестаёт быть размытым на высоком разрешении, а кириллица — квадратиками. Набор проверяется перед каждым запуском; неудачная загрузка повторяется при следующем Play. Четыре значения ниже — те же, что диалог «Настроить» пишет в settings.cfg; диапазон указан в подписи.",
+		KeyWizardFontsHint:         "Заменяет стандартные шрифты в My Games/OpenMW/Fonts и добавляет соответствующие строки fallback= в openmw.cfg.",
 		KeyWizardFontsPending:      "Набор шрифтов %s будет скачан в фоне после настройки; Play из-за этого не блокируется.",
 		KeyWizardFontsPartial:      "Часть шрифтов отсутствует (%s). Они будут скачаны заново в фоне.",
 		KeyFontsPreviewHint:        "Образец показывает три файла выбранного набора в том кегле, которым их нарисует игра; отсутствующие файлы докачиваются в фоне, шрифт лаунчера остаётся только при ошибке загрузки.",
@@ -942,7 +939,7 @@ var catalogs = map[Language]map[string]string{
 		KeyFontsPreviewSize:        "В игре: %d × %s = %d px",
 		KeyFontsPreviewSizeClipped: "В игре: %d × %s = %d px, показано %d px",
 		KeyWizardTES3MPTitle:       "TES3MP",
-		KeyWizardTES3MPHint:        "Клиент скачает и проверит TES3MP %s. Адрес сервера для этого шага не нужен.",
+		KeyWizardTES3MPHint:        "Клиент скачает и проверит TES3MP %s.",
 
 		KeySetupFind:                "Найти автоматически",
 		KeySetupChoose:              "Выбрать папку",
