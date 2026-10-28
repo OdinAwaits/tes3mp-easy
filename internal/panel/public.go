@@ -70,6 +70,7 @@ type currentMods struct {
 type homePageData struct {
 	Name        string
 	ActiveNav   string
+	Nav         string
 	Address     string
 	Port        int
 	Status      string
@@ -77,29 +78,95 @@ type homePageData struct {
 	StatusError string
 }
 
-type backupItemView struct {
+// archiveItem is the shared view model for state and mods archives. Both the
+// public archive page and the admin pages render it, so URL, availability and
+// restore rules live in one place.
+type archiveItem struct {
 	Name            string
 	Size            int64
 	SizeLabel       string
 	Mtime           string
 	MtimeLabel      string
 	Current         bool
+	ModsArchive     string
+	ModsAvailable   bool
+	ModsCurrent     bool
+	CanRestore      bool
 	DownloadURL     string
-	ModsArchive     *string
-	ModsAvailable   *bool
 	ModsDownloadURL string
 	BundleURL       string
 }
 
-type backupGroup struct {
+type archiveGroup struct {
 	Label string
-	Items []backupItemView
+	Items []archiveItem
+}
+
+// archiveOptions selects the link style and the current mods context.
+type archiveOptions struct {
+	Admin       bool
+	CurrentMods string
+}
+
+func archiveItems(items []BackupItem, typ string, opt archiveOptions) []archiveItem {
+	views := make([]archiveItem, 0, len(items))
+	for _, item := range items {
+		mtime, mtimeLabel := backupTime(item.Mtime)
+		view := archiveItem{
+			Name:        item.Name,
+			Size:        item.Size,
+			SizeLabel:   humanSize(item.Size),
+			Mtime:       mtime,
+			MtimeLabel:  mtimeLabel,
+			Current:     item.Current,
+			DownloadURL: archiveDownloadURL(typ, item.Name, opt.Admin),
+		}
+		if item.ModsArchive != nil {
+			view.ModsArchive = *item.ModsArchive
+		}
+		if item.ModsAvailable != nil {
+			view.ModsAvailable = *item.ModsAvailable
+		}
+		if typ == "state" && view.ModsArchive != "" &&
+			archive.ValidateModsArchiveName(view.ModsArchive) == nil {
+			view.ModsCurrent = opt.CurrentMods != "" && view.ModsArchive == opt.CurrentMods
+			if view.ModsAvailable {
+				view.ModsDownloadURL = archiveDownloadURL("mods", view.ModsArchive, opt.Admin)
+				if !opt.Admin {
+					view.BundleURL = view.DownloadURL + "/bundle"
+				}
+			}
+		}
+		view.CanRestore = opt.Admin && typ == "state" && view.ModsAvailable && view.ModsCurrent
+		views = append(views, view)
+	}
+	return views
+}
+
+func archiveDownloadURL(typ, name string, admin bool) string {
+	if admin {
+		return "/admin/" + typ + "/download/" + url.PathEscape(name)
+	}
+	return "/backups/" + typ + "/" + url.PathEscape(name)
+}
+
+func groupArchiveItems(items []archiveItem, now time.Time) []archiveGroup {
+	var groups []archiveGroup
+	for _, item := range items {
+		label := backupGroupLabel(item.Mtime, now)
+		if len(groups) == 0 || groups[len(groups)-1].Label != label {
+			groups = append(groups, archiveGroup{Label: label})
+		}
+		groups[len(groups)-1].Items = append(groups[len(groups)-1].Items, item)
+	}
+	return groups
 }
 
 type backupsPageData struct {
 	ActiveNav    string
-	StateGroups  []backupGroup
-	ModsGroups   []backupGroup
+	Nav          string
+	StateGroups  []archiveGroup
+	ModsGroups   []archiveGroup
 	StateEmpty   bool
 	ModsEmpty    bool
 	StateNextURL string
@@ -206,6 +273,7 @@ func (h *panelHandler) handleHome(w http.ResponseWriter, r *http.Request) {
 	data := homePageData{
 		Name:        "TES3MP",
 		ActiveNav:   "home",
+		Nav:         "public",
 		Address:     publicAddress(h.cfg, r),
 		Port:        port,
 		Status:      "unknown",
@@ -337,8 +405,8 @@ func (h *panelHandler) handleBackups(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := backupsPageData{
-		StateGroups: groupBackups(stateBackups.Items, "state", h.now()),
-		ModsGroups:  groupBackups(modsBackups.Items, "mods", h.now()),
+		StateGroups: groupArchiveItems(archiveItems(stateBackups.Items, "state", archiveOptions{}), h.now()),
+		ModsGroups:  groupArchiveItems(archiveItems(modsBackups.Items, "mods", archiveOptions{}), h.now()),
 		StateEmpty:  len(stateBackups.Items) == 0,
 		ModsEmpty:   len(modsBackups.Items) == 0,
 		Limit:       limit,
@@ -375,6 +443,7 @@ func backupNextURL(typ string, nextBefore *string, limit int,
 }
 
 func (h *panelHandler) renderBackups(w http.ResponseWriter, status int, data backupsPageData) {
+	data.Nav = "public"
 	if data.ActiveNav == "" {
 		data.ActiveNav = "backups"
 	}
@@ -634,38 +703,6 @@ func humanSize(size int64) string {
 		}
 	}
 	return fmt.Sprintf("%d B", size)
-}
-
-func groupBackups(items []BackupItem, typ string, now time.Time) []backupGroup {
-	var groups []backupGroup
-	for _, item := range items {
-		label := backupGroupLabel(item.Mtime, now)
-		if len(groups) == 0 || groups[len(groups)-1].Label != label {
-			groups = append(groups, backupGroup{Label: label})
-		}
-		mtime, mtimeLabel := backupTime(item.Mtime)
-		view := backupItemView{
-			Name:          item.Name,
-			Size:          item.Size,
-			SizeLabel:     humanSize(item.Size),
-			Mtime:         mtime,
-			MtimeLabel:    mtimeLabel,
-			Current:       item.Current,
-			DownloadURL:   "/backups/" + typ + "/" + url.PathEscape(item.Name),
-			ModsArchive:   item.ModsArchive,
-			ModsAvailable: item.ModsAvailable,
-		}
-		if typ == "state" && item.ModsArchive != nil &&
-			archive.ValidateModsArchiveName(*item.ModsArchive) == nil {
-			if item.ModsAvailable != nil && *item.ModsAvailable {
-				view.ModsDownloadURL = "/backups/mods/" +
-					url.PathEscape(*item.ModsArchive)
-				view.BundleURL = view.DownloadURL + "/bundle"
-			}
-		}
-		groups[len(groups)-1].Items = append(groups[len(groups)-1].Items, view)
-	}
-	return groups
 }
 
 func backupGroupLabel(raw string, now time.Time) string {

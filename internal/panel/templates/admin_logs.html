@@ -1,22 +1,16 @@
-<!doctype html>
-<html lang="ru">
-<head>
-{{template "head"}}
-  <title>Логи — tes3mp-easy</title>
+{{define "title"}}Логи — tes3mp-easy{{end}}
+{{define "scripts"}}
   <script defer src="/static/admin.js"></script>
-</head>
-<body>
-  {{template "adminNav" .}}
-
-  <main class="page">
+{{end}}
+{{define "content"}}
+<main class="page">
     <div class="page-head">
       <p class="eyebrow">Диагностика</p>
       <h1>Логи</h1>
       <p class="lead">Последние строки журнала panel и игрового сервера обновляются автоматически.</p>
     </div>
 
-    {{if .Notice}}<p role="status">{{.Notice}}</p>{{end}}
-    {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
+    {{template "notices" .}}
 
     <form class="toolbar" method="get" action="/admin/logs">
       <div class="field">
@@ -30,5 +24,4 @@
     <pre class="log-panel" id="admin-logs" data-tail="{{.Tail}}">{{range .Lines}}{{.}}
 {{end}}</pre>
   </main>
-</body>
-</html>
+{{end}}

@@ -380,6 +380,11 @@ func (m *metricsStore) snapshot(window string) (metricsWindowData, bool) {
 		hasLatest = true
 	}
 	data.view = buildMetricsView(data, latest, hasLatest, now, spec)
+	data.Charts = metricsCharts{
+		RAM:  data.view.RAMChart,
+		CPU:  data.view.CPUChart,
+		Disk: data.view.DiskChart,
+	}
 	return data, true
 }
 
@@ -475,6 +480,7 @@ type metricsWindowData struct {
 	Step      int             `json:"step"`
 	Available bool            `json:"available"`
 	Samples   []metricsSample `json:"samples"`
+	Charts    metricsCharts   `json:"charts"`
 
 	view metricsView
 }
@@ -496,20 +502,30 @@ type metricsView struct {
 }
 
 type dashboardChart struct {
-	Title      string
-	MaxLabel   string
-	MidLabel   string
-	MinLabel   string
-	StartLabel string
-	MidTime    string
-	EndLabel   string
-	Lines      []chartLine
-	Empty      bool
+	Title      string      `json:"title"`
+	RangeLabel string      `json:"range_label"`
+	MaxLabel   string      `json:"max_label"`
+	MidLabel   string      `json:"mid_label"`
+	MinLabel   string      `json:"min_label"`
+	StartLabel string      `json:"start_label"`
+	MidTime    string      `json:"mid_time"`
+	EndLabel   string      `json:"end_label"`
+	Lines      []chartLine `json:"lines"`
+	Empty      bool        `json:"empty"`
 }
 
 type chartLine struct {
-	Class  string
-	Points string
+	Class  string `json:"class"`
+	Points string `json:"points"`
+}
+
+// metricsCharts is the JSON form of the dashboard charts. The server renders
+// the polylines once, so the browser never re-implements the geometry and the
+// axis labels always match the drawn scale.
+type metricsCharts struct {
+	RAM  dashboardChart `json:"ram"`
+	CPU  dashboardChart `json:"cpu"`
+	Disk dashboardChart `json:"disk"`
 }
 
 func buildMetricsView(window metricsWindowData, latest metricsSample,
@@ -547,8 +563,8 @@ func buildMetricsView(window metricsWindowData, latest metricsSample,
 	}
 
 	from := now.Add(-spec.duration)
-	view.RAMChart = buildChart(window.Samples, "RAM игры", "0…448 MiB",
-		from, now, float64(metricsRAMLimit), func(sample metricsSample) *float64 {
+	view.RAMChart = buildChart(window.Samples, "RAM игры", rangeLabel(humanSizeLabel(float64(metricsRAMLimit))),
+		from, now, float64(metricsRAMLimit), humanSizeLabel, func(sample metricsSample) *float64 {
 			if sample.GameRAM == nil {
 				return nil
 			}
@@ -564,8 +580,8 @@ func buildMetricsView(window metricsWindowData, latest metricsSample,
 	if diskMax < float64(1<<30) {
 		diskMax = float64(1 << 30)
 	}
-	view.DiskChart = buildChart(window.Samples, "Свободно на диске", "0…объём",
-		from, now, diskMax, func(sample metricsSample) *float64 {
+	view.DiskChart = buildChart(window.Samples, "Свободно на диске", rangeLabel(humanSizeLabel(diskMax)),
+		from, now, diskMax, humanSizeLabel, func(sample metricsSample) *float64 {
 			if sample.DiskFree == nil {
 				return nil
 			}
@@ -575,37 +591,64 @@ func buildMetricsView(window metricsWindowData, latest metricsSample,
 	return view
 }
 
-func buildChart(samples []metricsSample, title, maxLabel string,
-	from, to time.Time, maxValue float64,
+// rangeLabel renders the "0…max" caption from the same formatter as the axis,
+// dropping the trailing ".0" that reads badly in running text.
+func rangeLabel(maxLabel string) string {
+	return "0…" + strings.Replace(maxLabel, ".0 ", " ", 1)
+}
+
+// humanSizeLabel formats an axis label for byte-valued charts.
+func humanSizeLabel(value float64) string {
+	return humanSize(int64(value))
+}
+
+// percentLabel formats an axis label for the 0…100 % CPU scale.
+func percentLabel(value float64) string {
+	return strconv.FormatFloat(value, 'f', 0, 64) + " %"
+}
+
+// buildChart renders one chart server-side: the axis labels come from the same
+// maxValue used for the geometry, so the browser never re-scales the picture.
+func buildChart(samples []metricsSample, title, rangeLabel string,
+	from, to time.Time, maxValue float64, format func(float64) string,
 	value func(metricsSample) *float64, class string,
 ) dashboardChart {
 	chart := dashboardChart{
 		Title:      title,
-		MaxLabel:   maxLabel,
-		MidLabel:   humanSize(int64(maxValue / 2)),
-		MinLabel:   "0",
+		RangeLabel: rangeLabel,
+		MaxLabel:   format(maxValue),
+		MidLabel:   format(maxValue / 2),
+		MinLabel:   format(0),
 		StartLabel: from.UTC().Format("15:04"),
 		MidTime:    from.Add(to.Sub(from) / 2).UTC().Format("15:04"),
 		EndLabel:   to.UTC().Format("15:04"),
 		Empty:      len(samples) == 0 || value == nil,
 	}
 	if value == nil {
+		chart.Lines = []chartLine{}
 		return chart
 	}
 	chart.Lines = chartLines(samples, value, maxValue, class, from, to)
+	if chart.Lines == nil {
+		chart.Lines = []chartLine{}
+	}
 	chart.Empty = len(chart.Lines) == 0
 	return chart
 }
 
 func buildDualCPUChart(samples []metricsSample, from, to time.Time) dashboardChart {
-	chart := buildChart(samples, "CPU игры и системы", "0…100 %", from, to,
-		metricsMaxCPU, nil, "")
+	chart := buildChart(samples, "CPU игры и системы",
+		rangeLabel(percentLabel(metricsMaxCPU)), from, to,
+		metricsMaxCPU, percentLabel, nil, "")
 	chart.Lines = append(chart.Lines, chartLines(samples,
 		func(sample metricsSample) *float64 { return sample.GameCPU },
 		metricsMaxCPU, "chart-line", from, to)...)
 	chart.Lines = append(chart.Lines, chartLines(samples,
 		func(sample metricsSample) *float64 { return sample.SysCPU },
 		metricsMaxCPU, "chart-line chart-line--info", from, to)...)
+	if chart.Lines == nil {
+		chart.Lines = []chartLine{}
+	}
 	chart.Empty = len(chart.Lines) == 0
 	return chart
 }

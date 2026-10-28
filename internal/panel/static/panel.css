@@ -320,7 +320,55 @@ pre code {
   color: var(--text);
 }
 
-.logout {
+.account {
+  position: relative;
+  margin-left: .35rem;
+}
+
+.account > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.account > summary::-webkit-details-marker {
+  display: none;
+}
+
+.account[open] > summary {
+  color: var(--text);
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + .35rem);
+  right: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  min-width: 11rem;
+  padding: .5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.account-menu a {
+  padding: .4rem .55rem;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: .9rem;
+  text-decoration: none;
+}
+
+.account-menu a:hover,
+.account-menu a[aria-current="page"] {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.account-menu form {
   margin: 0;
 }
 
@@ -994,61 +1042,6 @@ td form {
   gap: .35rem;
 }
 
-.delete-confirm {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: .3rem;
-}
-
-.delete-confirm input {
-  min-height: 2rem;
-  max-width: 15rem;
-  padding: .28rem .5rem;
-  font-size: .8rem;
-}
-
-.delete-force {
-  display: inline-flex;
-  align-items: center;
-  gap: .3rem;
-  color: var(--muted);
-  font-size: .8rem;
-}
-
-.check-list {
-  margin: 1rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.check-list li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: .5rem;
-  padding: .45rem 0;
-  border-top: 1px solid var(--border);
-}
-
-.check-list li:first-child {
-  padding-top: 0;
-  border-top: 0;
-}
-
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .45rem;
-  margin: 1rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.tag-list li {
-  margin: 0;
-}
-
 .log-panel {
   min-height: 20rem;
   max-height: 65vh;
@@ -1139,7 +1132,7 @@ body.auth {
     flex: 0 0 auto;
   }
 
-  .logout {
+  .account {
     margin-left: auto;
   }
 

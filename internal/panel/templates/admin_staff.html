@@ -1,22 +1,13 @@
-<!doctype html>
-<html lang="ru">
-<head>
-{{template "head"}}
-  <title>Staff — tes3mp-easy</title>
-</head>
-<body>
-  {{template "adminNav" .}}
-
-  <main class="page">
+{{define "title"}}Staff — tes3mp-easy{{end}}
+{{define "content"}}
+<main class="page">
     <div class="page-head">
       <p class="eyebrow">Игроки</p>
       <h1>Staff</h1>
       <p class="lead">Назначайте ранги игрокам. Изменение применится после перезапуска сервера.</p>
     </div>
 
-    {{if .Notice}}<p role="status">{{.Notice}}</p>{{end}}
-    {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
-    {{if .RestartRequired}}<p class="notice">Нужен перезапуск сервера, чтобы применить ранг.</p>{{end}}
+    {{template "notices" .}}
 
     <section class="card">
       <h2>Игроки</h2>
@@ -36,7 +27,7 @@
                   <td>{{.Name}}{{if .Error}} <span class="tag tag--danger">{{.Error}}</span>{{end}}</td>
                   <td>
                     <form class="rank-actions" method="post" action="{{.SetURL}}">
-                      <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+                      {{template "csrf" $}}
                       <button type="submit" name="rank" value="0"{{if eq .Rank 0}} disabled{{end}}>0</button>
                       <button type="submit" name="rank" value="1"{{if eq .Rank 1}} disabled{{end}}>1</button>
                       <button type="submit" name="rank" value="2"{{if eq .Rank 2}} disabled{{end}}>2</button>
@@ -51,5 +42,4 @@
       {{end}}
     </section>
   </main>
-</body>
-</html>
+{{end}}

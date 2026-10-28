@@ -1,13 +1,6 @@
-<!doctype html>
-<html lang="ru">
-<head>
-{{template "head"}}
-  <title>{{.Name}} — tes3mp-easy</title>
-</head>
-<body>
-  {{template "publicNav" .}}
-
-  <main class="page">
+{{define "title"}}{{.Name}} — tes3mp-easy{{end}}
+{{define "content"}}
+<main class="page">
     <section class="hero">
       <p class="eyebrow">Сервер Morrowind</p>
       <h1>{{.Name}}</h1>
@@ -48,5 +41,4 @@
       </section>
     </div>
   </main>
-</body>
-</html>
+{{end}}

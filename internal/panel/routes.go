@@ -2,11 +2,10 @@ package panel
 
 import (
 	"bytes"
+	"context"
 	"errors"
-	"html/template"
 	"io"
 	"log"
-	"mime"
 	"net"
 	"net/http"
 	"strconv"
@@ -24,7 +23,7 @@ type panelHandler struct {
 	sessions  *sessionStore
 	limiter   *loginLimiter
 	downloads *downloadLimiter
-	templates *template.Template
+	templates pageTemplates
 	logger    *log.Logger
 	now       func() time.Time
 	metrics   *metricsStore
@@ -39,12 +38,14 @@ type panelHandler struct {
 type loginPageData struct {
 	CSRF  string
 	Error string
+	Nav   string
 }
 
 type passwordPageData struct {
 	CSRF       string
 	Error      string
 	MustChange bool
+	Nav        string
 }
 
 type authenticatedHandler func(http.ResponseWriter, *http.Request, sessionState)
@@ -94,43 +95,126 @@ func newPanelHandler(cfg Config, auth *authStore, opsClient Ops, logger *log.Log
 
 func (h *panelHandler) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", h.handleHome)
-	mux.HandleFunc("GET /healthz", handleHealthz)
-	mux.HandleFunc("GET /backups", h.handleBackups)
-	mux.HandleFunc("GET /backups/mods/{name}", h.handleBackupDownload("mods"))
-	mux.HandleFunc("GET /backups/state/{name}", h.handleBackupDownload("state"))
-	mux.HandleFunc("GET /backups/state/{name}/bundle", h.handleStateBundle)
-	mux.HandleFunc("GET /api/v1/server", h.handleServerInfo)
-	mux.HandleFunc("GET /api/v1/mods/current", h.handleModsCurrent)
-	mux.HandleFunc("GET /api/v1/mods/current/archive", h.handleModsArchive)
-	mux.HandleFunc("GET /admin/login", h.handleLoginGet)
-	mux.HandleFunc("POST /admin/login", h.handleLoginPost)
-	mux.HandleFunc("POST /admin/logout", h.authenticated(true, h.handleLogout))
-	mux.HandleFunc("GET /admin/password", h.authenticated(true, h.handlePasswordGet))
-	mux.HandleFunc("POST /admin/password", h.authenticated(true, h.handlePasswordPost))
-	mux.HandleFunc("GET /admin", h.authenticated(false, h.handleDashboard))
-	mux.HandleFunc("POST /admin/server/{action}", h.authenticated(false, h.handleServerAction))
-	mux.HandleFunc("GET /admin/logs", h.authenticated(false, h.handleLogs))
-	mux.HandleFunc("GET /admin/mods", h.authenticated(false, h.handleMods))
-	mux.HandleFunc("POST /admin/mods/upload", h.authenticated(false, h.handleModsUpload))
-	mux.HandleFunc("POST /admin/mods/deploy", h.authenticated(false, h.handleModsDeploy))
-	mux.HandleFunc("POST /admin/mods/rollback", h.authenticated(false, h.handleModsRollback))
-	mux.HandleFunc("GET /admin/mods/download/{name}", h.authenticated(false, h.handleModsDownload))
-	mux.HandleFunc("GET /admin/state", h.authenticated(false, h.handleState))
-	mux.HandleFunc("GET /admin/restore-points", h.redirectToState)
-	mux.HandleFunc("POST /admin/state/create", h.authenticated(false, h.handleStateCreate))
-	mux.HandleFunc("POST /admin/state/restore", h.authenticated(false, h.handleStateRestore))
-	mux.HandleFunc("POST /admin/state/deploy", h.authenticated(false, h.handleStateDeploy))
-	mux.HandleFunc("GET /admin/state/download/{name}", h.authenticated(false, h.handleStateDownload))
-	mux.HandleFunc("GET /admin/config", h.authenticated(false, h.handleConfig))
-	mux.HandleFunc("POST /admin/config/{file}", h.authenticated(false, h.handleConfigPost))
-	mux.HandleFunc("GET /admin/staff", h.authenticated(false, h.handleStaff))
-	mux.HandleFunc("POST /admin/staff/{player}", h.authenticated(false, h.handleStaffSet))
-	mux.HandleFunc("GET /api/v1/admin/logs", h.authenticated(false, h.handleLogsAPI))
-	mux.HandleFunc("GET /api/v1/admin/status", h.authenticated(false, h.handleAdminStatus))
-	mux.HandleFunc("GET /api/v1/admin/metrics", h.authenticated(false, h.handleAdminMetrics))
-	mux.Handle("GET /static/", http.FileServer(http.FS(staticFS)))
+	for _, route := range allPanelRoutes() {
+		handler := route.handle(h)
+		if route.csrf == csrfStream {
+			handler = withStreamCSRF(handler)
+		}
+		mux.Handle(route.pattern, handler)
+	}
 	return mux
+}
+
+// routeCSRF describes how the CSRF token is validated for a route.
+type routeCSRF int
+
+const (
+	csrfForm routeCSRF = iota
+	csrfStream
+)
+
+// panelRoute is the single source of truth for panel URLs. Registration,
+// active navigation and the CSRF strategy live in one table, so a new page
+// cannot drift away from the navigation or from the middleware.
+type panelRoute struct {
+	pattern string
+	nav     string
+	csrf    routeCSRF
+	handle  func(*panelHandler) http.Handler
+}
+
+var (
+	panelRoutesOnce sync.Once
+	panelRouteTable []panelRoute
+)
+
+func allPanelRoutes() []panelRoute {
+	panelRoutesOnce.Do(func() {
+		panelRouteTable = []panelRoute{
+			{pattern: "GET /{$}", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(h.handleHome) }},
+			{pattern: "GET /healthz", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(handleHealthz) }},
+			{pattern: "GET /backups", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(h.handleBackups) }},
+			{pattern: "GET /backups/mods/{name}", handle: func(h *panelHandler) http.Handler { return h.handleBackupDownload("mods") }},
+			{pattern: "GET /backups/state/{name}", handle: func(h *panelHandler) http.Handler { return h.handleBackupDownload("state") }},
+			{pattern: "GET /backups/state/{name}/bundle", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(h.handleStateBundle) }},
+			{pattern: "GET /api/v1/server", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(h.handleServerInfo) }},
+			{pattern: "GET /api/v1/mods/current", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(h.handleModsCurrent) }},
+			{pattern: "GET /api/v1/mods/current/archive", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(h.handleModsArchive) }},
+			{pattern: "GET /admin/login", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(h.handleLoginGet) }},
+			{pattern: "POST /admin/login", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(h.handleLoginPost) }},
+			{pattern: "POST /admin/logout", handle: func(h *panelHandler) http.Handler { return h.authenticated(true, h.handleLogout) }},
+			{pattern: "GET /admin/password", nav: "password", handle: func(h *panelHandler) http.Handler { return h.authenticated(true, h.handlePasswordGet) }},
+			{pattern: "POST /admin/password", nav: "password", handle: func(h *panelHandler) http.Handler { return h.authenticated(true, h.handlePasswordPost) }},
+			{pattern: "GET /admin", nav: "dashboard", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleDashboard) }},
+			{pattern: "POST /admin/server/{action}", nav: "dashboard", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleServerAction) }},
+			{pattern: "GET /admin/logs", nav: "logs", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleLogs) }},
+			{pattern: "GET /admin/mods", nav: "mods", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleMods) }},
+			{pattern: "POST /admin/mods/upload", nav: "mods", csrf: csrfStream, handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleModsUpload) }},
+			{pattern: "POST /admin/mods/deploy", nav: "mods", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleModsDeploy) }},
+			{pattern: "POST /admin/mods/rollback", nav: "mods", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleModsRollback) }},
+			{pattern: "GET /admin/mods/download/{name}", nav: "mods", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleModsDownload) }},
+			{pattern: "GET /admin/state", nav: "state", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleState) }},
+			{pattern: "GET /admin/restore-points", nav: "state", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(h.redirectToState) }},
+			{pattern: "POST /admin/state/create", nav: "state", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleStateCreate) }},
+			{pattern: "POST /admin/state/restore", nav: "state", csrf: csrfStream, handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleStateRestore) }},
+			{pattern: "POST /admin/state/deploy", nav: "state", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleStateDeploy) }},
+			{pattern: "GET /admin/state/download/{name}", nav: "state", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleStateDownload) }},
+			{pattern: "GET /admin/config", nav: "config", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleConfig) }},
+			{pattern: "POST /admin/config/{file}", nav: "config", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleConfigPost) }},
+			{pattern: "GET /admin/staff", nav: "staff", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleStaff) }},
+			{pattern: "POST /admin/staff/{player}", nav: "staff", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleStaffSet) }},
+			{pattern: "GET /api/v1/admin/logs", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleLogsAPI) }},
+			{pattern: "GET /api/v1/admin/status", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleAdminStatus) }},
+			{pattern: "GET /api/v1/admin/metrics", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleAdminMetrics) }},
+			{pattern: "GET /static/", handle: func(h *panelHandler) http.Handler { return h.staticFiles() }},
+		}
+	})
+	return panelRouteTable
+}
+
+// adminActiveNav resolves the navigation item for an admin URL from the route
+// table, so routes and navigation cannot get out of sync.
+func adminActiveNav(path string) string {
+	for _, route := range allPanelRoutes() {
+		if route.nav == "" {
+			continue
+		}
+		if patternMatchesPath(route.pattern, path) {
+			return route.nav
+		}
+	}
+	return ""
+}
+
+func patternMatchesPath(pattern, path string) bool {
+	if _, rest, ok := strings.Cut(pattern, " "); ok {
+		pattern = rest
+	}
+	if pattern == "/" || pattern == "/{$}" {
+		return path == "" || path == "/"
+	}
+	pattern = strings.TrimSuffix(pattern, "/")
+	path = strings.TrimSuffix(path, "/")
+	if !strings.HasPrefix(pattern, "/") || !strings.HasPrefix(path, "/") {
+		return false
+	}
+	patternSegments := strings.Split(strings.TrimPrefix(pattern, "/"), "/")
+	pathSegments := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	if len(patternSegments) != len(pathSegments) {
+		return false
+	}
+	for index, segment := range patternSegments {
+		if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") {
+			if pathSegments[index] == "" {
+				return false
+			}
+			continue
+		}
+		if segment != pathSegments[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (h *panelHandler) handleLoginGet(w http.ResponseWriter, r *http.Request) {
@@ -232,8 +316,14 @@ func (h *panelHandler) renderLogin(w http.ResponseWriter, r *http.Request,
 }
 
 func (h *panelHandler) render(w http.ResponseWriter, status int, name string, data any) {
+	page, ok := h.templates[name]
+	if !ok {
+		h.logger.Printf("panel: render %s: unknown template", name)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 	var body bytes.Buffer
-	if err := h.templates.ExecuteTemplate(&body, name, data); err != nil {
+	if err := page.ExecuteTemplate(&body, "layout", data); err != nil {
 		h.logger.Printf("panel: render %s: %v", name, err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -289,12 +379,9 @@ func (h *panelHandler) authenticated(allowMustChange bool, next authenticatedHan
 			return
 		}
 		if isUnsafeMethod(r.Method) {
-			// Streaming multipart uploads cannot be parsed by the generic
-			// CSRF middleware without buffering the whole body. The upload
-			// handler validates the field while reading the stream.
-			if isMultipartForm(r) &&
-				(r.URL.Path == "/admin/mods/upload" ||
-					r.URL.Path == "/admin/state/restore") {
+			// Streaming multipart uploads declare csrfStream in panelRoutes:
+			// their handler validates the field while reading the body.
+			if streamingCSRF(r) {
 				if token := r.Header.Get(csrfHeaderName); token != "" &&
 					!tokensEqual(token, session.CSRF) {
 					http.Error(w, "CSRF token is missing or invalid", http.StatusForbidden)
@@ -335,9 +422,22 @@ func (h *panelHandler) validCSRF(w http.ResponseWriter, r *http.Request, expecte
 	return tokensEqual(r.PostForm.Get(csrfFormField), expected)
 }
 
-func isMultipartForm(r *http.Request) bool {
-	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	return err == nil && mediaType == "multipart/form-data"
+type streamCSRFKey struct{}
+
+// withStreamCSRF marks routes that read the CSRF field directly from a
+// multipart stream. The middleware then only rejects a supplied but invalid
+// header token instead of buffering the upload body; the handler validates the
+// field while it reads the stream.
+func withStreamCSRF(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), streamCSRFKey{}, true)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func streamingCSRF(r *http.Request) bool {
+	value, _ := r.Context().Value(streamCSRFKey{}).(bool)
+	return value
 }
 
 func isUnsafeMethod(method string) bool {

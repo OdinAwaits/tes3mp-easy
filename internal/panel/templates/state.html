@@ -1,22 +1,13 @@
-<!doctype html>
-<html lang="ru">
-<head>
-{{template "head"}}
-  <title>Состояния — tes3mp-easy</title>
-</head>
-<body>
-  {{template "adminNav" .}}
-
-  <main class="page">
+{{define "title"}}Состояния — tes3mp-easy{{end}}
+{{define "content"}}
+<main class="page">
     <div class="page-head">
       <p class="eyebrow">Резервные копии</p>
       <h1>Состояния</h1>
       <p class="lead">Состояние хранит игроков, мир и config.lua. Пароль сервера и banlist.json остаются в живых конфигах и в state не попадают. Моды — отдельные неизменяемые архивы, на которые ссылается состояние.</p>
     </div>
 
-    {{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
-    {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
-    {{if .RestartRequired}}<p class="notice">Нужен перезапуск сервера, чтобы применить изменения.</p>{{end}}
+    {{template "notices" .}}
 
     {{if .MissingMods}}
       <p class="notice" role="status">Текущий архив модов не найден. Восстановление недоступно, пока моды не задеплоены.</p>
@@ -26,22 +17,25 @@
 
     <section class="card card--warning">
       <h2>Восстановить из скачанного архива</h2>
-      <p>ZIP «состояние + моды» (кнопка на странице резервных копий) импортирует и задеплоит моды, затем восстановит состояние. Отдельный state <code>.tar.gz</code> восстановится только на уже активном пакете модов.</p>
-      <form method="post" action="/admin/state/restore" enctype="multipart/form-data">
-        <input type="hidden" name="_csrf" value="{{.CSRF}}">
+      <p>ZIP «состояние + моды» импортирует моды и восстановит состояние; отдельный state <code>.tar.gz</code> — только на активном пакете модов.</p>
+      <form method="post" action="/admin/state/restore" enctype="multipart/form-data" data-confirm="Восстановить состояние из архива? players/, world/ и config.lua будут заменены.">
+        {{template "csrf" .}}
         <div class="field">
           <label for="restore-file">Архив .zip или state .tar.gz, до 1 ГиБ</label>
           <input id="restore-file" type="file" name="file" accept=".zip,.tar.gz,application/zip,application/gzip" required>
         </div>
         <button class="button button--danger" type="submit">Загрузить и восстановить</button>
       </form>
-      <p class="muted">Сервер будет перезапущен, если он работает. Пароль и banlist.json из загруженного архива не меняются. Перед восстановлением ops создаст state-predeploy-*.</p>
+      <details class="format-hint">
+        <summary>Что именно заменяется</summary>
+        <p class="muted">players/, world/ и config.lua заменяются; пароль в tes3mp-server-default.cfg и banlist.json не меняются. Моды подменяются только из ZIP. Если сервер работает, он будет перезапущен. Перед восстановлением ops создаст state-predeploy-*.</p>
+      </details>
     </section>
 
     <div class="toolbar">
       <div class="actions">
         <form method="post" action="/admin/state/create">
-          <input type="hidden" name="_csrf" value="{{.CSRF}}">
+          {{template "csrf" .}}
           <button class="button button--primary" type="submit">Создать состояние</button>
         </form>
         <a class="button button--secondary" href="{{.ModsURL}}">Управление модами</a>
@@ -95,14 +89,14 @@
                           <a class="button button--secondary button--small" href="{{.ModsDownloadURL}}">Скачать моды</a>
                         {{end}}
                         {{if and .ModsAvailable (not .ModsCurrent)}}
-                          <form method="post" action="/admin/mods/deploy">
-                            <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+                          <form method="post" action="/admin/mods/deploy" data-confirm="Задеплоить моды {{.ModsArchive}}? Сервер будет перезапущен.">
+                            {{template "csrf" $}}
                             <input type="hidden" name="archive" value="{{.ModsArchive}}">
                             <button class="button button--secondary button--small" type="submit">Задеплоить моды</button>
                           </form>
                         {{end}}
-                        <form method="post" action="/admin/state/deploy">
-                          <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+                        <form method="post" action="/admin/state/deploy" data-confirm="Восстановить состояние {{.Name}}? Текущие players/, world/ и config.lua будут заменены.">
+                          {{template "csrf" $}}
                           <input type="hidden" name="archive" value="{{.Name}}">
                           <button class="button button--danger button--small" type="submit"{{if not .CanRestore}} disabled title="Сначала задеплойте указанный архив модов"{{end}}>Восстановить</button>
                         </form>
@@ -117,9 +111,6 @@
       {{end}}
     </div>
 
-    <p role="alert">Восстановление заменит players/, world/ и config.lua. Пароль сервера в tes3mp-server-default.cfg и banlist.json не изменяются. Моды не подменяются автоматически: состояние восстанавливается только на том архиве модов, который в нём записан. Перед восстановлением ops создаст state-predeploy-*.</p>
-
     {{if .NextURL}}<p class="pagination"><a class="button button--secondary" href="{{.NextURL}}">Показать более старые</a></p>{{end}}
   </main>
-</body>
-</html>
+{{end}}

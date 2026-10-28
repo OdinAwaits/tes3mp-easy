@@ -1,11 +1,7 @@
-<!doctype html>
-<html lang="ru">
-<head>
-{{template "head"}}
-  <title>Вход — tes3mp-easy</title>
-</head>
-<body class="auth">
-  <main class="auth-shell">
+{{define "title"}}Вход — tes3mp-easy{{end}}
+{{define "bodyattrs"}} class="auth"{{end}}
+{{define "content"}}
+<main class="auth-shell">
     <section class="card auth-card">
       <a class="brand" href="/">
         <span class="brand-mark" aria-hidden="true">◆</span>
@@ -16,7 +12,7 @@
       <p class="muted">Введите пароль администратора сервера.</p>
       {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
       <form method="post" action="/admin/login">
-        <input type="hidden" name="_csrf" value="{{.CSRF}}">
+        {{template "csrf" .}}
         <div class="field">
           <label for="password">Пароль</label>
           <input id="password" type="password" name="password"
@@ -27,5 +23,4 @@
     </section>
     <p class="auth-footer"><a href="/">← На главную</a></p>
   </main>
-</body>
-</html>
+{{end}}

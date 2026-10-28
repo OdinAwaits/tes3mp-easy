@@ -1,23 +1,16 @@
-<!doctype html>
-<html lang="ru">
-<head>
-{{template "head"}}
-  <title>Настройки — tes3mp-easy</title>
+{{define "title"}}Настройки — tes3mp-easy{{end}}
+{{define "scripts"}}
   <script defer src="/static/admin.js"></script>
-</head>
-<body>
-  {{template "adminNav" .}}
-
-  <main class="page">
+{{end}}
+{{define "content"}}
+<main class="page">
     <div class="page-head">
       <p class="eyebrow">Конфигурация</p>
       <h1>Настройки</h1>
       <p class="lead">Форма отправляется целиком. Панель сравнивает поля и передаёт только изменения.</p>
     </div>
 
-    {{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>{{end}}
-    {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
-    {{if .RestartRequired}}<p class="notice">Нужен перезапуск сервера, чтобы применить изменения.</p>{{end}}
+    {{template "notices" .}}
     <p class="muted">Если ничего не менять, кнопка неактивна и показано «Изменений нет»; лишняя мутация не выполняется.</p>
 
     <div class="stack">
@@ -28,7 +21,7 @@
           {{if .Error}}<p role="alert">Проверьте поле: {{.Error}}</p>{{end}}
 
           <form method="post" action="/admin/config/{{.File}}" data-config-form>
-            <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+            {{template "csrf" $}}
             <div class="grid">
               {{range .Fields}}
                 <div class="config-row">
@@ -64,5 +57,4 @@
 
     </div>
   </main>
-</body>
-</html>
+{{end}}

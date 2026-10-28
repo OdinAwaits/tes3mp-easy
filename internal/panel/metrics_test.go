@@ -90,6 +90,7 @@ func TestMetricsAPIAndDashboardRejectBadWindow(t *testing.T) {
 			Window  string          `json:"window"`
 			Step    int             `json:"step"`
 			Samples []metricsSample `json:"samples"`
+			Charts  metricsCharts   `json:"charts"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
@@ -98,6 +99,38 @@ func TestMetricsAPIAndDashboardRejectBadWindow(t *testing.T) {
 	if !response.OK || response.Data.Window != "1h" || response.Data.Step != 15 ||
 		len(response.Data.Samples) != 1 {
 		t.Fatalf("metrics response = %+v", response)
+	}
+	// The API ships the same geometry and labels the page renders, so the
+	// browser never rescales a chart on its own.
+	charts := response.Data.Charts
+	if charts.RAM.RangeLabel != "0…448 MiB" || charts.RAM.MaxLabel != "448.0 MiB" {
+		t.Fatalf("RAM chart labels = %+v", charts.RAM)
+	}
+	if charts.CPU.MaxLabel != "100 %" || charts.CPU.MidLabel != "50 %" {
+		t.Fatalf("CPU chart labels = %+v", charts.CPU)
+	}
+	if charts.Disk.MaxLabel == "" || len(charts.Disk.Lines) != 1 {
+		t.Fatalf("disk chart = %+v", charts.Disk)
+	}
+	if !strings.HasPrefix(charts.Disk.RangeLabel, "0…") ||
+		charts.Disk.RangeLabel == "0…0 B" {
+		t.Fatalf("disk chart range label = %q", charts.Disk.RangeLabel)
+	}
+	if charts.CPU.RangeLabel != "0…100 %" {
+		t.Fatalf("CPU chart range label = %q", charts.CPU.RangeLabel)
+	}
+	page := env.request(t, http.MethodGet, "/admin", nil)
+	if page.Code != http.StatusOK {
+		t.Fatalf("GET /admin = %d: %s", page.Code, page.Body.String())
+	}
+	// Every axis label the refresher rewrites must exist with the same key.
+	for _, chart := range []string{"ram", "cpu", "disk"} {
+		for _, key := range []string{"max", "mid", "min", "start", "midtime", "end"} {
+			label := `data-chart-label="` + chart + ":" + key + `"`
+			if !strings.Contains(page.Body.String(), label) {
+				t.Fatalf("dashboard is missing %s", label)
+			}
+		}
 	}
 
 	for _, path := range []string{

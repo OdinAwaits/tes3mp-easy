@@ -1,21 +1,13 @@
-<!doctype html>
-<html lang="ru">
-<head>
-{{template "head"}}
-  <title>Моды — tes3mp-easy</title>
-</head>
-<body>
-  {{template "adminNav" .}}
-
-  <main class="page">
+{{define "title"}}Моды — tes3mp-easy{{end}}
+{{define "content"}}
+<main class="page">
     <div class="page-head">
       <p class="eyebrow">Контент</p>
       <h1>Моды</h1>
       <p class="lead">Загрузите архив модов, проверьте его и задеплойте на сервер.</p>
     </div>
 
-    {{if .Notice}}<p role="status">{{.Notice}}</p>{{end}}
-    {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
+    {{template "notices" .}}
 
     <div class="grid">
       <section class="card">
@@ -58,7 +50,7 @@
 ]</code></pre>
         </details>
         <form method="post" action="/admin/mods/upload" enctype="multipart/form-data">
-          <input type="hidden" name="_csrf" value="{{.CSRF}}">
+          {{template "csrf" .}}
           <div class="field">
             <label for="mods-file">Архив .tar.gz</label>
             <input id="mods-file" type="file" name="file" accept=".tar.gz,application/gzip" required>
@@ -93,7 +85,7 @@
                   <td><time datetime="{{.Mtime}}">{{.MtimeLabel}}</time></td>
                   <td>
                     <form method="post" action="/admin/mods/deploy">
-                      <input type="hidden" name="_csrf" value="{{$.CSRF}}">
+                      {{template "csrf" $}}
                       <input type="hidden" name="archive" value="{{.Name}}">
                       <button class="button button--small" type="submit">Deploy</button>
                     </form>
@@ -111,11 +103,10 @@
         <h2>Откат</h2>
         <p>Откат задеплоит предыдущий архив <code>{{.Previous}}</code>. Если сервер запущен, он будет перезапущен.</p>
         <form method="post" action="/admin/mods/rollback">
-          <input type="hidden" name="_csrf" value="{{.CSRF}}">
+          {{template "csrf" .}}
           <button class="button button--danger" type="submit">Rollback</button>
         </form>
       </section>
     {{end}}
   </main>
-</body>
-</html>
+{{end}}

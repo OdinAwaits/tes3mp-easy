@@ -72,35 +72,6 @@
     }
   };
 
-  var chartLines = function (samples, field, max, css) {
-    var result = [];
-    var points = [];
-    var flush = function () {
-      if (points.length) {
-        result.push({ css: css, points: points.join(" ") });
-        points = [];
-      }
-    };
-    var first = samples.length ? Date.parse(samples[0].ts) : 0;
-    var last = samples.length ? Date.parse(samples[samples.length - 1].ts) : 0;
-    var span = last - first;
-    samples.forEach(function (sample) {
-      var value = sample[field];
-      if (value === null || value === undefined) {
-        flush();
-        return;
-      }
-      var ratioX = span > 0 ? (Date.parse(sample.ts) - first) / span : 0.5;
-      ratioX = Math.max(0, Math.min(1, ratioX));
-      var ratioY = Math.max(0, Math.min(1, Number(value) / max));
-      var x = 40 + ratioX * 550;
-      var y = 130 - ratioY * 110;
-      points.push(Math.round(x) + "," + Math.round(y));
-    });
-    flush();
-    return result;
-  };
-
   var draw = function (target, lines) {
     if (!target) {
       return;
@@ -110,9 +81,32 @@
     }
     lines.forEach(function (line) {
       var node = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-      node.setAttribute("class", line.css);
+      node.setAttribute("class", line.class);
       node.setAttribute("points", line.points);
       target.appendChild(node);
+    });
+  };
+
+  // The server renders the polylines and the axis labels for one maxValue, so
+  // the browser only swaps text nodes and never re-implements the geometry.
+  var applyChart = function (name, chart) {
+    if (!chart) {
+      return;
+    }
+    draw(chartNodes[name], chart.lines || []);
+    var labels = {
+      max: chart.max_label,
+      mid: chart.mid_label,
+      min: chart.min_label,
+      start: chart.start_label,
+      midtime: chart.mid_time,
+      end: chart.end_label
+    };
+    Object.keys(labels).forEach(function (key) {
+      var node = document.querySelector("[data-chart-label='" + name + ":" + key + "']");
+      if (node && labels[key] !== undefined) {
+        node.textContent = labels[key];
+      }
     });
   };
 
@@ -144,17 +138,10 @@
       setMetric("swap", formatBytes(last.swap_used));
       setMetric("disk", formatBytes(last.disk_free));
 
-      draw(chartNodes.ram, chartLines(samples, "game_ram", 448 * 1024 * 1024, "chart-line"));
-      draw(chartNodes.cpu, chartLines(samples, "game_cpu", 100, "chart-line").concat(
-        chartLines(samples, "sys_cpu", 100, "chart-line chart-line--info")));
-      var diskMax = 7 * 1024 * 1024 * 1024;
-      samples.forEach(function (sample) {
-        if (sample.disk_free && sample.disk_free * 1.4 > diskMax) {
-          diskMax = sample.disk_free * 1.4;
-        }
-      });
-      draw(chartNodes.disk, chartLines(samples, "disk_free", diskMax,
-        "chart-line chart-line--muted"));
+      var charts = data.charts || {};
+      applyChart("ram", charts.ram);
+      applyChart("cpu", charts.cpu);
+      applyChart("disk", charts.disk);
     }).catch(function () {
       /* Keep the last successful snapshot on transient failures. */
     });
@@ -225,33 +212,11 @@
     }
     window.setInterval(refreshLogs, 5000);
   }
-  var mismatchForms = document.querySelectorAll("[data-mismatch-form]");
-  mismatchForms.forEach(function (form) {
-    var checkbox = form.querySelector("[data-mismatch-checkbox]");
-    var submit = form.querySelector("[data-mismatch-submit]");
-    if (!checkbox || !submit) {
-      return;
-    }
-    var update = function () {
-      submit.disabled = !checkbox.checked;
-    };
-    checkbox.addEventListener("change", update);
-    update();
-  });
-
-  var deleteForms = document.querySelectorAll("[data-delete-form]");
-  deleteForms.forEach(function (form) {
-    var expected = form.getAttribute("data-confirm-name") || "";
-    var input = form.querySelector("input[name='confirm']");
-    var submit = form.querySelector("[data-delete-submit]");
-    if (!input || !submit) {
-      return;
-    }
-    var update = function () {
-      submit.disabled = input.value !== expected;
-    };
-    input.addEventListener("input", update);
-    input.addEventListener("change", update);
-    update();
+  document.querySelectorAll("form[data-confirm]").forEach(function (form) {
+    form.addEventListener("submit", function (event) {
+      if (!window.confirm(form.getAttribute("data-confirm") || "")) {
+        event.preventDefault();
+      }
+    });
   });
 })();

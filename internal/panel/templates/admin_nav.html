@@ -12,11 +12,16 @@
     <a href="/admin/config"{{if eq .ActiveNav "config"}} aria-current="page"{{end}}>Настройки</a>
     <a href="/admin/staff"{{if eq .ActiveNav "staff"}} aria-current="page"{{end}}>Staff</a>
     <a href="/backups" target="_blank" rel="noopener">Публичные архивы</a>
-    <a href="/admin/password"{{if eq .ActiveNav "password"}} aria-current="page"{{end}}>Пароль</a>
   </nav>
-  <form class="logout" method="post" action="/admin/logout">
-    <input type="hidden" name="_csrf" value="{{.CSRF}}">
-    <button class="button button--ghost button--small" type="submit">Выйти</button>
-  </form>
+  <details class="account">
+    <summary class="button button--ghost button--small">Аккаунт</summary>
+    <div class="account-menu">
+      <a href="/admin/password"{{if eq .ActiveNav "password"}} aria-current="page"{{end}}>Сменить пароль</a>
+      <form method="post" action="/admin/logout">
+        {{template "csrf" .}}
+        <button class="button button--ghost button--small" type="submit">Выйти</button>
+      </form>
+    </div>
+  </details>
 </header>
 {{end}}

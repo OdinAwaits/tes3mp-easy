@@ -1,0 +1,21 @@
+{{define "layout"}}<!doctype html>
+<html lang="ru">
+<head>
+{{template "head"}}
+  <title>{{block "title" .}}tes3mp-easy{{end}}</title>
+  {{block "scripts" .}}{{end}}
+</head>
+<body{{block "bodyattrs" .}}{{end}}>
+  {{template "nav" .}}
+{{block "content" .}}{{end}}
+</body>
+</html>
+{{end}}
+
+{{define "nav"}}{{if eq .Nav "admin"}}{{template "adminNav" .}}{{else if eq .Nav "public"}}{{template "publicNav" .}}{{end}}{{end}}
+{{define "bodyattrs"}}{{end}}
+{{define "scripts"}}{{end}}
+{{define "csrf"}}<input type="hidden" name="_csrf" value="{{.CSRF}}">{{end}}
+{{define "notices"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
+{{end}}{{if .Error}}<p role="alert">{{.Error}}</p>
+{{end}}{{if .RestartRequired}}<p class="notice">Нужен перезапуск сервера, чтобы применить изменения.</p>{{end}}{{end}}

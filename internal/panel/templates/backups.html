@@ -1,13 +1,6 @@
-<!doctype html>
-<html lang="ru">
-<head>
-{{template "head"}}
-  <title>Архивы — tes3mp-easy</title>
-</head>
-<body>
-  {{template "publicNav" .}}
-
-  <main class="page">
+{{define "title"}}Архивы — tes3mp-easy{{end}}
+{{define "content"}}
+<main class="page">
     <div class="page-head">
       <p class="eyebrow">Публичный архив</p>
       <h1>Архивы сервера</h1>
@@ -97,5 +90,4 @@
       <button type="submit">Показать</button>
     </form>
   </main>
-</body>
-</html>
+{{end}}

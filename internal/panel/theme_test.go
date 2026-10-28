@@ -27,6 +27,29 @@ func TestPanelStylesheetIsServed(t *testing.T) {
 	assertSecurityHeaders(t, rec.Header())
 }
 
+func TestStaticAssetsAreCacheable(t *testing.T) {
+	env := newPublicTestEnv(t)
+	rec := panelRequest(t, env.handler, http.MethodGet, "/static/panel.css", nil, nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /static/panel.css = %d", rec.Code)
+	}
+	etag := rec.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("static asset has no ETag")
+	}
+	if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "immutable") {
+		t.Fatalf("Cache-Control = %q, want immutable", got)
+	}
+	rec = panelRequest(t, env.handler, http.MethodGet, "/static/panel.css",
+		nil, nil, map[string]string{"If-None-Match": etag})
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("conditional GET /static/panel.css = %d, want 304", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("304 response carries %d bytes", rec.Body.Len())
+	}
+}
+
 func TestPanelTemplatesUseEmbeddedStylesheet(t *testing.T) {
 	entries, err := fs.Glob(templateFS, "templates/*.html")
 	if err != nil {

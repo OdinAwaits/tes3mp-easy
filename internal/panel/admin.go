@@ -96,6 +96,7 @@ func (h *panelHandler) doctorMutationError(ctx context.Context) (bool, string) {
 type adminPage struct {
 	CSRF            string
 	ActiveNav       string
+	Nav             string
 	Notice          string
 	Error           string
 	ErrorField      string
@@ -134,7 +135,7 @@ type modsCurrent struct {
 
 type adminModsPageData struct {
 	adminPage
-	Items    []adminBackupItem
+	Items    []archiveItem
 	Current  string
 	Previous string
 	Empty    bool
@@ -143,7 +144,7 @@ type adminModsPageData struct {
 
 type adminStatePageData struct {
 	adminPage
-	Groups      []adminBackupGroup
+	Groups      []archiveGroup
 	NextURL     string
 	Empty       bool
 	Limit       int
@@ -152,41 +153,18 @@ type adminStatePageData struct {
 	MissingMods bool
 }
 
-type adminBackupItem struct {
-	Name            string
-	Size            int64
-	SizeLabel       string
-	Mtime           string
-	MtimeLabel      string
-	Current         bool
-	Class           string
-	ModsArchive     string
-	ModsAvailable   bool
-	ModsCurrent     bool
-	CanRestore      bool
-	DownloadURL     string
-	ModsDownloadURL string
-}
-
-type adminBackupGroup struct {
-	Label string
-	Items []adminBackupItem
-}
-
 type adminConfigPageData struct {
 	adminPage
 	Sections []adminConfigSection
 }
 
 type adminConfigSection struct {
-	File      string
-	Title     string
-	Fields    []adminConfigField
-	ReadOnly  []string
-	Banlist   []adminConfigList
-	Note      string
-	Error     string
-	SaveLabel string
+	File    string
+	Title   string
+	Fields  []adminConfigField
+	Banlist []adminConfigList
+	Note    string
+	Error   string
 }
 
 type adminConfigField struct {
@@ -216,58 +194,36 @@ type adminStaffPlayer struct {
 	Error  string
 }
 
-func adminPageFor(r *http.Request, session sessionState) adminPage {
-	page := adminPage{CSRF: session.CSRF, ActiveNav: adminActiveNav(r.URL.Path)}
-	switch r.URL.Query().Get("ok") {
-	case "server_started":
-		page.Notice = "Сервер запускается."
-	case "server_stopped":
-		page.Notice = "Сервер остановлен."
-	case "server_restarted":
-		page.Notice = "Сервер перезапускается."
-	case "backup_created":
-		page.Notice = "Резервная копия создана."
-	case "mods_uploaded":
-		page.Notice = "Архив модов загружен и импортирован."
-	case "mods_deployed":
-		page.Notice = "Моды задеплоены."
-	case "mods_rolled_back":
-		page.Notice = "Предыдущий архив модов задеплоен."
-	case "state_deployed":
-		page.Notice = "Состояние восстановлено."
-	case "state_restored":
-		page.Notice = "Состояние и моды восстановлены из загруженного архива."
-	case "staff_saved":
-		page.Notice = "Ранг изменён. Перезапустите сервер, чтобы применить его."
-	case "config_saved":
-		page.Notice = "Настройка сохранена. Перезапустите сервер, чтобы применить её."
-	}
-	page.RestartRequired = r.URL.Query().Get("restart") == "1" ||
-		r.URL.Query().Get("ok") == "staff_saved" ||
-		r.URL.Query().Get("ok") == "config_saved"
-	return page
+var adminNoticeMessages = map[string]string{
+	"server_started":   "Сервер запускается.",
+	"server_stopped":   "Сервер остановлен.",
+	"server_restarted": "Сервер перезапускается.",
+	"backup_created":   "Резервная копия создана.",
+	"mods_uploaded":    "Архив модов загружен и импортирован.",
+	"mods_deployed":    "Моды задеплоены.",
+	"mods_rolled_back": "Предыдущий архив модов задеплоен.",
+	"state_deployed":   "Состояние восстановлено.",
+	"state_restored":   "Состояние и моды восстановлены из загруженного архива.",
+	"staff_saved":      "Ранг изменён. Перезапустите сервер, чтобы применить его.",
+	"config_saved":     "Настройка сохранена. Перезапустите сервер, чтобы применить её.",
 }
 
-func adminActiveNav(path string) string {
-	switch {
-	case path == "/admin" || path == "/admin/" || strings.HasPrefix(path, "/admin/server/"):
-		return "dashboard"
-	case path == "/admin/logs":
-		return "logs"
-	case path == "/admin/mods" || strings.HasPrefix(path, "/admin/mods/"):
-		return "mods"
-	case path == "/admin/restore-points" || strings.HasPrefix(path, "/admin/restore-points/"),
-		path == "/admin/state" || strings.HasPrefix(path, "/admin/state/"):
-		return "state"
-	case path == "/admin/config" || strings.HasPrefix(path, "/admin/config/"):
-		return "config"
-	case path == "/admin/staff" || strings.HasPrefix(path, "/admin/staff/"):
-		return "staff"
-	case path == "/admin/password":
-		return "password"
-	default:
-		return ""
+var adminRestartNotices = map[string]bool{
+	"staff_saved":  true,
+	"config_saved": true,
+}
+
+func adminPageFor(r *http.Request, session sessionState) adminPage {
+	query := r.URL.Query()
+	status := query.Get("ok")
+	page := adminPage{
+		CSRF:      session.CSRF,
+		ActiveNav: adminActiveNav(r.URL.Path),
+		Nav:       "admin",
+		Notice:    adminNoticeMessages[status],
 	}
+	page.RestartRequired = query.Get("restart") == "1" || adminRestartNotices[status]
+	return page
 }
 
 // adminFailure returns an HTTP status and an operator-facing message. Ops
@@ -346,19 +302,6 @@ func (h *panelHandler) ensureOps(w http.ResponseWriter, r *http.Request) bool {
 	}
 	status, message, _ := adminFailure(errOpsUnavailable)
 	writeAPIError(w, status, adminErrorCode(errOpsUnavailable), message)
-	return false
-}
-
-func (h *panelHandler) ensureOpsPage(w http.ResponseWriter, r *http.Request,
-	session sessionState,
-) bool {
-	if h.ops != nil {
-		return true
-	}
-	status, message, _ := adminFailure(errOpsUnavailable)
-	data := h.dashboardData(r, session)
-	data.Error = message
-	h.render(w, status, "dashboard.html", data)
 	return false
 }
 
@@ -641,36 +584,6 @@ func (h *panelHandler) handleLogsAPI(w http.ResponseWriter, r *http.Request, _ s
 	}{Lines: lines})
 }
 
-func adminBackupItemFrom(item BackupItem) adminBackupItem {
-	mtime, label := backupTime(item.Mtime)
-	return adminBackupItem{
-		Name:       item.Name,
-		Size:       item.Size,
-		SizeLabel:  humanSize(item.Size),
-		Mtime:      mtime,
-		MtimeLabel: label,
-		Current:    item.Current,
-		Class:      archiveClass(item.Name),
-	}
-}
-
-func archiveClass(name string) string {
-	switch {
-	case strings.HasPrefix(name, "state-manual-"):
-		return "state-manual"
-	case strings.HasPrefix(name, "state-predeploy-"):
-		return "state-predeploy"
-	case strings.HasPrefix(name, "state-"):
-		return "state"
-	case strings.HasPrefix(name, "mods-init-"):
-		return "mods-init"
-	case strings.HasPrefix(name, "mods-"):
-		return "mods"
-	default:
-		return ""
-	}
-}
-
 func (h *panelHandler) modsPageData(r *http.Request,
 	session sessionState,
 ) (adminModsPageData, error) {
@@ -685,10 +598,6 @@ func (h *panelHandler) modsPageData(r *http.Request,
 	if err != nil {
 		return data, err
 	}
-	for _, item := range backups.Items {
-		data.Items = append(data.Items, adminBackupItemFrom(item))
-	}
-	data.Empty = len(data.Items) == 0
 	if backups.Current != nil {
 		data.Current = *backups.Current
 	}
@@ -697,6 +606,11 @@ func (h *panelHandler) modsPageData(r *http.Request,
 			data.Current = current.Name
 		}
 	}
+	data.Items = archiveItems(backups.Items, "mods", archiveOptions{
+		Admin:       true,
+		CurrentMods: data.Current,
+	})
+	data.Empty = len(data.Items) == 0
 	data.Previous = previousModsArchive(backups)
 	return data, nil
 }
@@ -1072,35 +986,10 @@ func (h *panelHandler) statePageData(r *http.Request, session sessionState,
 	data.CurrentMods = currentMods
 	data.MissingMods = currentMods == ""
 
-	for _, group := range groupBackups(backups.Items, "state", h.now()) {
-		adminGroup := adminBackupGroup{Label: group.Label}
-		for _, item := range group.Items {
-			modsArchive := ""
-			if item.ModsArchive != nil {
-				modsArchive = *item.ModsArchive
-			}
-			modsAvailable := item.ModsAvailable != nil && *item.ModsAvailable
-			modsCurrent := modsArchive != "" && modsArchive == currentMods
-			adminGroup.Items = append(adminGroup.Items, adminBackupItem{
-				Name:          item.Name,
-				Size:          item.Size,
-				SizeLabel:     item.SizeLabel,
-				Mtime:         item.Mtime,
-				MtimeLabel:    item.MtimeLabel,
-				Current:       item.Current,
-				Class:         archiveClass(item.Name),
-				ModsArchive:   modsArchive,
-				ModsAvailable: modsAvailable,
-				ModsCurrent:   modsCurrent,
-				CanRestore:    modsAvailable && modsCurrent,
-				DownloadURL: "/admin/state/download/" +
-					url.PathEscape(item.Name),
-				ModsDownloadURL: "/admin/mods/download/" +
-					url.PathEscape(modsArchive),
-			})
-		}
-		data.Groups = append(data.Groups, adminGroup)
-	}
+	data.Groups = groupArchiveItems(archiveItems(backups.Items, "state", archiveOptions{
+		Admin:       true,
+		CurrentMods: currentMods,
+	}), h.now())
 	data.Empty = len(backups.Items) == 0
 	if backups.NextBefore != nil && *backups.NextBefore != "" {
 		values := url.Values{}
@@ -1362,11 +1251,9 @@ func (h *panelHandler) configSections(r *http.Request) ([]adminConfigSection, er
 			return nil, err
 		}
 		section := adminConfigSection{
-			File:      item.file,
-			Title:     item.title,
-			Note:      item.note,
-			ReadOnly:  snapshot.ReadOnly,
-			SaveLabel: "Сохранить",
+			File:  item.file,
+			Title: item.title,
+			Note:  item.note,
 		}
 		if item.file == "banlist" {
 			for _, list := range []struct {
