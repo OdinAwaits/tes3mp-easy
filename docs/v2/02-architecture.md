@@ -154,7 +154,9 @@ Bootstrap устанавливает `tes3mp.service`, `tes3mp-easy-backup.timer
 - `panel-data/acme/` — `0700`, `account.key` — `0600`;
 - `panel-data/uploads/` — `tes3mp-panel:tes3mp 2770`, файлы `0640`; группа
   `tes3mp` должна иметь write, иначе `ops` не сможет перенести upload в
-  `backups/mods/` и удалить исходный файл;
+  `backups/mods/` и удалить исходный файл. Подкаталоги `uploads/restore-*`
+  (распаковка ZIP «состояние + моды») имеют тот же режим 2770: `rename(2)`
+  требует записи в исходном каталоге, а не только traverse;
 - `.locks/`, `.staging/` — `tes3mp:tes3mp 0700`;
 - `.config/openmw/`, `.local/share/openmw/` — `tes3mp:tes3mp 0700`: это
   `$HOME/.config/openmw` и `$HOME/.local/share/openmw` для prelaunch-скрипта;

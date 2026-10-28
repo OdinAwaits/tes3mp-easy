@@ -288,4 +288,18 @@ func TestRestoreExtractsBundleWithReadableModes(t *testing.T) {
 			t.Fatalf("%s mode = %04o, want 0640", path, info.Mode().Perm())
 		}
 	}
+	// ops runs as tes3mp and renames the archives into backups/, so the shared
+	// group needs write access to the directory, not just traverse.
+	dirInfo, err := os.Stat(filepath.Dir(plan.modsPath))
+	if err != nil {
+		t.Fatalf("stat restore directory: %v", err)
+	}
+	if dirInfo.Mode().Perm()&0o070 != 0o070 {
+		t.Fatalf("restore directory mode = %04o, want group rwx (ops renames files out of it)",
+			dirInfo.Mode().Perm())
+	}
+	if dirInfo.Mode()&os.ModeSetgid == 0 {
+		t.Fatalf("restore directory mode = %04o, want the setgid bit so the group stays shared",
+			dirInfo.Mode().Perm())
+	}
 }

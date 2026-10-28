@@ -257,9 +257,12 @@ func (h *panelHandler) extractRestoreBundle(zipPath string) (restorePlan, func()
 			h.logger.Printf("panel: remove restore directory %s: %v", dir, err)
 		}
 	}
-	// ops runs as tes3mp and must be able to traverse the directory. The
-	// uploads parent is setgid, but set it again explicitly for custom roots.
-	if err := os.Chmod(dir, os.ModeSetgid|0o750); err != nil {
+	// ops runs as tes3mp and moves the extracted archives out of this directory
+	// with rename(2), which needs write access to the source directory, not just
+	// traverse. Keep the uploads root mode (2770) so the shared group can do it;
+	// set it explicitly because os.MkdirTemp only grants 0700 to the panel user
+	// and custom roots may lack the setgid bit.
+	if err := os.Chmod(dir, os.ModeSetgid|0o770); err != nil {
 		cleanup()
 		return restorePlan{}, nil, restoreErrorf(http.StatusInternalServerError,
 			"Не удалось подготовить временный каталог.")
