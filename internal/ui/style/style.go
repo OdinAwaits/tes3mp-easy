@@ -71,6 +71,17 @@ func (t amberTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 }
 
 func (t amberTheme) Size(name fyne.ThemeSizeName) float32 {
+	switch name {
+	case theme.SizeNameButtonRadius, theme.SizeNameInputRadius:
+		// One scale for buttons, fields and cards: square corners read as
+		// bricks and do not match the 14 px card.
+		return 8
+	case theme.SizeNameInnerPadding:
+		// 6 instead of the default 8 keeps a button 32 px high.
+		return 6
+	case theme.SizeNameInlineIcon:
+		return 18
+	}
 	return theme.DefaultTheme().Size(name)
 }
 
@@ -85,25 +96,30 @@ func rgba(value uint32) color.Color {
 	}
 }
 
+// darkPalette keeps the resting button fill one visible step above the card
+// surface and raises borders and separators to 3:1 (WCAG 1.4.11). A 3:1 *fill*
+// would turn every secondary control into a light tile: the boundary comes from
+// the input border and the label instead. Hover and focus are translucent
+// blends over the resting fill, so one step works on quiet and primary buttons.
 var darkPalette = palette{
 	theme.ColorNameBackground:                rgba(0x14110eff),
-	theme.ColorNameButton:                    rgba(0x241d16ff),
-	theme.ColorNameDisabledButton:            rgba(0x1b1712ff),
+	theme.ColorNameButton:                    rgba(0x514433ff),
+	theme.ColorNameDisabledButton:            rgba(0x332c22ff),
 	theme.ColorNameForeground:                rgba(0xf2e7d5ff),
-	theme.ColorNameDisabled:                  rgba(0x6d6256ff),
+	theme.ColorNameDisabled:                  rgba(0xa8987fff),
 	theme.ColorNamePlaceHolder:               rgba(0x9b8b77ff),
 	theme.ColorNamePrimary:                   rgba(0xd8a548ff),
 	theme.ColorNameForegroundOnPrimary:       rgba(0x1a140eff),
-	theme.ColorNameHover:                     rgba(0x2e251bff),
-	theme.ColorNameFocus:                     rgba(0xd8a54866),
+	theme.ColorNameHover:                     rgba(0xf2e7d533),
+	theme.ColorNameFocus:                     rgba(0xd8a54899),
 	theme.ColorNamePressed:                   rgba(0xd8a54833),
 	theme.ColorNameSelection:                 rgba(0xd8a54855),
 	theme.ColorNameInputBackground:           rgba(0x1d1813ff),
-	theme.ColorNameInputBorder:               rgba(0x4a3a26ff),
+	theme.ColorNameInputBorder:               rgba(0x87785bff),
 	theme.ColorNameMenuBackground:            rgba(0x1b1611ff),
 	theme.ColorNameOverlayBackground:         rgba(0x1b1611ff),
 	theme.ColorNameHeaderBackground:          rgba(0x1a1510ff),
-	theme.ColorNameSeparator:                 rgba(0x3a2e20ff),
+	theme.ColorNameSeparator:                 rgba(0x635a4aff),
 	theme.ColorNameShadow:                    rgba(0x00000099),
 	theme.ColorNameScrollBar:                 rgba(0x6a5335ff),
 	theme.ColorNameScrollBarBackground:       rgba(0x1a1510ff),
@@ -120,23 +136,23 @@ var darkPalette = palette{
 
 var lightPalette = palette{
 	theme.ColorNameBackground:                rgba(0xf4efe6ff),
-	theme.ColorNameButton:                    rgba(0xebe2d3ff),
-	theme.ColorNameDisabledButton:            rgba(0xe3d9c8ff),
+	theme.ColorNameButton:                    rgba(0xcbbda6ff),
+	theme.ColorNameDisabledButton:            rgba(0xdfd6c6ff),
 	theme.ColorNameForeground:                rgba(0x211a12ff),
-	theme.ColorNameDisabled:                  rgba(0x8d8172ff),
+	theme.ColorNameDisabled:                  rgba(0x625a4eff),
 	theme.ColorNamePlaceHolder:               rgba(0x76685a6f),
 	theme.ColorNamePrimary:                   rgba(0x8f5d12ff),
 	theme.ColorNameForegroundOnPrimary:       rgba(0xfff8ecff),
-	theme.ColorNameHover:                     rgba(0xe2d5c0ff),
-	theme.ColorNameFocus:                     rgba(0x8f5d1244),
+	theme.ColorNameHover:                     rgba(0x211a1233),
+	theme.ColorNameFocus:                     rgba(0x8f5d1266),
 	theme.ColorNamePressed:                   rgba(0x8f5d1222),
 	theme.ColorNameSelection:                 rgba(0x8f5d1233),
 	theme.ColorNameInputBackground:           rgba(0xfffaf1ff),
-	theme.ColorNameInputBorder:               rgba(0xc8b89fff),
+	theme.ColorNameInputBorder:               rgba(0x9d9280ff),
 	theme.ColorNameMenuBackground:            rgba(0xfbf7efff),
 	theme.ColorNameOverlayBackground:         rgba(0xfbf7efff),
 	theme.ColorNameHeaderBackground:          rgba(0xeee5d7ff),
-	theme.ColorNameSeparator:                 rgba(0xd8cab4ff),
+	theme.ColorNameSeparator:                 rgba(0xab9c84ff),
 	theme.ColorNameShadow:                    rgba(0x3a2e2044),
 	theme.ColorNameScrollBar:                 rgba(0xb29a77ff),
 	theme.ColorNameScrollBarBackground:       rgba(0xeee5d7ff),
