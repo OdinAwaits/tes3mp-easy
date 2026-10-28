@@ -36,11 +36,30 @@ cat >"$fixture/release.json" <<JSON
 }
 JSON
 
-# A client release is newer than the server one and an older server release is
-# listed first: the installer must pick the highest server version and skip the
-# client archives.
+# A client release is newer than the server one, an older server release is
+# listed first, and the moving `server-latest`/`client-latest` aliases carry
+# archives without a version in the name: the installer must pick the highest
+# versioned server archive and ignore the aliases and the client archives.
 cat >"$fixture/releases.json" <<JSON
 [
+  {
+    "tag_name": "server-latest",
+    "assets": [
+      {
+        "name": "tes3mp-easy-linux-amd64.tar.gz",
+        "browser_download_url": "https://example.test/tes3mp-easy-linux-amd64.tar.gz"
+      }
+    ]
+  },
+  {
+    "tag_name": "client-latest",
+    "assets": [
+      {
+        "name": "tes3mp-easy-client-linux-amd64.tar.gz",
+        "browser_download_url": "https://example.test/tes3mp-easy-client-linux-amd64.tar.gz"
+      }
+    ]
+  },
   {
     "tag_name": "client-v9.9.10",
     "assets": [

@@ -59,7 +59,8 @@ TES3MP_EASY_VERSION=0.3.1 bash <(curl -Ls https://raw.githubusercontent.com/Saag
 
 1. Скачайте архив и checksum с GitHub Releases (или возьмите локально
    собранный `dist/tes3mp-easy-<version>-linux-amd64.tar.gz`). Серверные
-   релизы помечены тегом `server-v<version>`:
+   релизы помечены тегом `server-v<version>`; для последней версии есть
+   движущийся тег `server-latest` с архивом без версии в имени:
 
    ```bash
    VERSION=0.3.1
@@ -68,6 +69,18 @@ TES3MP_EASY_VERSION=0.3.1 bash <(curl -Ls https://raw.githubusercontent.com/Saag
    sha256sum -c "tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
    tar -xzf "tes3mp-easy-${VERSION}-linux-amd64.tar.gz"
    cd "tes3mp-easy-${VERSION}-linux-amd64"
+   ```
+
+   Та же версия без привязки к номеру — файл побайтово совпадает с
+   версионным, поэтому каталог внутри архива по-прежнему
+   `tes3mp-easy-<version>-linux-amd64`:
+
+   ```bash
+   curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/server-latest/tes3mp-easy-linux-amd64.tar.gz"
+   curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/server-latest/tes3mp-easy-linux-amd64.tar.gz.sha256"
+   sha256sum -c "tes3mp-easy-linux-amd64.tar.gz.sha256"
+   tar -xzf "tes3mp-easy-linux-amd64.tar.gz"
+   ls -d tes3mp-easy-*-linux-amd64    # версия видна только здесь
    ```
 
    Локальная сборка релиза:
@@ -1035,6 +1048,15 @@ panic.
 |---|---|---|
 | server | `server-v<version>` | `tes3mp-easy-<version>-linux-amd64.tar.gz` (+ `.sha256`) |
 | client | `client-v<version>` | `tes3mp-easy-client-<version>-linux-amd64.tar.gz`, `tes3mp-easy-client-<version>-windows-amd64.zip` (+ `.sha256`) |
+| server | `server-latest` (движущийся) | `tes3mp-easy-linux-amd64.tar.gz` (+ `.sha256`) |
+| client | `client-latest` (движущийся) | `tes3mp-easy-client-linux-amd64.tar.gz`, `tes3mp-easy-client-windows-amd64.zip` (+ `.sha256`) |
+
+Job `publish` после версионного релиза сам переставляет тег
+`<channel>-latest` на выпущенный коммит (через API, `force`), копирует архивы
+под именами без версии и пересчитывает их `.sha256`, затем обновляет
+релиз-алиас с `make_latest: false`. Алиасные имена не попадают под шаблон
+`install.sh` (`tes3mp-easy-[0-9]…`), поэтому выбор серверной версии не
+меняется; `test/install-smoke.sh` держит это в списке релизов.
 
 ```bash
 # серверный релиз
@@ -1059,6 +1081,21 @@ git push origin client-v0.2.6
   версией, поэтому новый клиентский релиз не подменяет серверный.
   `TES3MP_EASY_VERSION=0.3.1` прибивает версию серверного релиза;
   `--version 0.3.1` у `tes3mp-easy-pack` задаёт её для локальной сборки.
+- После релиза проверьте алиасы (их обновляет тот же job `publish`, но
+  молчаливая поломка видна только по ссылке):
+
+  ```bash
+  curl -fsSI "https://github.com/Saagilat/tes3mp-easy/releases/download/client-latest/tes3mp-easy-client-linux-amd64.tar.gz" | head -n 1
+  curl -fsS "https://github.com/Saagilat/tes3mp-easy/releases/download/server-latest/tes3mp-easy-linux-amd64.tar.gz.sha256"
+  ```
+
+  Первая команда отвечает `200`, вторая печатает хеш и имя
+  `tes3mp-easy-linux-amd64.tar.gz`. Если алиас отстал или отдаёт 404,
+  перезапустите job `publish` у того же запуска по тегу (кнопка
+  «Re-run failed jobs»): `workflow_dispatch` до `publish` не доходит, потому
+  что job требует `refs/tags/`. Ручной запасной путь — переставить тег
+  (`git tag -f server-latest <sha> && git push -f origin server-latest`) и
+  загрузить алиасные файлы в релиз вручную.
 - `internal/contract` и `internal/serverapi` описывают протокол
   клиент↔панель: несовместимые изменения выпускаются в обоих каналах.
 - Панель отдаёт свою версию в `/api/v1/server` как `panel_version` — это

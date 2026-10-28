@@ -182,8 +182,76 @@ jobs:
           pattern: "*"
           merge-multiple: true
           path: dist
+      - name: Prepare channel alias
+        shell: bash
+        run: |
+          channel="${{ needs.metadata.outputs.channel }}"
+          version="${{ needs.metadata.outputs.version }}"
+          mkdir -p alias
+          stables=()
+          case "$channel" in
+            server)
+              assets=("tes3mp-easy-${version}-linux-amd64.tar.gz")
+              ;;
+            client)
+              assets=("tes3mp-easy-client-${version}-linux-amd64.tar.gz" \
+                "tes3mp-easy-client-${version}-windows-amd64.zip")
+              ;;
+            *)
+              echo "unknown release channel: $channel" >&2
+              exit 1
+              ;;
+          esac
+          for asset in "${assets[@]}"; do
+            # Stable name without the version: install.sh only matches versioned
+            # server archives, so the alias cannot change which version it picks.
+            stable="${asset/-${version}-/-}"
+            stables+=("$stable")
+            install -m 0644 "dist/$asset" "alias/$stable"
+          done
+          (
+            cd alias
+            for file in *; do sha256sum "$file" > "$file.sha256"; done
+          )
+
+          release_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${channel}-v${version}"
+          {
+            echo "Указатель на последний релиз канала \`${channel}\`."
+            echo
+            echo "Файлы с постоянными именами:"
+            for stable in "${stables[@]}"; do
+              echo "- \`${stable}\` (и \`.sha256\`)"
+            done
+            echo
+            echo "Версионный релиз: ${release_url}"
+          } > alias-notes.md
+          cat alias-notes.md
+      - name: Move channel tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          channel="${{ needs.metadata.outputs.channel }}"
+          ref="tags/${channel}-latest"
+          # The moving tag is not matched by `on: push: tags` (`*-latest` is not
+          # in the filter), so moving it does not start another release run.
+          if ! gh api --silent -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/${ref}" \
+              -f sha="$GITHUB_SHA" -F force=true; then
+            gh api --silent -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/${ref}" -f sha="$GITHUB_SHA"
+          fi
       - uses: softprops/action-gh-release@v2
         with:
           name: "${{ needs.metadata.outputs.channel }} ${{ needs.metadata.outputs.version }}"
           files: dist/*
           generate_release_notes: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.metadata.outputs.channel }}-latest
+          name: "${{ needs.metadata.outputs.channel }} latest"
+          body_path: alias-notes.md
+          files: alias/*
+          # The `Latest` badge stays on the versioned release, otherwise the other
+          # channel would look older than it is.
+          make_latest: false
+          overwrite_files: true

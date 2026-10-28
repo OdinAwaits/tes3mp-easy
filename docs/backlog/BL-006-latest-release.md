@@ -1,6 +1,7 @@
 # BL-006. Нет постоянной ссылки на последний релиз (`latest`)
 
-**Статус:** новое (28.10.2026), не начато.
+**Статус:** сделано (28.10.2026), вариант A. Проверка на живом релизе —
+после следующего тега.
 
 **Симптом.** README и внешние ссылки (форум, Discord, вики) не могут дать
 постоянный адрес на последний клиент: имена ассетов содержат версию
@@ -42,9 +43,46 @@ README — годится только как промежуточный шаг.
   `on: push: tags` (`server-v*`/`client-v*`); `*-latest` в фильтр добавлять
   нельзя.
 
-**Что сделать после выбора варианта.** Обновить `README.md` (§игрок, §админ) и
-`docs/v2/06-client.md` на стабильные URL, добавить в runbook строку «проверить
-`latest`-ссылки после релиза».
+**Что сделано.** В job `publish` добавлены три шага:
+
+1. `Prepare channel alias` — `case` по каналу собирает версионные ассеты
+   (`tes3mp-easy-<v>-linux-amd64.tar.gz` для server,
+   `tes3mp-easy-client-<v>-{linux-amd64.tar.gz,windows-amd64.zip}` для client),
+   делает копии с вырезанной версией (`${asset/-${version}-/-}`) в `alias/` и
+   пересчитывает `.sha256` уже для новых имён; там же пишется `alias-notes.md`
+   с составом и ссылкой на версионный релиз.
+2. `Move channel tag` — `gh api PATCH /git/refs/tags/<channel>-latest` с
+   `force`, при отсутствии тега — `POST /git/refs`. Тег двигается через API, а
+   не `git push`, поэтому не нужны ни локальный клон, ни изменение прав
+   (`contents: write` у job уже был); фильтр `on: push: tags` содержит только
+   `server-v*`/`client-v*`, так что циклов нет.
+3. Второй `softprops/action-gh-release@v2` с `tag_name: <channel>-latest`,
+   `body_path: alias-notes.md`, `files: alias/*`, `make_latest: false`,
+   `overwrite_files: true` — бейдж `Latest` остаётся у версионного релиза.
+
+Механика проверена локально: шаг вырезан из YAML и прогнан на поддельном
+`dist/` для обоих каналов (имена и `sha256sum -c` сходятся). `install.sh` не
+изменён: его `SERVER_ASSET` требует цифру сразу после `tes3mp-easy-`, поэтому
+алиасные имена не участвуют в выборе версии; `test/install-smoke.sh` теперь
+держит в списке релизов `server-latest` и `client-latest` и по-прежнему
+выбирает `tes3mp-easy-9.9.9-linux-amd64.tar.gz`. Инварианты (движущийся тег,
+`make_latest: false`, стабильные URL в README, `[0-9]` в `SERVER_ASSET`)
+закреплены `TestStableReleaseLinks` (`test/docs/release_test.go`).
+
+**Документация.** `README.md` (§игрок — ссылки через `client-latest`, §админ —
+`server-latest` и оговорка, что версия видна только внутри архива),
+`docs/v2/06-client.md` §2, `docs/v2/08-runbook.md` §2.1 и §17 (каналы с
+движущимися тегами и проверка алиасов после релиза), `docs/v2/07-testing.md`
+§10.
+
+**Ограничения, которые остались.**
+- `install.sh` по-прежнему не использует `/releases/latest` и `server-latest`,
+  а сканирует список релизов: при смене формата алиаса установщик не сломается.
+- Ручной `workflow_dispatch` алиасы не обновляет — `publish` требует
+  `refs/tags/`, поэтому перевыпуск делается re-run запуска по тегу.
+- Проверка `curl -fsSLO .../client-latest/...` из раздела «Как проверять»
+  возможна только после следующего релиза: в текущем дереве алиасных ассетов
+  ещё нет.
 
 **Как проверять.** После следующего релиза:
 `curl -fsSLO https://github.com/Saagilat/tes3mp-easy/releases/download/client-latest/tes3mp-easy-client-linux-amd64.tar.gz`
