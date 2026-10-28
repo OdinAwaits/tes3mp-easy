@@ -605,7 +605,7 @@ Gzip-мусор после tar, повреждённый gzip, абсолютн�
   "port": 25565,
   "status": "running",
   "mods_sha256": "abc...",
-  "panel_version": "0.2.1"
+  "panel_version": "0.2.2"
 }
 ```
 
