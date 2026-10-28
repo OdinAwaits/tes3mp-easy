@@ -12,14 +12,15 @@ import (
 
 func TestCatalogIsComplete(t *testing.T) {
 	catalog := Sets()
-	if len(catalog) != 3 {
-		t.Fatalf("len(Sets()) = %d, want 3 sets in P1", len(catalog))
+	if len(catalog) != 10 {
+		t.Fatalf("len(Sets()) = %d, want 10 sets", len(catalog))
 	}
-	if ids := SetIDs(); len(ids) != 3 || ids[0] != DefaultSet {
+	if ids := SetIDs(); len(ids) != 10 || ids[0] != DefaultSet {
 		t.Fatalf("SetIDs() = %v, want %s first", ids, DefaultSet)
 	}
 	seenSets := make(map[string]bool, len(catalog))
-	seenNames := make(map[string]string, len(catalog)*3)
+	seenNames := make(map[string]bool, len(catalog)*3)
+	seenLabels := make(map[string]string, len(catalog))
 	for _, set := range catalog {
 		if set.ID == "" {
 			t.Fatal("set without id")
@@ -28,18 +29,31 @@ func TestCatalogIsComplete(t *testing.T) {
 			t.Fatalf("duplicate set %q", set.ID)
 		}
 		seenSets[set.ID] = true
+		// Family names are not translated, so every set has to carry one.
+		if strings.TrimSpace(set.Name) == "" {
+			t.Fatalf("set %s has no name", set.ID)
+		}
+		if owner, ok := seenLabels[set.Name]; ok {
+			t.Fatalf("sets %s and %s share the label %q", owner, set.ID,
+				set.Name)
+		}
+		seenLabels[set.Name] = set.ID
 		if len(set.Assets) != 3 {
 			t.Fatalf("set %s has %d assets, want 3", set.ID, len(set.Assets))
 		}
+		// Several sets reuse a serif or a mono, so a file may appear in more
+		// than one set, but never twice within the same one: the three slots
+		// are the interface font, the Daedric slot and the console font.
+		local := make(map[string]bool, len(set.Assets))
 		for _, asset := range set.Assets {
 			if !strings.HasSuffix(asset.Name, ".ttf") {
 				t.Fatalf("%s: %s is not a .ttf", set.ID, asset.Name)
 			}
-			if owner, ok := seenNames[asset.Name]; ok {
-				t.Fatalf("font %s is shared by %s and %s", asset.Name, owner,
-					set.ID)
+			if local[asset.Name] {
+				t.Fatalf("%s: font %s is listed twice", set.ID, asset.Name)
 			}
-			seenNames[asset.Name] = set.ID
+			local[asset.Name] = true
+			seenNames[asset.Name] = true
 			if len(asset.SHA256) != 64 ||
 				strings.ToLower(asset.SHA256) != asset.SHA256 {
 				t.Fatalf("%s: SHA256 %q is not 64 lowercase hex characters",

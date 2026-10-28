@@ -767,8 +767,9 @@ ZIP-файлом (`application/zip`, имя `<state>-with-mods.zip`). Имя п�
   Один overlay используется всеми профилями; `game_language` и legacy
   `localization` в `config.json` не поддерживаются и отбрасываются при
   сохранении.
-- `settings.cfg` правится только через **Installation → UI and video** и шаг 4
-  мастера: `internal/openmwcfg` меняет `[GUI] ttf resolution`, `font size`,
+- `settings.cfg` правится только через **Installation → UI and video** и шаг 3
+  мастера («Шрифты и интерфейс»): `internal/openmwcfg` меняет
+  `[GUI] ttf resolution`, `font size`,
   `scaling factor` и `[Video] framerate limit`. Файл принадлежит OpenMW и
   появляется после первого запуска; до этого состояние «файла ещё нет» не
   является ошибкой, а запись создаёт только эти секции и ключи. Остальные

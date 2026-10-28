@@ -57,9 +57,7 @@ const (
 	KeyFontsSet                = "fonts.set"
 	KeyFontsSetHint            = "fonts.set.hint"
 	KeyFontsSetLicense         = "fonts.set.license"
-	KeyFontsSetNoto            = "fonts.set.noto"
-	KeyFontsSetInter           = "fonts.set.inter"
-	KeyFontsSetPlex            = "fonts.set.plex"
+	KeyFontsSetDefault         = "fonts.set.default"
 	KeyFontsSetChange          = "fonts.set.change"
 	KeyFontsSetApply           = "fonts.set.apply"
 	KeyFontsSetRequired        = "fonts.set.required"
@@ -277,8 +275,7 @@ const (
 	KeyWizardFontsHint      = "wizard.fonts.hint"
 	KeyWizardFontsPending   = "wizard.fonts.pending"
 	KeyWizardFontsPartial   = "wizard.fonts.partial"
-	KeyWizardUIVideoTitle   = "wizard.uivideo.title"
-	KeyWizardUIVideoHint    = "wizard.uivideo.hint"
+	KeyFontsPreviewHint     = "fonts.set.preview_hint"
 	KeyWizardTES3MPTitle    = "wizard.tes3mp.title"
 	KeyWizardTES3MPHint     = "wizard.tes3mp.hint"
 
@@ -385,9 +382,7 @@ var catalogs = map[Language]map[string]string{
 		KeyFontsSet:                    "Font set",
 		KeyFontsSetHint:                "The interface, Daedric slots and console font. Every set covers Latin and Cyrillic; the download is verified and does not block the game.",
 		KeyFontsSetLicense:             "All sets are OFL-licensed Google Fonts and are downloaded from the official repository.",
-		KeyFontsSetNoto:                "Noto Sans · Noto Serif · Roboto Mono (default)",
-		KeyFontsSetInter:               "Inter · Source Serif · JetBrains Mono",
-		KeyFontsSetPlex:                "IBM Plex Sans · Plex Serif · Plex Mono",
+		KeyFontsSetDefault:             "(default)",
 		KeyFontsSetChange:              "Change set",
 		KeyFontsSetApply:               "Apply and install",
 		KeyFontsSetRequired:            "Choose a font set first.",
@@ -599,12 +594,11 @@ var catalogs = map[Language]map[string]string{
 		KeyWizardRetry:          "Retry",
 		KeyWizardMorrowindTitle: "Morrowind",
 		KeyWizardMorrowindHint:  "Select the original game folder. The client only reads it.",
-		KeyWizardFontsTitle:     "Fonts",
-		KeyWizardFontsHint:      "The files replace the low-resolution stock fonts in My Games/OpenMW/Fonts and openmw.cfg gets the matching fallback= lines — text stops looking blurry at high resolution and Cyrillic stops showing as boxes. The set is checked before every launch; a failed download is retried on the next Play.",
+		KeyWizardFontsTitle:     "Fonts and interface",
+		KeyWizardFontsHint:      "The files replace the low-resolution stock fonts in My Games/OpenMW/Fonts and openmw.cfg gets the matching fallback= lines — text stops looking blurry at high resolution and Cyrillic stops showing as boxes. The set is checked before every launch; a failed download is retried on the next Play. The four values below are the same ones the Configure dialog writes to settings.cfg, with their range in the label.",
 		KeyWizardFontsPending:   "The %s font set will be downloaded in the background after setup; Play is not blocked by it.",
 		KeyWizardFontsPartial:   "Some fonts are missing (%s). They will be downloaded again in the background.",
-		KeyWizardUIVideoTitle:   "UI and video",
-		KeyWizardUIVideoHint:    "The same four values the Configure dialog writes to settings.cfg. Every field has its range in the label and an explanation under it.",
+		KeyFontsPreviewHint:     "The sample uses the installed file of the chosen set; before the download it falls back to the launcher font.",
 		KeyWizardTES3MPTitle:    "TES3MP",
 		KeyWizardTES3MPHint:     "The client downloads and verifies TES3MP %s. No server details are needed for this step.",
 
@@ -709,9 +703,7 @@ var catalogs = map[Language]map[string]string{
 		KeyFontsSet:                    "Набор шрифтов",
 		KeyFontsSetHint:                "Шрифт интерфейса, слотов Daedric и консоли. Каждый набор покрывает латиницу и кириллицу; загрузка проверяется по SHA256 и не блокирует игру.",
 		KeyFontsSetLicense:             "Все наборы — шрифты Google Fonts под лицензией OFL, скачиваются из официального репозитория.",
-		KeyFontsSetNoto:                "Noto Sans · Noto Serif · Roboto Mono (по умолчанию)",
-		KeyFontsSetInter:               "Inter · Source Serif · JetBrains Mono",
-		KeyFontsSetPlex:                "IBM Plex Sans · Plex Serif · Plex Mono",
+		KeyFontsSetDefault:             "(по умолчанию)",
 		KeyFontsSetChange:              "Сменить набор",
 		KeyFontsSetApply:               "Применить и установить",
 		KeyFontsSetRequired:            "Сначала выберите набор шрифтов.",
@@ -923,12 +915,11 @@ var catalogs = map[Language]map[string]string{
 		KeyWizardRetry:          "Повторить",
 		KeyWizardMorrowindTitle: "Morrowind",
 		KeyWizardMorrowindHint:  "Выберите папку с оригинальной игрой. Клиент только читает её.",
-		KeyWizardFontsTitle:     "Шрифты",
-		KeyWizardFontsHint:      "Файлы заменяют низкоприоритетные стандартные шрифты в My Games/OpenMW/Fonts, а в openmw.cfg добавляются строки fallback= — текст перестаёт быть размытым на высоком разрешении, а кириллица — квадратиками. Набор проверяется перед каждым запуском; неудачная загрузка повторяется при следующем Play.",
+		KeyWizardFontsTitle:     "Шрифты и интерфейс",
+		KeyWizardFontsHint:      "Файлы заменяют низкоприоритетные стандартные шрифты в My Games/OpenMW/Fonts, а в openmw.cfg добавляются строки fallback= — текст перестаёт быть размытым на высоком разрешении, а кириллица — квадратиками. Набор проверяется перед каждым запуском; неудачная загрузка повторяется при следующем Play. Четыре значения ниже — те же, что диалог «Настроить» пишет в settings.cfg; диапазон указан в подписи.",
 		KeyWizardFontsPending:   "Набор шрифтов %s будет скачан в фоне после настройки; Play из-за этого не блокируется.",
 		KeyWizardFontsPartial:   "Часть шрифтов отсутствует (%s). Они будут скачаны заново в фоне.",
-		KeyWizardUIVideoTitle:   "Интерфейс и видео",
-		KeyWizardUIVideoHint:    "Те же четыре значения, что диалог «Настроить» пишет в settings.cfg. У каждого поля диапазон в подписи и пояснение под ним.",
+		KeyFontsPreviewHint:     "Образец набран установленным файлом выбранного набора; до загрузки используется шрифт лаунчера.",
 		KeyWizardTES3MPTitle:    "TES3MP",
 		KeyWizardTES3MPHint:     "Клиент скачает и проверит TES3MP %s. Адрес сервера для этого шага не нужен.",
 

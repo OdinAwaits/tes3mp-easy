@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"path/filepath"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
@@ -11,32 +13,31 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
 )
 
-// fontSetLabelKeys maps catalog identifiers to their translations. A set that
-// is not listed here is shown by its identifier instead of being hidden.
-var fontSetLabelKeys = map[string]string{
-	fonts.SetNoto:  i18n.KeyFontsSetNoto,
-	fonts.SetInter: i18n.KeyFontsSetInter,
-	fonts.SetPlex:  i18n.KeyFontsSetPlex,
-}
-
-// fontSetLabel is the human name of a set in row summaries and dialogs.
+// fontSetLabel is the human name of a set in row summaries and dialogs. The
+// names live in the catalog, so adding a set never needs an i18n key; only the
+// "(default)" suffix is translated.
 func fontSetLabel(tr *i18n.Translator, id string) string {
-	if key, ok := fontSetLabelKeys[id]; ok {
-		return tr.T(key)
+	set := fonts.ResolveSet(id)
+	label := set.Name
+	if label == "" {
+		label = set.ID
 	}
-	return fonts.ResolveSet(id).ID
+	if set.ID == fonts.DefaultSet {
+		return label + " " + tr.T(i18n.KeyFontsSetDefault)
+	}
+	return label
 }
 
-// fontSetChooser is the radio list of catalog sets shared by the Installation
-// dialog and the wizard step. It keeps the identifiers next to the translated
-// labels, so the order always matches fonts.SetIDs().
+// fontSetChooser is the dropdown of catalog sets shared by the Installation
+// dialog and the wizard step. It keeps the identifiers next to the labels, so
+// the order always matches fonts.SetIDs().
 type fontSetChooser struct {
-	ids   []string
-	group *widget.RadioGroup
+	ids    []string
+	picker *widget.Select
 }
 
-// newFontSetChooser builds the list and preselects the current set. onChanged
-// may be nil; it receives a catalog identifier, never a translated label.
+// newFontSetChooser builds the dropdown and preselects the current set.
+// onChanged may be nil; it receives a catalog identifier, never a label.
 func newFontSetChooser(tr *i18n.Translator, current string,
 	onChanged func(string),
 ) *fontSetChooser {
@@ -46,10 +47,12 @@ func newFontSetChooser(tr *i18n.Translator, current string,
 		chooser.ids = append(chooser.ids, id)
 		labels = append(labels, fontSetLabel(tr, id))
 	}
-	chooser.group = widget.NewRadioGroup(labels, nil)
+	chooser.picker = widget.NewSelect(labels, nil)
+	// The callback is attached after the preselection: opening the dialog must
+	// not report a change that the user did not make.
 	chooser.selectID(current)
 	if onChanged != nil {
-		chooser.group.OnChanged = func(label string) {
+		chooser.picker.OnChanged = func(label string) {
 			if id := chooser.id(label); id != "" {
 				onChanged(id)
 			}
@@ -60,7 +63,7 @@ func newFontSetChooser(tr *i18n.Translator, current string,
 
 // selected returns the chosen identifier, or an empty string before a choice.
 func (c *fontSetChooser) selected() string {
-	return c.id(c.group.Selected)
+	return c.id(c.picker.Selected)
 }
 
 // selectID marks a set without running the change callback.
@@ -68,14 +71,14 @@ func (c *fontSetChooser) selectID(id string) {
 	wanted := fonts.ResolveSet(id).ID
 	for index, candidate := range c.ids {
 		if candidate == wanted {
-			c.group.SetSelected(c.group.Options[index])
+			c.picker.SetSelectedIndex(index)
 			return
 		}
 	}
 }
 
 func (c *fontSetChooser) id(label string) string {
-	for index, candidate := range c.group.Options {
+	for index, candidate := range c.picker.Options {
 		if candidate == label && index < len(c.ids) {
 			return c.ids[index]
 		}
@@ -83,11 +86,28 @@ func (c *fontSetChooser) id(label string) string {
 	return ""
 }
 
+// fontsDirOf is the Fonts folder the preview reads. A machine without a
+// configured Morrowind path has no folder yet, and the preview falls back to
+// the launcher font instead of failing the dialog.
+func (s *shell) fontsDirOf() string {
+	configDir, err := s.service.OpenMWConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(configDir, "Fonts")
+}
+
 // showFontsDialog switches the font set from the Installation checklist. The
 // files are downloaded in the background, and the row shows the progress.
 func (s *shell) showFontsDialog() {
 	tr := s.service.Translator()
 	chooser := newFontSetChooser(tr, s.service.FontSet(), nil)
+	preview := newFontPreview(tr, s.fontsDirOf(), chooser.selected())
+	chooser.picker.OnChanged = func(label string) {
+		if id := chooser.id(label); id != "" {
+			preview.selectSet(id)
+		}
+	}
 
 	problem := widget.NewLabel("")
 	problem.Wrapping = fyne.TextWrapWord
@@ -96,7 +116,9 @@ func (s *shell) showFontsDialog() {
 
 	content := container.NewVBox(
 		style.MutedLabel(tr.T(i18n.KeyFontsSetHint)),
-		chooser.group,
+		widget.NewLabel(tr.T(i18n.KeyFontsSet)),
+		chooser.picker,
+		preview.object(),
 		style.MutedLabel(tr.T(i18n.KeyFontsSetLicense)),
 		problem,
 	)
@@ -121,6 +143,6 @@ func (s *shell) showFontsDialog() {
 	})
 	apply.Importance = widget.HighImportance
 	popup.SetButtons([]fyne.CanvasObject{cancel, apply})
-	popup.Resize(fyne.NewSize(560, 380))
+	popup.Resize(fyne.NewSize(620, 420))
 	popup.Show()
 }

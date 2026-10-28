@@ -150,6 +150,55 @@ func TestInstallWritesFontsAndXML(t *testing.T) {
 	}
 }
 
+func TestInstallPrunesFontCacheOfOtherSets(t *testing.T) {
+	assets, bodies := testAssets(t, "")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		name := strings.TrimPrefix(request.URL.Path, "/")
+		body, ok := bodies[name]
+		if !ok {
+			http.NotFound(writer, request)
+			return
+		}
+		_, _ = writer.Write(body)
+	}))
+	defer server.Close()
+	assets, _ = testAssets(t, server.URL)
+
+	cacheDir := t.TempDir()
+	fontsCache := filepath.Join(cacheDir, "fonts")
+	if err := os.MkdirAll(fontsCache, 0o700); err != nil {
+		t.Fatalf("mkdir cache: %v", err)
+	}
+	stale := filepath.Join(fontsCache, "PlexSans.ttf")
+	if err := os.WriteFile(stale, []byte("previous set"), 0o600); err != nil {
+		t.Fatalf("write stale: %v", err)
+	}
+
+	result, err := Install(context.Background(), Options{
+		ConfigDir: t.TempDir(),
+		CacheDir:  cacheDir,
+		Assets:    assets,
+		Client:    server.Client(),
+		Attempts:  1,
+	})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if !result.State.Installed {
+		t.Fatalf("state = %+v, want installed", result.State)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale cache file %s survived: %v", stale, err)
+	}
+	for name := range bodies {
+		if _, err := os.Stat(filepath.Join(fontsCache, name)); err != nil {
+			t.Fatalf("cached %s of the installed set: %v", name, err)
+		}
+	}
+}
+
 func TestInstallWarnsWhenAFontFails(t *testing.T) {
 	assets, bodies := testAssets(t, "")
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter,

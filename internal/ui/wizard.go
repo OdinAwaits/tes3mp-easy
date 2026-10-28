@@ -24,7 +24,6 @@ const (
 	wizardMorrowind wizardStep = iota
 	wizardTES3MP
 	wizardFonts
-	wizardUIVideo
 	wizardStepCount
 )
 
@@ -69,6 +68,7 @@ type setupWizard struct {
 	uiVideoForm   *uiVideoForm
 	uiVideoStatus *widget.Label
 	uiVideoState  openmwcfg.State
+	fontPreview   *fontPreview
 }
 
 // showSetup opens the wizard at the folder that most often needs attention.
@@ -137,12 +137,10 @@ func wizardTitleKey(step wizardStep) string {
 		return i18n.KeyWizardMorrowindTitle
 	case wizardTES3MP:
 		return i18n.KeyWizardTES3MPTitle
-	case wizardFonts:
-		return i18n.KeyWizardFontsTitle
-	case wizardUIVideo:
-		return i18n.KeyWizardUIVideoTitle
 	default:
-		return i18n.KeyWizardUIVideoTitle
+		// The last step holds both the font set and the settings.cfg values:
+		// showing them apart made the wizard four screens of one topic.
+		return i18n.KeyWizardFontsTitle
 	}
 }
 
@@ -163,12 +161,8 @@ func (w *setupWizard) stepObjects(tr *i18n.Translator) []fyne.CanvasObject {
 		return w.morrowindObjects(tr)
 	case wizardTES3MP:
 		return w.tes3mpObjects(tr)
-	case wizardFonts:
-		return w.fontsObjects(tr)
-	case wizardUIVideo:
-		return w.uiVideoObjects(tr)
 	default:
-		return w.uiVideoObjects(tr)
+		return w.fontsObjects(tr)
 	}
 }
 
@@ -208,14 +202,27 @@ func (w *setupWizard) fontsObjects(tr *i18n.Translator) []fyne.CanvasObject {
 	w.fontsStatus.Wrapping = fyne.TextWrapWord
 	w.fontSetID = w.shell.service.FontSet()
 	chooser := newFontSetChooser(tr, w.fontSetID, w.selectFontSet)
+	w.fontPreview = newFontPreview(tr, w.shell.fontsDirOf(), w.fontSetID)
 	w.renderFontsState(tr)
-	return []fyne.CanvasObject{
+
+	// settings.cfg belongs to the same screen: the font set and the four
+	// values it renders are one decision, and the wizard does not need a
+	// second click on Next for it.
+	w.uiVideoStatus = widget.NewLabel("")
+	w.uiVideoStatus.Wrapping = fyne.TextWrapWord
+	w.uiVideoStatus.SetText(uiVideoStateLabel(tr, w.uiVideoState))
+	w.uiVideoForm = newUIVideoForm(openmwcfg.Defaults())
+
+	objects := []fyne.CanvasObject{
 		wizardHint(tr, i18n.KeyWizardFontsHint),
 		widget.NewLabel(tr.T(i18n.KeyFontsSet)),
-		chooser.group,
+		chooser.picker,
+		w.fontPreview.object(),
 		style.MutedLabel(tr.T(i18n.KeyFontsSetLicense)),
 		w.fontsStatus,
+		w.uiVideoStatus,
 	}
+	return append(objects, w.uiVideoForm.objects(tr)...)
 }
 
 // selectFontSet stores the chosen set. The files are downloaded after Finish,
@@ -230,6 +237,9 @@ func (w *setupWizard) selectFontSet(id string) {
 	}
 	w.fontSetID = id
 	w.clearProblem()
+	if w.fontPreview != nil {
+		w.fontPreview.selectSet(id)
+	}
 	w.renderFontsState(w.shell.service.Translator())
 }
 
@@ -253,18 +263,6 @@ func (w *setupWizard) tes3mpObjects(tr *i18n.Translator) []fyne.CanvasObject {
 		w.tes3mpStatus,
 		container.NewBorder(nil, nil, nil, install, w.tes3mpProgress),
 	}
-}
-
-func (w *setupWizard) uiVideoObjects(tr *i18n.Translator) []fyne.CanvasObject {
-	w.uiVideoStatus = widget.NewLabel("")
-	w.uiVideoStatus.Wrapping = fyne.TextWrapWord
-	w.uiVideoStatus.SetText(uiVideoStateLabel(tr, w.uiVideoState))
-	w.uiVideoForm = newUIVideoForm(openmwcfg.Defaults())
-	objects := []fyne.CanvasObject{
-		wizardHint(tr, i18n.KeyWizardUIVideoHint),
-		w.uiVideoStatus,
-	}
-	return append(objects, w.uiVideoForm.objects(tr)...)
 }
 
 // loadUIVideo fills the step from the current settings.cfg. The file appears
@@ -308,7 +306,7 @@ func (w *setupWizard) updateButtons() {
 		return
 	}
 	tr := w.shell.service.Translator()
-	if w.step == wizardUIVideo {
+	if w.step == wizardFonts {
 		w.next.SetText(tr.T(i18n.KeyWizardFinish))
 	} else {
 		w.next.SetText(tr.T(i18n.KeyWizardNext))
@@ -338,17 +336,14 @@ func (w *setupWizard) canAdvance() bool {
 		return true
 	case wizardTES3MP:
 		return w.tes3mpReady
-	case wizardUIVideo:
-		// A saved step must not carry an out-of-range value to settings.cfg.
+	default:
+		// The font download never blocks the game, but a saved step must not
+		// carry an out-of-range value to settings.cfg.
 		if w.uiVideoForm == nil {
 			return false
 		}
 		_, err := w.uiVideoForm.values()
 		return err == nil
-	default:
-		// Fonts never block the game: a failed download is a warning and the
-		// next Play retries.
-		return true
 	}
 }
 
@@ -367,9 +362,7 @@ func (w *setupWizard) advance() {
 		w.gotoStep(wizardTES3MP)
 	case wizardTES3MP:
 		w.gotoStep(wizardFonts)
-	case wizardFonts:
-		w.gotoStep(wizardUIVideo)
-	case wizardUIVideo:
+	default:
 		if w.saveUIVideo() {
 			w.finishWizard()
 		}
@@ -385,8 +378,6 @@ func (w *setupWizard) previous() {
 		w.gotoStep(wizardMorrowind)
 	case wizardFonts:
 		w.gotoStep(wizardTES3MP)
-	case wizardUIVideo:
-		w.gotoStep(wizardFonts)
 	}
 }
 
@@ -543,12 +534,10 @@ func (w *setupWizard) enterStep() {
 	case wizardTES3MP:
 		w.checkTES3MP()
 	case wizardFonts:
-		if w.fontsAttempted {
-			return
+		if !w.fontsAttempted {
+			w.fontsAttempted = true
+			w.renderFontsState(w.shell.service.Translator())
 		}
-		w.fontsAttempted = true
-		w.renderFontsState(w.shell.service.Translator())
-	case wizardUIVideo:
 		w.loadUIVideo()
 	}
 }

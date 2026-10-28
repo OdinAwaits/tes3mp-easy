@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -524,10 +526,15 @@ func TestLocaleProgress(t *testing.T) {
 func TestWizardStepsAreTranslatedAndOrdered(t *testing.T) {
 	translator := i18n.New(i18n.English)
 	want := []wizardStep{
-		wizardMorrowind, wizardTES3MP, wizardFonts, wizardUIVideo,
+		wizardMorrowind, wizardTES3MP, wizardFonts,
 	}
 	if int(wizardStepCount) != len(want) {
 		t.Fatalf("wizard has %d steps, want %d", wizardStepCount, len(want))
+	}
+	if got := wizardTitleKey(wizardStepCount - 1); got !=
+		i18n.KeyWizardFontsTitle {
+		t.Fatalf("last step title key = %q, want %q", got,
+			i18n.KeyWizardFontsTitle)
 	}
 	seen := make(map[string]wizardStep, len(want))
 	for _, step := range want {
@@ -557,23 +564,61 @@ func TestFontSetChooserMapsLabelsToIDs(t *testing.T) {
 	if len(changed) != 0 {
 		t.Fatalf("preselect fired the callback: %q", changed)
 	}
-	chooser.group.SetSelected(fontSetLabel(tr, fonts.SetInter))
+	chooser.picker.SetSelected(fontSetLabel(tr, fonts.SetInter))
 	if got := chooser.selected(); got != fonts.SetInter {
 		t.Fatalf("selected() = %q, want %q", got, fonts.SetInter)
 	}
 	if len(changed) != 1 || changed[0] != fonts.SetInter {
 		t.Fatalf("callback = %q, want [%s]", changed, fonts.SetInter)
 	}
+	// Every set is labelled by its catalog name, so a new family cannot land
+	// in the dropdown as a bare identifier.
 	for _, id := range fonts.SetIDs() {
-		if _, ok := fontSetLabelKeys[id]; !ok {
-			t.Fatalf("set %s has no translation", id)
+		set, ok := fonts.LookupSet(id)
+		if !ok {
+			t.Fatalf("LookupSet(%s) failed", id)
 		}
-		if label := fontSetLabel(tr, id); label == "" || label == id {
-			t.Fatalf("fontSetLabel(%s) = %q", id, label)
+		if label := fontSetLabel(tr, id); !strings.Contains(label, set.Name) {
+			t.Fatalf("fontSetLabel(%s) = %q, want the catalog name %q",
+				id, label, set.Name)
 		}
 	}
-	if got := fontSetLabel(tr, "bogus"); got != fonts.DefaultSet {
-		t.Fatalf("fontSetLabel(bogus) = %q, want the default id", got)
+	def := fontSetLabel(tr, fonts.DefaultSet)
+	if !strings.HasSuffix(def, "(default)") {
+		t.Fatalf("default label = %q, want the translated suffix", def)
+	}
+	if got := fontSetLabel(tr, "bogus"); got != def {
+		t.Fatalf("fontSetLabel(bogus) = %q, want %q", got, def)
+	}
+}
+
+func TestFontPreviewFollowsTheInstalledFile(t *testing.T) {
+	tr := i18n.New(i18n.English)
+	dir := t.TempDir()
+	assets := fonts.ResolveSet(fonts.SetInter).Assets
+	preview := newFontPreview(tr, dir, fonts.SetInter)
+	if preview.text.FontSource == nil {
+		t.Fatal("preview has no font source")
+	}
+	if got := preview.text.FontSource.Name(); got == assets[0].Name {
+		t.Fatalf("preview used %q before the set was installed", got)
+	}
+	path := filepath.Join(dir, assets[0].Name)
+	if err := os.WriteFile(path, []byte("pretend ttf"), 0o600); err != nil {
+		t.Fatalf("write font: %v", err)
+	}
+	preview.selectSet(fonts.SetInter)
+	if got := preview.text.FontSource.Name(); got != assets[0].Name {
+		t.Fatalf("preview font = %q, want %q", got, assets[0].Name)
+	}
+	// A set without files keeps the launcher font instead of an empty sample.
+	other := newFontPreview(tr, dir, fonts.SetPlex)
+	plexName := fonts.ResolveSet(fonts.SetPlex).Assets[0].Name
+	if got := other.text.FontSource.Name(); got == plexName {
+		t.Fatalf("preview invented the missing file %q", got)
+	}
+	if other.text.Text == "" || !strings.Contains(other.text.Text, "Съешь") {
+		t.Fatalf("sample = %q, want Latin and Cyrillic", other.text.Text)
 	}
 }
 

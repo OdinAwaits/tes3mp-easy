@@ -1,7 +1,19 @@
 # BL-012. Шрифты: десять наборов, Select, превью и один шаг
 
-**Статус:** новое (28.10.2026), не начато. Включает BL-016 («Каталог шрифтов:
-10 наборов и Select вместо радио»).
+**Статус:** сделано (28.10.2026). Включает BL-016 («Каталог шрифтов: 10 наборов
+и Select вместо радио»). Десять наборов с закреплёнными URL и SHA256 —
+`internal/fonts/sets.go`; файлы объявлены shared-переменными, поэтому общий
+`NotoSerif.ttf` не расходится между наборами. Названия — `fonts.Set.Name`, в
+i18n остался только суффикс «(по умолчанию)». В мастере три шага: «Шрифты и
+интерфейс» = `Select` + превью + поля `settings.cfg`. Превью —
+`internal/ui/font_preview.go` (установленный TTF, иначе шрифт темы), тот же
+виджет в **Installation → Fonts → Change set**. `cache/fonts/` после установки
+чистится от файлов других наборов (`pruneFontCache`). Все десять наборов
+проверены живой установкой 28.10.2026. Защита: `TestCatalogIsComplete`
+(10 наборов, порядок, дедуп внутри набора), `TestInstallPrunesFontCacheOfOtherSets`,
+`TestFontSetChooserMapsLabelsToIDs`, `TestFontPreviewFollowsTheInstalledFile`,
+`TestWizardStepsAreTranslatedAndOrdered`, `go test ./...`. Документация:
+`docs/v2/06-client.md` §3/§9/§12, `docs/v2/03-contracts.md`, `docs/v2/07-testing.md`.
 
 **Симптом.**
 
@@ -77,9 +89,10 @@
    только имя, но и SHA256 (одинаковый файл — не конфликт). `removeStaleFonts`
    (`internal/fonts/fonts.go:317-338`) уже удаляет только имена, которых нет в
    текущем наборе, и дедуплицирует через `ManagedAssetNames`, так что общий
-   `NotoSerif.ttf` переживёт переключение безопасно. Добавить очистку
-   `cache/fonts/` после успешной установки (сейчас не чистится), иначе при
-   десяти наборах каталог распухнет на десятки мегабайт.
+   `NotoSerif.ttf` переживёт переключение безопасно. `cache/fonts/` чистится
+   после успешной установки (`pruneFontCache`): файлы установленного набора
+   остаются, файлы других наборов удаляются, иначе при десяти наборах каталог
+   распухнет на десятки мегабайт.
 4. Заменить радио на `widget.NewSelect(labels, onChanged)`
    (`fyne.io/fyne/v2/widget/select.go:49`): те же параллельные `ids`/`labels`,
    `selected()` берёт поле `Selected`, `selectID` — `SetSelected`. `Select`

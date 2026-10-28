@@ -32,24 +32,9 @@ type Asset struct {
 }
 
 // Assets is the default set (SetNoto): Noto Sans, Noto Serif and Roboto Mono.
-// All three are OFL-licensed Google Fonts; the other sets live in sets.go.
-var Assets = []Asset{
-	{
-		Name:   "NotoSans.ttf",
-		URL:    fontRoot + "/notosans/NotoSans%5Bwdth,wght%5D.ttf",
-		SHA256: "bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d",
-	},
-	{
-		Name:   "NotoSerif.ttf",
-		URL:    fontRoot + "/notoserif/NotoSerif%5Bwdth,wght%5D.ttf",
-		SHA256: "4d8e6761424656867019081a1a01336f3cb086982682698714054fc33f782713",
-	},
-	{
-		Name:   "RobotoMono.ttf",
-		URL:    fontRoot + "/robotomono/RobotoMono%5Bwght%5D.ttf",
-		SHA256: "66a80e79d17e4c7cabd162e2916578a4cc08fd19eef6e2a643305eae9c567b2b",
-	},
-}
+// All three are OFL-licensed Google Fonts; the files themselves are pinned in
+// sets.go together with the rest of the catalog.
+var Assets = []Asset{notoSans, notoSerif, robotoMono}
 
 // Stage is the current installation phase.
 type Stage string
@@ -185,6 +170,7 @@ func Install(ctx context.Context, options Options) (Result, error) {
 		}
 		state.XMLPath = xmlPath
 		removeStaleFonts(fontsDir, options.Assets)
+		pruneFontCache(filepath.Join(options.CacheDir, "fonts"), options.Assets)
 	} else {
 		for _, asset := range options.Assets {
 			path := filepath.Join(fontsDir, asset.Name)
@@ -334,6 +320,31 @@ func removeStaleFonts(fontsDir string, assets []Asset) {
 			continue
 		}
 		_ = os.Remove(path)
+	}
+}
+
+// pruneFontCache drops cached files of other sets after a successful install.
+// Ten sets would otherwise keep tens of megabytes in cache/fonts, while a cache
+// hit only saves a download when the user switches back to the same set. The
+// files of the installed set stay, so a retry of the same set is offline. A
+// failure is ignored: the cache is a convenience, not a contract.
+func pruneFontCache(cacheDir string, assets []Asset) {
+	keep := make(map[string]struct{}, len(assets))
+	for _, asset := range assets {
+		keep[strings.ToLower(asset.Name)] = struct{}{}
+	}
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if _, ok := keep[strings.ToLower(entry.Name())]; ok {
+			continue
+		}
+		_ = os.Remove(filepath.Join(cacheDir, entry.Name()))
 	}
 }
 
