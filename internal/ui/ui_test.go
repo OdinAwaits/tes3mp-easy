@@ -284,7 +284,7 @@ func TestProgressFraction(t *testing.T) {
 			Stage: tes3mp.StageExtracting}, want: 1,
 		},
 		{name: "unknown total", update: tes3mp.Progress{
-			Stage: tes3mp.StageDownloading, Downloaded: 10}, want: 1,
+			Stage: tes3mp.StageDownloading, Downloaded: 10}, want: 0,
 		},
 		{name: "half", update: tes3mp.Progress{
 			Stage: tes3mp.StageDownloading, Downloaded: 5, Total: 10}, want: 0.5,

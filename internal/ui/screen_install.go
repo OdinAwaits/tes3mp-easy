@@ -357,14 +357,6 @@ func (s *shell) installationAdvanced(tr *i18n.Translator) fyne.CanvasObject {
 			tr.T(i18n.KeySettingsProton), container.NewVBox(protonRow)))
 	}
 
-	profile := container.NewBorder(nil, nil, nil,
-		aboutBadge(tr.T(i18n.KeyInstallAutomatic), widget.LowImportance),
-		container.NewVBox(
-			widget.NewLabel(tr.T(i18n.KeyInstallClientProfile)),
-			style.MutedLabel(tr.T(i18n.KeyInstallProfileAuto))))
-	items = append(items, widget.NewAccordionItem(
-		tr.T(i18n.KeyInstallClientProfile), container.NewVBox(profile)))
-
 	accordion := widget.NewAccordion(items...)
 	return container.NewVBox(
 		style.Subheading(tr.T(i18n.KeyCommonAdvanced)),
@@ -442,7 +434,7 @@ func (s *shell) logFolder() string {
 // wording as the wizard.
 func (s *shell) installTES3MPFromList() {
 	tr := s.service.Translator()
-	status := widget.NewLabel(tr.T(i18n.KeySetupVerifying))
+	status := widget.NewLabel(tr.T(i18n.KeySetupStarting))
 	progress := widget.NewProgressBar()
 	progress.Min = 0
 	progress.Max = 1

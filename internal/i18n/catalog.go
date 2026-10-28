@@ -80,9 +80,6 @@ const (
 	KeyInstallBrowse           = "install.browse"
 	KeyInstallWorkDirHint      = "install.work_dir_hint"
 	KeyInstallProtonHint       = "install.proton_hint"
-	KeyInstallClientProfile    = "install.client_profile"
-	KeyInstallAutomatic        = "install.automatic"
-	KeyInstallProfileAuto      = "install.profile_auto"
 
 	KeyUninstall              = "uninstall"
 	KeyUninstallDangerZone    = "uninstall.danger_zone"
@@ -291,6 +288,7 @@ const (
 	KeySetupTES3MPMissing       = "setup.tes3mp.missing"
 	KeySetupInstall             = "setup.install"
 	KeySetupDownloading         = "setup.downloading"
+	KeySetupStarting            = "setup.starting"
 	KeySetupVerifying           = "setup.verifying"
 	KeySetupExtracting          = "setup.extracting"
 	KeySetupInstalling          = "setup.installing"
@@ -404,9 +402,6 @@ var catalogs = map[Language]map[string]string{
 		KeyInstallBrowse:               "Browse…",
 		KeyInstallWorkDirHint:          "Keep the default. Changing the folder after installation requires installing TES3MP and the mods again.",
 		KeyInstallProtonHint:           "Only needed on Linux when Steam does not provide Proton.",
-		KeyInstallClientProfile:        "Client profile",
-		KeyInstallAutomatic:            "Automatic",
-		KeyInstallProfileAuto:          "The client profile is automatic: openmw.cfg and the endpoint are rebuilt from the active server on every Play.",
 		KeyUninstall:                   "Uninstall",
 		KeyUninstallDangerZone:         "Danger zone",
 		KeyUninstallTitle:              "Uninstall TES3MP Easy",
@@ -613,6 +608,7 @@ var catalogs = map[Language]map[string]string{
 		KeySetupTES3MPMissing:       "TES3MP is not installed yet.",
 		KeySetupInstall:             "Install TES3MP",
 		KeySetupDownloading:         "Downloading TES3MP: %s of %s",
+		KeySetupStarting:            "Preparing the TES3MP download...",
 		KeySetupVerifying:           "Checking the TES3MP archive...",
 		KeySetupExtracting:          "Extracting TES3MP...",
 		KeySetupInstalling:          "Finishing the TES3MP installation...",
@@ -620,7 +616,7 @@ var catalogs = map[Language]map[string]string{
 
 		KeyAboutTitle:                 "About",
 		KeyAboutIntro:                 "A client that installs and launches TES3MP with the right fonts and settings, without editing files by hand.",
-		KeyAboutVersion:               "Version",
+		KeyAboutVersion:               "Version %s",
 		KeyAboutHint:                  "How the client is built and what is installed.",
 		KeyAboutInterfaceLanguage:     "Interface language",
 		KeyAboutInterfaceLanguageHint: "Applies immediately. The game language stays in Installation.",
@@ -630,7 +626,7 @@ var catalogs = map[Language]map[string]string{
 		KeyAboutProject:               "Project",
 		KeyAboutOpenPage:              "Open project page",
 		KeyAboutComponents:            "Components",
-		KeyAboutTES3MP:                "TES3MP",
+		KeyAboutTES3MP:                "TES3MP %s",
 		KeyAboutTES3MPHint:            "Multiplayer fork of OpenMW used to play on servers.",
 		KeyAboutOpenMW:                "OpenMW",
 		KeyAboutOpenMWHint:            "Open-source engine the client configures and launches.",
@@ -724,9 +720,6 @@ var catalogs = map[Language]map[string]string{
 		KeyInstallBrowse:               "Выбрать…",
 		KeyInstallWorkDirHint:          "Оставьте по умолчанию. Смена папки после установки требует заново установить TES3MP и моды.",
 		KeyInstallProtonHint:           "Нужно только на Linux, если Proton не предоставлен Steam.",
-		KeyInstallClientProfile:        "Профиль клиента",
-		KeyInstallAutomatic:            "Автоматически",
-		KeyInstallProfileAuto:          "Профиль клиента автоматический: openmw.cfg и endpoint пересобираются из активного сервера при каждом запуске.",
 		KeyUninstall:                   "Удалить установку",
 		KeyUninstallDangerZone:         "Опасная зона",
 		KeyUninstallTitle:              "Удаление TES3MP Easy",
@@ -933,6 +926,7 @@ var catalogs = map[Language]map[string]string{
 		KeySetupTES3MPMissing:       "TES3MP ещё не установлен.",
 		KeySetupInstall:             "Установить TES3MP",
 		KeySetupDownloading:         "Загрузка TES3MP: %s из %s",
+		KeySetupStarting:            "Подготовка загрузки TES3MP...",
 		KeySetupVerifying:           "Проверка архива TES3MP...",
 		KeySetupExtracting:          "Распаковка TES3MP...",
 		KeySetupInstalling:          "Завершение установки TES3MP...",
@@ -940,7 +934,7 @@ var catalogs = map[Language]map[string]string{
 
 		KeyAboutTitle:                 "О клиенте",
 		KeyAboutIntro:                 "Клиент, который устанавливает и запускает TES3MP с нужными шрифтами и настройками — без ручного редактирования файлов.",
-		KeyAboutVersion:               "Версия",
+		KeyAboutVersion:               "Версия %s",
 		KeyAboutHint:                  "Из чего собран клиент и что установлено.",
 		KeyAboutInterfaceLanguage:     "Язык интерфейса",
 		KeyAboutInterfaceLanguageHint: "Применяется сразу. Язык игры остаётся на вкладке «Установка».",
@@ -950,7 +944,7 @@ var catalogs = map[Language]map[string]string{
 		KeyAboutProject:               "Проект",
 		KeyAboutOpenPage:              "Открыть страницу проекта",
 		KeyAboutComponents:            "Компоненты",
-		KeyAboutTES3MP:                "TES3MP",
+		KeyAboutTES3MP:                "TES3MP %s",
 		KeyAboutTES3MPHint:            "Сетевая версия OpenMW для игры на серверах.",
 		KeyAboutOpenMW:                "OpenMW",
 		KeyAboutOpenMWHint:            "Свободный движок, который клиент настраивает и запускает.",

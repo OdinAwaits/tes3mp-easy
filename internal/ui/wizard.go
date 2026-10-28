@@ -602,7 +602,7 @@ func (w *setupWizard) installTES3MP() {
 	status := w.tes3mpStatus
 	progress := w.tes3mpProgress
 	if status != nil {
-		status.SetText(tr.T(i18n.KeySetupVerifying))
+		status.SetText(tr.T(i18n.KeySetupStarting))
 	}
 	if progress != nil {
 		progress.SetValue(0)

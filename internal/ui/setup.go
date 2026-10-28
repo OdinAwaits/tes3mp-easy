@@ -8,8 +8,13 @@ import (
 )
 
 func progressFraction(update tes3mp.Progress) float64 {
-	if update.Stage != tes3mp.StageDownloading || update.Total <= 0 {
+	if update.Stage != tes3mp.StageDownloading {
 		return 1
+	}
+	// The installer reports StageDownloading before the first byte arrives;
+	// an unknown total is "not started yet", not "finished".
+	if update.Total <= 0 {
+		return 0
 	}
 	value := float64(update.Downloaded) / float64(update.Total)
 	if value < 0 {
