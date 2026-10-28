@@ -9,4 +9,4 @@ var Client = "0.2.6"
 
 // Server is the server release version: ops, the panel and the archive built by
 // cmd/tes3mp-easy-pack. It matches the server-v<version> tag.
-var Server = "0.3.0"
+var Server = "0.3.1"
