@@ -5,7 +5,7 @@
 # Usage:
 #   bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
 #
-# TES3MP_EASY_VERSION pins a server release (for example 0.2.4). Arguments are
+# TES3MP_EASY_VERSION pins a server release (for example 0.2.5). Arguments are
 # passed to bootstrap.sh, so --check and --root work as usual.
 set -Eeuo pipefail
 export LC_ALL=C
