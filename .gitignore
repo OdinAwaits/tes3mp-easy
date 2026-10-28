@@ -8,6 +8,9 @@ releases/
 # Local todo (keep on disk, not in repo)
 todo-*.md
 
+# Cline rules for the local IDE setup
+.clinerules
+
 # Editor garbage
 *.swp
 *~
