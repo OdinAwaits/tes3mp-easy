@@ -1278,7 +1278,7 @@ body.auth {
   gap: .15rem;
 }
 
-.account-menu .language-option {
+.account-menu .menu-option {
   width: 100%;
   justify-content: flex-start;
   padding: .4rem .55rem;
@@ -1289,12 +1289,12 @@ body.auth {
   text-align: left;
 }
 
-.account-menu .language-option:hover:not(:disabled) {
+.account-menu .menu-option:hover:not(:disabled) {
   background: var(--hover);
   color: var(--text);
 }
 
-.account-menu .language-option:disabled {
+.account-menu .menu-option:disabled {
   color: var(--text);
   font-weight: 600;
   cursor: default;

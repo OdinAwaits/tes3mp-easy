@@ -19,7 +19,7 @@
       <form class="language-form" method="post" action="/admin/language">
         {{template "csrf" .}}
         <input type="hidden" name="next" value="{{.Path}}">
-        {{range .Languages}}<button class="language-option" type="submit" name="language" value="{{.Code}}"{{if .Current}} disabled{{end}}>{{.Name}}</button>
+        {{range .Languages}}<button class="menu-option" type="submit" name="language" value="{{.Code}}"{{if .Current}} disabled{{end}}>{{.Name}}</button>
         {{end}}
       </form>
     </div>
@@ -30,7 +30,7 @@
       <a href="/admin/password"{{if eq .ActiveNav "password"}} aria-current="page"{{end}}>{{.T "panel.nav.change_password"}}</a>
       <form method="post" action="/admin/logout">
         {{template "csrf" .}}
-        <button class="button button--ghost button--small" type="submit">{{.T "panel.nav.logout"}}</button>
+        <button class="menu-option" type="submit">{{.T "panel.nav.logout"}}</button>
       </form>
     </div>
   </details>

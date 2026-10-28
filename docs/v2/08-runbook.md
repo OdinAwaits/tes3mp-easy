@@ -794,6 +794,12 @@ sudo systemctl restart tes3mp-panel.service
 - проверьте, что `tes3mp-panel` входит в группу `tes3mp` и читает бэкапы;
 - проверьте sudo: `sudo -u tes3mp-panel sudo -n -u tes3mp \
   /opt/tes3mp-easy/bin/tes3mp-easy-ops --root /tes3mp-easy --json status`.
+- если `systemctl restart` отвечает `Start request repeated too quickly` или в
+  journald `start-limit-hit`, сработал `StartLimitBurst=2` (защита Let's Encrypt
+  от шквала ACME-запросов: лимит считает и ручные рестарты). Сбросьте состояние и
+  запустите панель: `sudo systemctl reset-failed tes3mp-panel.service` и
+  `sudo systemctl start tes3mp-panel.service`. `bootstrap.sh` делает этот сброс
+  сам.
 
 Пока панель лежит, бэкапы и игру можно обслуживать через CLI.
 
@@ -882,6 +888,26 @@ sudo systemctl restart tes3mp-panel.service
 положите `cert.pem` и `key.pem` в `/tes3mp-easy/panel-data/tls/` с правами
 `0600` и укажите `TES3MP_PANEL_TLS_MODE=files`. Штатная установка этого не
 требует.
+
+Так поднимают панель на стенде без доступа к `80/tcp` или когда лимит для IP
+исчерпан (самоподписанный сертификат, браузер покажет предупреждение):
+
+```bash
+sudo openssl req -x509 -newkey rsa:2048 -days 365 -nodes \
+  -keyout /tmp/key.pem -out /tmp/cert.pem \
+  -subj "/CN=<IP>" -addext "subjectAltName=IP:<IP>"
+sudo install -m 0600 -o tes3mp-panel -g tes3mp-panel /tmp/cert.pem \
+  /tes3mp-easy/panel-data/tls/cert.pem
+sudo install -m 0600 -o tes3mp-panel -g tes3mp-panel /tmp/key.pem \
+  /tes3mp-easy/panel-data/tls/key.pem
+sudo sed -i 's/^TES3MP_PANEL_TLS_MODE=.*/TES3MP_PANEL_TLS_MODE=files/' \
+  /etc/tes3mp-easy/panel.env
+sudo systemctl reset-failed tes3mp-panel.service
+sudo systemctl start tes3mp-panel.service
+```
+
+Повторный запуск `bootstrap.sh` перепишет `panel.env` обратно на `acme`; для
+стенда правьте файл после установки.
 
 ## 14. Копия бэкапов на другую машину
 
