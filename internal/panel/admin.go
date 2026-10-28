@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Saagilat/tes3mp-easy/internal/archive"
+	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 )
 
 const (
@@ -94,8 +95,10 @@ func (h *panelHandler) doctorMutationError(ctx context.Context) (bool, string) {
 }
 
 type adminPage struct {
+	pageI18n
 	CSRF            string
 	ActiveNav       string
+	Path            string
 	Nav             string
 	Notice          string
 	Error           string
@@ -199,30 +202,33 @@ type adminStaffPlayer struct {
 }
 
 var adminNoticeMessages = map[string]string{
-	"server_started":   "Сервер запускается.",
-	"server_stopped":   "Сервер остановлен.",
-	"server_restarted": "Сервер перезапускается.",
-	"backup_created":   "Резервная копия создана.",
-	"mods_uploaded":    "Архив модов загружен и импортирован.",
-	"mods_deployed":    "Моды задеплоены.",
-	"mods_rolled_back": "Предыдущий архив модов задеплоен.",
-	"state_deployed":   "Состояние восстановлено.",
-	"state_restored":   "Состояние и моды восстановлены из загруженного архива.",
-	"staff_saved":      "Ранг изменён. Перезапустите сервер, чтобы применить его.",
+	"server_started":   i18n.KeyPanelNoticeServerStarted,
+	"server_stopped":   i18n.KeyPanelNoticeServerStopped,
+	"server_restarted": i18n.KeyPanelNoticeServerRestart,
+	"backup_created":   i18n.KeyPanelNoticeBackupCreated,
+	"mods_uploaded":    i18n.KeyPanelNoticeModsUploaded,
+	"mods_deployed":    i18n.KeyPanelNoticeModsDeployed,
+	"mods_rolled_back": i18n.KeyPanelNoticeModsRolledBack,
+	"state_deployed":   i18n.KeyPanelNoticeStateDeployed,
+	"state_restored":   i18n.KeyPanelNoticeStateRestored,
+	"staff_saved":      i18n.KeyPanelNoticeStaffSaved,
 }
 
 var adminRestartNotices = map[string]bool{
 	"staff_saved": true,
 }
 
-func adminPageFor(r *http.Request, session sessionState) adminPage {
+func (h *panelHandler) adminPageFor(r *http.Request, session sessionState) adminPage {
 	query := r.URL.Query()
 	status := query.Get("ok")
+	localized := h.pageI18n()
 	page := adminPage{
+		pageI18n:  localized,
 		CSRF:      session.CSRF,
 		ActiveNav: adminActiveNav(r.URL.Path),
+		Path:      r.URL.Path,
 		Nav:       "admin",
-		Notice:    adminNoticeMessages[status],
+		Notice:    localized.T(adminNoticeMessages[status]),
 	}
 	page.RestartRequired = query.Get("restart") == "1" || adminRestartNotices[status]
 	return page
@@ -334,11 +340,11 @@ func (h *panelHandler) dashboardData(r *http.Request,
 	session sessionState,
 ) dashboardPageData {
 	data := dashboardPageData{
-		adminPage:   adminPageFor(r, session),
+		adminPage:   h.adminPageFor(r, session),
 		Status:      "unknown",
-		StatusLabel: statusLabel("unknown"),
+		StatusLabel: statusLabel(h.tr(), "unknown"),
 		Health:      "unknown",
-		HealthLabel: healthLabel("unknown"),
+		HealthLabel: healthLabel(h.tr(), "unknown"),
 	}
 	data.ServerName = defaultServerName
 	name, port := h.serverNamePort()
@@ -350,14 +356,14 @@ func (h *panelHandler) dashboardData(r *http.Request,
 
 	if h.ops == nil {
 		data.Status = "service_unavailable"
-		data.StatusLabel = statusLabel(data.Status)
+		data.StatusLabel = statusLabel(h.tr(), data.Status)
 		data.StatusError = "ops не настроен: управление сервером недоступно."
 	} else {
 		status, err := h.ops.Status(r.Context(), "tes3mp.service")
 		if err != nil {
 			code, message, _ := adminFailure(err)
 			data.Status = "service_unavailable"
-			data.StatusLabel = statusLabel(data.Status)
+			data.StatusLabel = statusLabel(h.tr(), data.Status)
 			if code == http.StatusServiceUnavailable {
 				data.StatusError = message
 			} else {
@@ -367,7 +373,7 @@ func (h *panelHandler) dashboardData(r *http.Request,
 			if status.State != "" {
 				data.Status = status.State
 			}
-			data.StatusLabel = statusLabel(data.Status)
+			data.StatusLabel = statusLabel(h.tr(), data.Status)
 			data.Health = status.Health
 			if data.Health == "" {
 				data.Health = "unknown"
@@ -379,9 +385,9 @@ func (h *panelHandler) dashboardData(r *http.Request,
 
 	}
 
-	data.HealthLabel = healthLabel(data.Health)
+	data.HealthLabel = healthLabel(h.tr(), data.Health)
 	if data.StartedAt != "" {
-		data.StartedAtLabel = timeLabel(data.StartedAt, h.now())
+		data.StartedAtLabel = timeLabel(h.tr(), data.StartedAt, h.now())
 	}
 	data.CanStart, data.CanStop = serverActions(data.Status)
 
@@ -466,10 +472,10 @@ func (h *panelHandler) handleAdminStatus(w http.ResponseWriter, r *http.Request,
 	if response.Health == "" {
 		response.Health = "unknown"
 	}
-	response.StatusLabel = statusLabel(response.Status)
-	response.HealthLabel = healthLabel(response.Health)
+	response.StatusLabel = statusLabel(h.tr(), response.Status)
+	response.HealthLabel = healthLabel(h.tr(), response.Health)
 	if response.StartedAt != nil {
-		label := timeLabel(*response.StartedAt, h.now())
+		label := timeLabel(h.tr(), *response.StartedAt, h.now())
 		response.StartedAtLabel = &label
 	}
 	response.CanStart, response.CanStop = serverActions(response.Status)
@@ -568,12 +574,12 @@ func (h *panelHandler) handleLogs(w http.ResponseWriter, r *http.Request,
 ) {
 	tail, err := parseLogTail(r.URL.Query().Get("tail"))
 	if err != nil {
-		data := adminLogsPageData{adminPage: adminPageFor(r, session), Tail: defaultLogTail}
+		data := adminLogsPageData{adminPage: h.adminPageFor(r, session), Tail: defaultLogTail}
 		data.Error = "Параметр tail должен быть числом от 1 до 2000."
 		h.render(w, http.StatusBadRequest, "admin_logs.html", data)
 		return
 	}
-	data := adminLogsPageData{adminPage: adminPageFor(r, session), Tail: tail}
+	data := adminLogsPageData{adminPage: h.adminPageFor(r, session), Tail: tail}
 	if h.ops == nil {
 		status, message, _ := adminFailure(errOpsUnavailable)
 		data.Error = message
@@ -621,7 +627,7 @@ func (h *panelHandler) modsPageData(r *http.Request,
 	session sessionState,
 ) (adminModsPageData, error) {
 	data := adminModsPageData{
-		adminPage: adminPageFor(r, session),
+		adminPage: h.adminPageFor(r, session),
 		ModsURL:   "/admin/mods",
 	}
 	if h.ops == nil {
@@ -639,7 +645,7 @@ func (h *panelHandler) modsPageData(r *http.Request,
 			data.Current = current.Name
 		}
 	}
-	data.Items = archiveItems(backups.Items, "mods", archiveOptions{
+	data.Items = archiveItems(h.tr(), backups.Items, "mods", archiveOptions{
 		Admin:       true,
 		CurrentMods: data.Current,
 	}, h.now())
@@ -999,7 +1005,7 @@ func (h *panelHandler) statePageData(r *http.Request, session sessionState,
 	before string, limit int,
 ) (adminStatePageData, error) {
 	data := adminStatePageData{
-		adminPage: adminPageFor(r, session),
+		adminPage: h.adminPageFor(r, session),
 		Limit:     limit,
 		ModsURL:   "/admin/mods",
 	}
@@ -1020,7 +1026,7 @@ func (h *panelHandler) statePageData(r *http.Request, session sessionState,
 	data.MissingMods = currentMods == ""
 
 	now := h.now()
-	data.Groups = groupArchiveItems(archiveItems(backups.Items, "state", archiveOptions{
+	data.Groups = groupArchiveItems(h.tr(), archiveItems(h.tr(), backups.Items, "state", archiveOptions{
 		Admin:       true,
 		CurrentMods: currentMods,
 	}, now), now)
@@ -1041,7 +1047,7 @@ func (h *panelHandler) handleState(w http.ResponseWriter, r *http.Request,
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 || parsed > maxBackupLimit {
-			page := adminPageFor(r, session)
+			page := h.adminPageFor(r, session)
 			page.Error = "Параметр limit должен быть числом от 1 до 500."
 			data := adminStatePageData{
 				adminPage: page, Limit: adminBackupPageSize,
@@ -1054,7 +1060,7 @@ func (h *panelHandler) handleState(w http.ResponseWriter, r *http.Request,
 	}
 	before := r.URL.Query().Get("before")
 	if before != "" && !safeArchiveName(before) {
-		page := adminPageFor(r, session)
+		page := h.adminPageFor(r, session)
 		page.Error = "Некорректное имя архива в параметре before."
 		data := adminStatePageData{
 			adminPage: page, Limit: limit,
@@ -1336,7 +1342,7 @@ func stringList(value any) []string {
 func (h *panelHandler) handleConfig(w http.ResponseWriter, r *http.Request,
 	session sessionState,
 ) {
-	data := adminConfigPageData{adminPage: adminPageFor(r, session)}
+	data := adminConfigPageData{adminPage: h.adminPageFor(r, session)}
 	sections, err := h.configSections(r)
 	if err != nil {
 		status, message, _ := adminFailure(err)
@@ -1357,7 +1363,7 @@ func (h *panelHandler) handleConfigPost(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if h.ops == nil {
-		data := adminConfigPageData{adminPage: adminPageFor(r, session)}
+		data := adminConfigPageData{adminPage: h.adminPageFor(r, session)}
 		status, message, _ := adminFailure(errOpsUnavailable)
 		data.Error = message
 		h.render(w, status, "admin_config.html", data)
@@ -1422,7 +1428,7 @@ func (h *panelHandler) handleConfigForm(w http.ResponseWriter, r *http.Request,
 	}
 
 	if len(changed) == 0 {
-		data := adminConfigPageData{adminPage: adminPageFor(r, session)}
+		data := adminConfigPageData{adminPage: h.adminPageFor(r, session)}
 		data.Notice = "Изменений нет."
 		data.Sections, _ = h.configSections(r)
 		h.render(w, http.StatusOK, "admin_config.html", data)
@@ -1448,7 +1454,7 @@ func (h *panelHandler) handleConfigForm(w http.ResponseWriter, r *http.Request,
 		h.logger.Printf("audit: action=config.set file=%s key=%s result=ok", file, key)
 	}
 
-	data := adminConfigPageData{adminPage: adminPageFor(r, session)}
+	data := adminConfigPageData{adminPage: h.adminPageFor(r, session)}
 	data.Notice = fmt.Sprintf("Сохранено полей: %d.", len(changed))
 	data.RestartRequired = true
 	data.Sections, err = h.configSections(r)
@@ -1498,7 +1504,7 @@ func (h *panelHandler) renderConfigFailure(w http.ResponseWriter, r *http.Reques
 	session sessionState,
 	status int, message, field string,
 ) {
-	data := adminConfigPageData{adminPage: adminPageFor(r, session)}
+	data := adminConfigPageData{adminPage: h.adminPageFor(r, session)}
 	sections, _ := h.configSections(r)
 	data.Sections = sections
 	data.Error = message
@@ -1525,7 +1531,7 @@ func (h *panelHandler) handleStaff(w http.ResponseWriter, r *http.Request,
 	session sessionState,
 ) {
 	players, err := readStaffPlayers(h.cfg.Root)
-	data := adminStaffPageData{adminPage: adminPageFor(r, session), Players: players}
+	data := adminStaffPageData{adminPage: h.adminPageFor(r, session), Players: players}
 	if err != nil {
 		h.logger.Printf("panel: read staff players: %v", err)
 		data.Error = "Не удалось прочитать список игроков."
@@ -1582,7 +1588,7 @@ func (h *panelHandler) renderStaffFailure(w http.ResponseWriter, r *http.Request
 ) {
 	players, _ := readStaffPlayers(h.cfg.Root)
 	data := adminStaffPageData{
-		adminPage: adminPageFor(r, session),
+		adminPage: h.adminPageFor(r, session),
 		Players:   players,
 		Empty:     len(players) == 0,
 	}

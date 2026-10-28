@@ -1270,6 +1270,36 @@ body.auth {
   font-size: .78rem;
 }
 
+/* The language selector lists one button per language, so the form itself has
+   to behave like the menu column it lives in. */
+.account-menu form.language-form {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+}
+
+.account-menu .language-option {
+  width: 100%;
+  justify-content: flex-start;
+  padding: .4rem .55rem;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: .9rem;
+  text-align: left;
+}
+
+.account-menu .language-option:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.account-menu .language-option:disabled {
+  color: var(--text);
+  font-weight: 600;
+  cursor: default;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 	"github.com/Saagilat/tes3mp-easy/internal/version"
 )
 
@@ -66,6 +67,14 @@ const (
 	EnvACMEDirectory = "TES3MP_PANEL_ACME_DIRECTORY"
 	EnvACMEEmail     = "TES3MP_PANEL_ACME_EMAIL"
 	EnvACMEProfile   = "TES3MP_PANEL_ACME_PROFILE"
+
+	// EnvLanguage selects the default interface language. The admin header can
+	// switch it at runtime; the choice is then stored in panel-data and wins
+	// over this variable.
+	EnvLanguage = "TES3MP_PANEL_LANGUAGE"
+
+	// DefaultLanguage is the documented default interface language.
+	DefaultLanguage = i18n.English
 )
 
 // Config describes one panel process. Empty derived fields are filled by
@@ -84,6 +93,10 @@ type Config struct {
 	ACMEEmail          string
 	ACMEProfile        string
 	ACMEAccountKeyFile string
+
+	// Language is the default interface language of the panel. The admin header
+	// can switch it; the stored choice in panel-data wins after the first switch.
+	Language string
 }
 
 // DefaultConfig returns production defaults. DataDir and the TLS/ACME paths
@@ -113,6 +126,7 @@ func ConfigFromEnv(getenv func(string) string) Config {
 		ACMEDirectory: getenv(EnvACMEDirectory),
 		ACMEEmail:     getenv(EnvACMEEmail),
 		ACMEProfile:   getenv(EnvACMEProfile),
+		Language:      getenv(EnvLanguage),
 	}
 }
 
@@ -146,6 +160,9 @@ func (c Config) Normalize() Config {
 	if c.ACMEAccountKeyFile == "" {
 		c.ACMEAccountKeyFile = filepath.Join(c.DataDir, "acme", "account.key")
 	}
+	if c.Language == "" {
+		c.Language = string(DefaultLanguage)
+	}
 	return c
 }
 
@@ -169,6 +186,11 @@ func (c Config) Validate() error {
 
 	if _, _, err := splitAddr(c.HTTPSAddr); err != nil {
 		return fmt.Errorf("https address %q: %w", c.HTTPSAddr, err)
+	}
+
+	if _, ok := i18n.Parse(c.Language); !ok {
+		return fmt.Errorf("language %q: must be %q or %q",
+			c.Language, i18n.English, i18n.Russian)
 	}
 
 	switch c.TLSMode {

@@ -1,4 +1,4 @@
-{{define "title"}}Вход — tes3mp-easy{{end}}
+{{define "title"}}{{.T "panel.login.title"}}{{end}}
 {{define "bodyattrs"}} class="auth"{{end}}
 {{define "content"}}
 <main class="auth-shell">
@@ -7,20 +7,20 @@
         <span class="brand-mark" aria-hidden="true">◆</span>
         <span>TES3MP <strong>Easy</strong></span>
       </a>
-      <p class="eyebrow">Администрирование</p>
-      <h1>Вход в панель</h1>
-      <p class="muted">Введите пароль администратора сервера.</p>
+      <p class="eyebrow">{{.T "panel.login.eyebrow"}}</p>
+      <h1>{{.T "panel.login.heading"}}</h1>
+      <p class="muted">{{.T "panel.login.hint"}}</p>
       {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
       <form method="post" action="/admin/login">
         {{template "csrf" .}}
         <div class="field">
-          <label for="password">Пароль</label>
+          <label for="password">{{.T "panel.login.password"}}</label>
           <input id="password" type="password" name="password"
                  autocomplete="current-password" required autofocus>
         </div>
-        <button type="submit">Войти</button>
+        <button type="submit">{{.T "panel.login.submit"}}</button>
       </form>
     </section>
-    <p class="auth-footer"><a href="/">← На главную</a></p>
+    <p class="auth-footer"><a href="/">{{.T "panel.login.back"}}</a></p>
   </main>
 {{end}}

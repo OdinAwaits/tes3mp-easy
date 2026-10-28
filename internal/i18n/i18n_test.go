@@ -129,3 +129,53 @@ func TestTranslatorFallback(t *testing.T) {
 		t.Fatalf("DisplayName(Russian) = %q", got)
 	}
 }
+
+func TestPluralf(t *testing.T) {
+	russian := New(Russian)
+	english := New(English)
+	tests := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{name: "ru one", got: russian.Pluralf(KeyPanelTimeMinuteAgo, 1), want: "1 минуту назад"},
+		{name: "ru few", got: russian.Pluralf(KeyPanelTimeMinuteAgo, 3), want: "3 минуты назад"},
+		{name: "ru many", got: russian.Pluralf(KeyPanelTimeMinuteAgo, 11), want: "11 минут назад"},
+		{name: "ru 21", got: russian.Pluralf(KeyPanelTimeMinuteAgo, 21), want: "21 минуту назад"},
+		{name: "ru years", got: russian.Pluralf(KeyPanelTimeYearAgo, 5), want: "5 лет назад"},
+		{name: "en one", got: english.Pluralf(KeyPanelTimeMinuteAgo, 1), want: "1 minute ago"},
+		{name: "en other", got: english.Pluralf(KeyPanelTimeMinuteAgo, 5), want: "5 minutes ago"},
+		{name: "missing key", got: english.Pluralf("panel.time.unknown_ago", 2), want: "panel.time.unknown_ago"},
+	}
+	for _, test := range tests {
+		if test.got != test.want {
+			t.Errorf("%s = %q, want %q", test.name, test.got, test.want)
+		}
+	}
+}
+
+func TestEnglishCatalogHasNoCyrillic(t *testing.T) {
+	for key, value := range catalogs[English] {
+		for _, r := range value {
+			if r >= '\u0400' && r <= '\u04FF' {
+				t.Errorf("English catalog %q contains Cyrillic: %q", key, value)
+				break
+			}
+		}
+	}
+}
+
+func TestPanelKeysAreUsable(t *testing.T) {
+	for _, key := range []string{
+		KeyPanelNavDashboard, KeyPanelLoginHeading, KeyPanelDashboardStart,
+		KeyPanelStateRestoreButton, KeyPanelModsDeploy, KeyPanelConfigSave,
+		KeyPanelStaffPlayers, KeyPanelLogsShow,
+	} {
+		if got := New(English).T(key); got == key {
+			t.Errorf("English catalog is missing %q", key)
+		}
+		if got := New(Russian).T(key); got == key {
+			t.Errorf("Russian catalog is missing %q", key)
+		}
+	}
+}

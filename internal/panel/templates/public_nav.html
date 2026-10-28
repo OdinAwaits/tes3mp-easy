@@ -4,10 +4,10 @@
     <span class="brand-mark" aria-hidden="true">◆</span>
     <span>TES3MP <strong>Easy</strong></span>
   </a>
-  <nav class="nav" aria-label="Публичные страницы">
-    <a href="/"{{if eq .ActiveNav "home"}} aria-current="page"{{end}}>Главная</a>
-    <a href="/backups"{{if eq .ActiveNav "backups"}} aria-current="page"{{end}}>Архивы</a>
-    <a class="nav-cta" href="/admin/login"{{if eq .ActiveNav "login"}} aria-current="page"{{end}}>Вход в панель</a>
+  <nav class="nav" aria-label="{{.T "panel.nav.public_pages"}}">
+    <a href="/"{{if eq .ActiveNav "home"}} aria-current="page"{{end}}>{{.T "panel.nav.home"}}</a>
+    <a href="/backups"{{if eq .ActiveNav "backups"}} aria-current="page"{{end}}>{{.T "panel.nav.archives"}}</a>
+    <a class="nav-cta" href="/admin/login"{{if eq .ActiveNav "login"}} aria-current="page"{{end}}>{{.T "panel.nav.login"}}</a>
   </nav>
 </header>
 {{end}}

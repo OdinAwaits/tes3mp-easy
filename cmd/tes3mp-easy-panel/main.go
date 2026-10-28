@@ -49,6 +49,10 @@ Flags:
   --tls-key <path>          private key for files mode
                             (default <data-dir>/tls/key.pem;
                             env TES3MP_PANEL_TLS_KEY)
+  --language <code>         default interface language, en or ru (default en;
+                            env TES3MP_PANEL_LANGUAGE). The language selector in
+                            the panel header overrides it and is stored in
+                            <data-dir>/settings.json
   --version                 print version and exit
   --help                    print this help and exit
 
@@ -157,6 +161,7 @@ func parseConfig(args []string, getenv func(string) string) (panel.Config, bool,
 	fs.StringVar(&cfg.ACMEProfile, "acme-profile", cfg.ACMEProfile, "")
 	fs.StringVar(&cfg.CertFile, "tls-cert", cfg.CertFile, "")
 	fs.StringVar(&cfg.KeyFile, "tls-key", cfg.KeyFile, "")
+	fs.StringVar(&cfg.Language, "language", cfg.Language, "")
 	showVersion := fs.Bool("version", false, "")
 
 	if err := fs.Parse(args); err != nil {
@@ -184,6 +189,7 @@ func parseConfig(args []string, getenv func(string) string) (panel.Config, bool,
 		{name: "acme-profile", value: cfg.ACMEProfile},
 		{name: "tls-cert", value: cfg.CertFile},
 		{name: "tls-key", value: cfg.KeyFile},
+		{name: "language", value: cfg.Language},
 	} {
 		if set[check.name] && check.value == "" {
 			return panel.Config{}, false,

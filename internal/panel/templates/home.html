@@ -2,41 +2,41 @@
 {{define "content"}}
 <main class="page">
     <section class="hero">
-      <p class="eyebrow">Сервер Morrowind</p>
+      <p class="eyebrow">{{.T "panel.home.eyebrow"}}</p>
       <h1>{{.Name}}</h1>
       <p class="lead hero-meta">
-        <span>Подключение: <code>{{.Address}}</code></span>
-        <span>порт <code>{{.Port}}</code></span>
+        <span>{{.T "panel.home.connect"}} <code>{{.Address}}</code></span>
+        <span>{{.T "panel.home.port"}} <code>{{.Port}}</code></span>
       </p>
       <p class="status-line">
         <span class="badge" data-status="{{.Status}}">{{.StatusLabel}}</span>
-        <span class="muted">Статус сервера</span>
+        <span class="muted">{{.T "panel.home.status_caption"}}</span>
       </p>
       {{if .StatusError}}<p role="alert">{{.StatusError}}</p>{{end}}
       <p class="actions">
-        <a class="button button--primary" href="/backups">Архивы и состояния</a>
+        <a class="button button--primary" href="/backups">{{.T "panel.home.archives_cta"}}</a>
       </p>
     </section>
 
     <div class="grid">
       <section class="card">
-        <h2>Подключение</h2>
+        <h2>{{.T "panel.home.connection"}}</h2>
         <dl class="meta-list">
-          <dt>Адрес</dt>
+          <dt>{{.T "panel.home.address"}}</dt>
           <dd><code>{{.Address}}</code></dd>
-          <dt>Порт</dt>
+          <dt>{{.T "panel.home.port_label"}}</dt>
           <dd><code>{{.Port}}</code></dd>
-          <dt>Статус</dt>
+          <dt>{{.T "panel.home.status"}}</dt>
           <dd><span class="badge" data-status="{{.Status}}">{{.StatusLabel}}</span></dd>
         </dl>
       </section>
 
       <section class="card">
-        <h2>Публичные архивы</h2>
-        <p class="muted">Состояния мира и архивы модов доступны без входа.</p>
+        <h2>{{.T "panel.home.public_archives"}}</h2>
+        <p class="muted">{{.T "panel.home.public_hint"}}</p>
         <div class="actions">
-          <a class="button button--secondary" href="/backups#state">Состояния</a>
-          <a class="button button--secondary" href="/backups#mods">Моды</a>
+          <a class="button button--secondary" href="/backups#state">{{.T "panel.home.snapshots"}}</a>
+          <a class="button button--secondary" href="/backups#mods">{{.T "panel.home.mods"}}</a>
         </div>
       </section>
     </div>

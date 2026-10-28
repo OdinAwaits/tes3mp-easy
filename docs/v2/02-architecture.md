@@ -150,6 +150,7 @@ Bootstrap устанавливает `tes3mp.service`, `tes3mp-easy-backup.timer
 - `panel-data/` — `tes3mp-panel:tes3mp 0750`;
 - `panel-data/auth.json`, `panel-data/initial-password.txt` —
   `tes3mp-panel:tes3mp-panel 0600`;
+- `panel-data/settings.json` — язык интерфейса, `tes3mp-panel:tes3mp-panel 0600`;
 - `panel-data/tls/` — `0700`, файлы `0600`;
 - `panel-data/acme/` — `0700`, `account.key` — `0600`;
 - `panel-data/uploads/` — `tes3mp-panel:tes3mp 2770`, файлы `0640`; группа
@@ -229,6 +230,7 @@ rootctl.
 │   │   └── state-predeploy-*.tar.gz
 ├── panel-data/                   # tes3mp-panel:tes3mp
 │   ├── auth.json
+│   ├── settings.json             # язык интерфейса
 │   ├── initial-password.txt
 │   ├── acme/
 │   │   └── account.key

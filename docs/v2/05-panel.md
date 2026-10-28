@@ -28,10 +28,31 @@ HTTP-контракты — в `03-contracts.md`; при расхождении 
 - TLS: встроенный `github.com/go-acme/lego/v4` получает и продлевает
   сертификат Let's Encrypt для публичного IP (RFC 8738, профиль `shortlived`).
   Внешний ACME-клиент не нужен. Режим `files` служит готовую пару.
-- Файлы: `auth.json`, TLS-сертификаты, ACME-аккаунт, uploads. Внешней БД нет.
+- Файлы: `auth.json`, `settings.json`, TLS-сертификаты, ACME-аккаунт, uploads.
+  Внешней БД нет.
 
 Почему так: панель — это несколько форм и таблиц. SPA и Node.js добавили бы
 сборку, зависимости и ещё один слой отладки без пользы для одного админа.
+
+### Язык интерфейса
+
+Панель использует тот же `internal/i18n`, что и лаунчер: английский — исходный
+язык, русский — перевод. Английский текст живёт прямо в шаблонах и Go-коде
+(`{{.T "panel.dashboard.start"}}`, `h.tr().T(i18n.KeyPanelModsDeploy)`), переводы
+— в `internal/i18n/catalog_panel.go`. Тест `TestEnglishCatalogHasNoCyrillic`
+не даёт вернуть кириллицу в английский источник, а `TestCatalogsHaveEveryKey` —
+забыть перевод.
+
+- По умолчанию `en`; `TES3MP_PANEL_LANGUAGE` задаёт другое значение для новых
+  установок.
+- Переключатель — в шапке админки (`POST /admin/language`, CSRF, редирект назад
+  на ту же страницу). Выбор хранится в `panel-data/settings.json`
+  (`{"version":1,"language":"ru"}`, `0600`), поэтому переживает рестарт и
+  действует на все браузеры; публичные страницы читают тот же файл.
+- Язык не берётся из `Accept-Language` и cookie: это настройка сервера, а не
+  посетителя.
+- Даты и плюрализация строятся в Go: `Tf` для шаблонов с аргументами и
+  `Pluralf` с формами CLDR (`one`/`few`/`many`/`other`) для «5 минут назад».
 
 ### Интерфейс и тема
 
@@ -101,6 +122,7 @@ Systemd-лимиты: `MemoryHigh=48M`, `MemoryMax=64M`, `GOMAXPROCS=1`,
 | `TES3MP_PANEL_ACME_PROFILE` | `--acme-profile` | `shortlived` | Профиль сертификата; для IP обязателен `shortlived` |
 | `TES3MP_PANEL_TLS_CERT` | `--tls-cert` | `<data-dir>/tls/cert.pem` | Сертификат (в `files` — входной) |
 | `TES3MP_PANEL_TLS_KEY` | `--tls-key` | `<data-dir>/tls/key.pem` | Приватный ключ (в `files` — входной) |
+| `TES3MP_PANEL_LANGUAGE` | `--language` | `en` | Язык интерфейса по умолчанию; переключатель в панели перекрывает его |
 
 `--public-address` в режиме `acme` принимает только публичный IP без порта,
 scheme и path; частные, loopback, link-local, CGNAT (`100.64.0.0/10`) и
@@ -173,6 +195,7 @@ State перед отдачей проверяется на текущий layou
 |---|---|---|
 | GET/POST | `/admin/login` | Вход |
 | POST | `/admin/logout` | Выход |
+| POST | `/admin/language` | Сменить язык интерфейса (`language=en\|ru`, `next=/admin/...`) |
 | GET | `/admin` | Дашборд |
 | POST | `/admin/server/start\|stop\|restart` | Управление сервером |
 | GET | `/admin/logs` | Последние логи |

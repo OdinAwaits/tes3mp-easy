@@ -1,5 +1,5 @@
 {{define "layout"}}<!doctype html>
-<html lang="ru">
+<html lang="{{.Lang}}">
 <head>
 {{template "head"}}
   <title>{{block "title" .}}tes3mp-easy{{end}}</title>
@@ -18,4 +18,4 @@
 {{define "csrf"}}<input type="hidden" name="_csrf" value="{{.CSRF}}">{{end}}
 {{define "notices"}}{{if .Notice}}<p class="notice" role="status">{{.Notice}}</p>
 {{end}}{{if .Error}}<p role="alert">{{.Error}}</p>
-{{end}}{{if .RestartRequired}}<p class="notice">Нужен перезапуск сервера, чтобы применить изменения.</p>{{end}}{{end}}
+{{end}}{{if .RestartRequired}}<p class="notice">{{.T "panel.notice.restart_required"}}</p>{{end}}{{end}}

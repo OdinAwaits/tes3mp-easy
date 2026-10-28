@@ -4,22 +4,33 @@
     <span class="brand-mark" aria-hidden="true">◆</span>
     <span>TES3MP <strong>Easy</strong></span>
   </a>
-  <nav class="nav" aria-label="Разделы панели">
-    <a href="/admin"{{if eq .ActiveNav "dashboard"}} aria-current="page"{{end}}>Обзор</a>
-    <a href="/admin/logs"{{if eq .ActiveNav "logs"}} aria-current="page"{{end}}>Логи</a>
-    <a href="/admin/mods"{{if eq .ActiveNav "mods"}} aria-current="page"{{end}}>Моды</a>
-    <a href="/admin/state"{{if eq .ActiveNav "state"}} aria-current="page"{{end}}>Состояния</a>
-    <a href="/admin/config"{{if eq .ActiveNav "config"}} aria-current="page"{{end}}>Настройки</a>
-    <a href="/admin/staff"{{if eq .ActiveNav "staff"}} aria-current="page"{{end}}>Staff</a>
-    <a href="/backups" target="_blank" rel="noopener">Публичные архивы</a>
+  <nav class="nav" aria-label="{{.T "panel.nav.admin_sections"}}">
+    <a href="/admin"{{if eq .ActiveNav "dashboard"}} aria-current="page"{{end}}>{{.T "panel.nav.dashboard"}}</a>
+    <a href="/admin/logs"{{if eq .ActiveNav "logs"}} aria-current="page"{{end}}>{{.T "panel.nav.logs"}}</a>
+    <a href="/admin/mods"{{if eq .ActiveNav "mods"}} aria-current="page"{{end}}>{{.T "panel.nav.mods"}}</a>
+    <a href="/admin/state"{{if eq .ActiveNav "state"}} aria-current="page"{{end}}>{{.T "panel.nav.state"}}</a>
+    <a href="/admin/config"{{if eq .ActiveNav "config"}} aria-current="page"{{end}}>{{.T "panel.nav.config"}}</a>
+    <a href="/admin/staff"{{if eq .ActiveNav "staff"}} aria-current="page"{{end}}>{{.T "panel.nav.staff"}}</a>
+    <a href="/backups" target="_blank" rel="noopener">{{.T "panel.nav.public_archives"}}</a>
   </nav>
   <details class="account">
-    <summary class="button button--ghost button--small">Аккаунт</summary>
+    <summary class="button button--ghost button--small">{{.T "panel.nav.language"}}</summary>
     <div class="account-menu">
-      <a href="/admin/password"{{if eq .ActiveNav "password"}} aria-current="page"{{end}}>Сменить пароль</a>
+      <form class="language-form" method="post" action="/admin/language">
+        {{template "csrf" .}}
+        <input type="hidden" name="next" value="{{.Path}}">
+        {{range .Languages}}<button class="language-option" type="submit" name="language" value="{{.Code}}"{{if .Current}} disabled{{end}}>{{.Name}}</button>
+        {{end}}
+      </form>
+    </div>
+  </details>
+  <details class="account">
+    <summary class="button button--ghost button--small">{{.T "panel.nav.account"}}</summary>
+    <div class="account-menu">
+      <a href="/admin/password"{{if eq .ActiveNav "password"}} aria-current="page"{{end}}>{{.T "panel.nav.change_password"}}</a>
       <form method="post" action="/admin/logout">
         {{template "csrf" .}}
-        <button class="button button--ghost button--small" type="submit">Выйти</button>
+        <button class="button button--ghost button--small" type="submit">{{.T "panel.nav.logout"}}</button>
       </form>
     </div>
   </details>

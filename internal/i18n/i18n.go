@@ -129,6 +129,66 @@ func (t *Translator) Tf(key string, args ...any) string {
 	return fmt.Sprintf(t.T(key), args...)
 }
 
+// Pluralf selects the plural form of key for count and formats it with count.
+// Catalog entries use CLDR suffixes: key.one, key.few, key.many and key.other.
+// English uses one/other, Russian uses one/few/many; a missing form falls back
+// to other and finally to the English catalog.
+func (t *Translator) Pluralf(key string, count int) string {
+	language := t.Language()
+	form := pluralForm(language, count)
+	for _, candidate := range pluralCandidates(language, form) {
+		if value, ok := lookup(language, key+"."+candidate); ok {
+			return fmt.Sprintf(value, count)
+		}
+	}
+	return key
+}
+
+// pluralForm returns the CLDR plural category of count for the language.
+func pluralForm(language Language, count int) string {
+	if language == Russian {
+		switch {
+		case count%10 == 1 && count%100 != 11:
+			return "one"
+		case count%10 >= 2 && count%10 <= 4 && (count%100 < 12 || count%100 > 14):
+			return "few"
+		default:
+			return "many"
+		}
+	}
+	if count == 1 {
+		return "one"
+	}
+	return "other"
+}
+
+// pluralCandidates orders the lookup attempts for a plural category.
+func pluralCandidates(language Language, form string) []string {
+	switch form {
+	case "one":
+		return []string{"one", "other", "many"}
+	case "few":
+		return []string{"few", "other", "many"}
+	case "many":
+		return []string{"many", "other", "few"}
+	default:
+		return []string{"other", "many", "one"}
+	}
+}
+
+// lookup returns a catalog entry for the language, never falling back itself.
+func lookup(language Language, key string) (string, bool) {
+	catalog := catalogs[language]
+	if catalog == nil {
+		return "", false
+	}
+	value, ok := catalog[key]
+	if !ok || value == "" {
+		return "", false
+	}
+	return value, true
+}
+
 // Keys returns all translation keys in stable order.
 func Keys() []string {
 	seen := make(map[string]struct{}, len(catalogs[English]))

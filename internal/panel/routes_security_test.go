@@ -40,7 +40,7 @@ func TestLoginRejectsWrongPasswordAndMissingCSRF(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("wrong password = %d, want 401", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "Неверный пароль") {
+	if !strings.Contains(rec.Body.String(), "Wrong password") {
 		t.Fatal("wrong-password page has no error message")
 	}
 	if hasResponseCookie(rec, sessionCookieName) {
@@ -82,7 +82,7 @@ func TestLoginRateLimit(t *testing.T) {
 	if err != nil || retry < 1 {
 		t.Fatalf("Retry-After = %q", rec.Header().Get("Retry-After"))
 	}
-	if !strings.Contains(rec.Body.String(), "Слишком много") {
+	if !strings.Contains(rec.Body.String(), "Too many") {
 		t.Fatal("rate-limit page has no message")
 	}
 }

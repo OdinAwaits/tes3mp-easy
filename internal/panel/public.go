@@ -19,6 +19,7 @@ import (
 
 	"github.com/Saagilat/tes3mp-easy/internal/archive"
 	"github.com/Saagilat/tes3mp-easy/internal/gameconfig"
+	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 )
 
 const (
@@ -68,6 +69,7 @@ type currentMods struct {
 }
 
 type homePageData struct {
+	pageI18n
 	Name        string
 	ActiveNav   string
 	Nav         string
@@ -109,7 +111,7 @@ type archiveOptions struct {
 	CurrentMods string
 }
 
-func archiveItems(items []BackupItem, typ string, opt archiveOptions,
+func archiveItems(tr *i18n.Translator, items []BackupItem, typ string, opt archiveOptions,
 	now time.Time,
 ) []archiveItem {
 	views := make([]archiveItem, 0, len(items))
@@ -121,7 +123,7 @@ func archiveItems(items []BackupItem, typ string, opt archiveOptions,
 			SizeLabel:   humanSize(item.Size),
 			Mtime:       mtime,
 			MtimeLabel:  mtimeLabel,
-			MtimeAgo:    timeLabel(item.Mtime, now),
+			MtimeAgo:    timeLabel(tr, item.Mtime, now),
 			Current:     item.Current,
 			DownloadURL: archiveDownloadURL(typ, item.Name, opt.Admin),
 		}
@@ -154,10 +156,10 @@ func archiveDownloadURL(typ, name string, admin bool) string {
 	return "/backups/" + typ + "/" + url.PathEscape(name)
 }
 
-func groupArchiveItems(items []archiveItem, now time.Time) []archiveGroup {
+func groupArchiveItems(tr *i18n.Translator, items []archiveItem, now time.Time) []archiveGroup {
 	var groups []archiveGroup
 	for _, item := range items {
-		label := backupGroupLabel(item.Mtime, now)
+		label := backupGroupLabel(tr, item.Mtime, now)
 		if len(groups) == 0 || groups[len(groups)-1].Label != label {
 			groups = append(groups, archiveGroup{Label: label})
 		}
@@ -167,6 +169,7 @@ func groupArchiveItems(items []archiveItem, now time.Time) []archiveGroup {
 }
 
 type backupsPageData struct {
+	pageI18n
 	ActiveNav    string
 	Nav          string
 	StateGroups  []archiveGroup
@@ -187,7 +190,7 @@ func (h *panelHandler) allowDownload(w http.ResponseWriter, r *http.Request) boo
 	w.Header().Set("Retry-After", retryAfterSeconds(retry))
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		writeAPIError(w, http.StatusTooManyRequests, "rate_limited",
-			"Слишком много запросов. Попробуйте позже.")
+			h.tr().T(i18n.KeyPanelPublicRateLimited))
 		return false
 	}
 	http.Error(w, "too many requests", http.StatusTooManyRequests)
@@ -197,7 +200,7 @@ func (h *panelHandler) allowDownload(w http.ResponseWriter, r *http.Request) boo
 func (h *panelHandler) handleServerInfo(w http.ResponseWriter, r *http.Request) {
 	status, err := h.serverStatus(r.Context())
 	if err != nil {
-		code, message := publicOpsFailure(err)
+		code, message := publicOpsFailure(h.tr(), err)
 		writeAPIError(w, code, publicErrorCode(code), message)
 		return
 	}
@@ -223,7 +226,7 @@ func (h *panelHandler) handleModsCurrent(w http.ResponseWriter, _ *http.Request)
 	current, err := h.readCurrentMods()
 	if err != nil {
 		writeAPIError(w, http.StatusNotFound, "no_mods",
-			"Текущий архив модов не найден")
+			h.tr().T(i18n.KeyPanelAdminModsMissing))
 		return
 	}
 	writeJSON(w, http.StatusOK, "no-store", modsCurrentResponse{
@@ -242,13 +245,13 @@ func (h *panelHandler) handleModsArchive(w http.ResponseWriter, r *http.Request)
 	current, err := h.readCurrentMods()
 	if err != nil {
 		writeAPIError(w, http.StatusNotFound, "no_mods",
-			"Текущий архив модов не найден")
+			h.tr().T(i18n.KeyPanelAdminModsMissing))
 		return
 	}
 	file, err := os.Open(filepath.Join(h.cfg.Root, "backups", "mods", current.Name))
 	if err != nil {
 		writeAPIError(w, http.StatusNotFound, "no_mods",
-			"Текущий архив модов не найден")
+			h.tr().T(i18n.KeyPanelAdminModsMissing))
 		return
 	}
 	defer file.Close()
@@ -256,7 +259,7 @@ func (h *panelHandler) handleModsArchive(w http.ResponseWriter, r *http.Request)
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() {
 		writeAPIError(w, http.StatusNotFound, "no_mods",
-			"Текущий архив модов не найден")
+			h.tr().T(i18n.KeyPanelAdminModsMissing))
 		return
 	}
 
@@ -275,13 +278,14 @@ func (h *panelHandler) handleModsArchive(w http.ResponseWriter, r *http.Request)
 func (h *panelHandler) handleHome(w http.ResponseWriter, r *http.Request) {
 	name, port := h.serverNamePort()
 	data := homePageData{
+		pageI18n:    h.pageI18n(),
 		Name:        "TES3MP",
 		ActiveNav:   "home",
 		Nav:         "public",
 		Address:     publicAddress(h.cfg, r),
 		Port:        port,
 		Status:      "unknown",
-		StatusLabel: statusLabel("unknown"),
+		StatusLabel: statusLabel(h.tr(), "unknown"),
 	}
 	if name != "" {
 		data.Name = name
@@ -290,11 +294,11 @@ func (h *panelHandler) handleHome(w http.ResponseWriter, r *http.Request) {
 	status, err := h.serverStatus(r.Context())
 	if err != nil {
 		data.Status = "service_unavailable"
-		data.StatusLabel = statusLabel(data.Status)
-		data.StatusError = "Сервер временно недоступен: systemd или unit не отвечает."
+		data.StatusLabel = statusLabel(h.tr(), data.Status)
+		data.StatusError = h.tr().T(i18n.KeyPanelPublicUnavailableLong)
 	} else {
 		data.Status = status
-		data.StatusLabel = statusLabel(status)
+		data.StatusLabel = statusLabel(h.tr(), status)
 	}
 
 	h.render(w, http.StatusOK, "home.html", data)
@@ -354,7 +358,7 @@ func (h *panelHandler) handleBackups(w http.ResponseWriter, r *http.Request) {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 || parsed > maxBackupLimit {
 			h.renderBackups(w, http.StatusBadRequest, backupsPageData{
-				Error: "Параметр limit должен быть числом от 1 до 500.",
+				Error: h.tr().T(i18n.KeyPanelAdminLimitInvalid),
 			})
 			return
 		}
@@ -366,35 +370,35 @@ func (h *panelHandler) handleBackups(w http.ResponseWriter, r *http.Request) {
 	for _, before := range []string{stateBefore, modsBefore} {
 		if before != "" && !safeArchiveName(before) {
 			h.renderBackups(w, http.StatusBadRequest, backupsPageData{
-				Error: "Некорректное имя архива в параметре before.",
+				Error: h.tr().T(i18n.KeyPanelAdminBeforeInvalid),
 			})
 			return
 		}
 	}
 	if h.ops == nil {
 		h.renderBackups(w, http.StatusServiceUnavailable, backupsPageData{
-			Error: "Сервер временно недоступен: ops-клиент не настроен.",
+			Error: h.tr().T(i18n.KeyPanelAdminOpsUnavailable),
 		})
 		return
 	}
 
 	stateBackups, err := h.ops.BackupsList(r.Context(), "state", limit, stateBefore)
 	if err != nil {
-		code, message := publicPageFailure(err)
+		code, message := publicPageFailure(h.tr(), err)
 		h.renderBackups(w, code, backupsPageData{Error: message})
 		return
 	}
 	modsBackups, err := h.ops.BackupsList(r.Context(), "mods", limit, modsBefore)
 	if err != nil {
-		code, message := publicPageFailure(err)
+		code, message := publicPageFailure(h.tr(), err)
 		h.renderBackups(w, code, backupsPageData{Error: message})
 		return
 	}
 
 	now := h.now()
 	data := backupsPageData{
-		StateGroups: groupArchiveItems(archiveItems(stateBackups.Items, "state", archiveOptions{}, now), now),
-		ModsGroups:  groupArchiveItems(archiveItems(modsBackups.Items, "mods", archiveOptions{}, now), now),
+		StateGroups: groupArchiveItems(h.tr(), archiveItems(h.tr(), stateBackups.Items, "state", archiveOptions{}, now), now),
+		ModsGroups:  groupArchiveItems(h.tr(), archiveItems(h.tr(), modsBackups.Items, "mods", archiveOptions{}, now), now),
 		StateEmpty:  len(stateBackups.Items) == 0,
 		ModsEmpty:   len(modsBackups.Items) == 0,
 		Limit:       limit,
@@ -431,6 +435,7 @@ func backupNextURL(typ string, nextBefore *string, limit int,
 }
 
 func (h *panelHandler) renderBackups(w http.ResponseWriter, status int, data backupsPageData) {
+	data.pageI18n = h.pageI18n()
 	data.Nav = "public"
 	if data.ActiveNav == "" {
 		data.ActiveNav = "backups"
@@ -597,37 +602,37 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
-func publicOpsFailure(err error) (int, string) {
+func publicOpsFailure(tr *i18n.Translator, err error) (int, string) {
 	if errors.Is(err, errOpsUnavailable) {
-		return http.StatusServiceUnavailable, "Сервер временно недоступен."
+		return http.StatusServiceUnavailable, tr.T(i18n.KeyPanelPublicUnavailable)
 	}
 	switch OpsHTTPStatus(err) {
 	case http.StatusServiceUnavailable:
-		return http.StatusServiceUnavailable, "Сервер временно недоступен."
+		return http.StatusServiceUnavailable, tr.T(i18n.KeyPanelPublicUnavailable)
 	default:
-		return http.StatusInternalServerError, "Внутренняя ошибка."
+		return http.StatusInternalServerError, tr.T(i18n.KeyPanelErrorInternalShort)
 	}
 }
 
 // publicPageFailure maps an ops error to a page status and a message that does
 // not expose subprocess diagnostics or filesystem paths.
-func publicPageFailure(err error) (int, string) {
+func publicPageFailure(tr *i18n.Translator, err error) (int, string) {
 	status := OpsHTTPStatus(err)
 	switch status {
 	case http.StatusBadRequest:
-		return status, "Проверьте параметры запроса."
+		return status, tr.T(i18n.KeyPanelPublicBadRequest)
 	case http.StatusNotFound:
-		return status, "Запрошенный архив не найден."
+		return status, tr.T(i18n.KeyPanelPublicNotFound)
 	case http.StatusConflict:
-		return status, "Другая операция уже выполняется. Попробуйте позже."
+		return status, tr.T(i18n.KeyPanelErrorLocked)
 	case http.StatusUnprocessableEntity:
-		return status, "Архив или конфигурация повреждены."
+		return status, tr.T(i18n.KeyPanelPublicCorrupted)
 	case http.StatusInsufficientStorage:
-		return status, "Недостаточно свободного места для операции."
+		return status, tr.T(i18n.KeyPanelPublicNoSpace)
 	case http.StatusServiceUnavailable:
-		return status, "Сервер временно недоступен: systemd или unit не отвечает."
+		return status, tr.T(i18n.KeyPanelPublicUnavailableLong)
 	default:
-		return http.StatusInternalServerError, "Внутренняя ошибка."
+		return http.StatusInternalServerError, tr.T(i18n.KeyPanelErrorInternalShort)
 	}
 }
 
@@ -661,20 +666,20 @@ func publicAddress(cfg Config, r *http.Request) string {
 	return host
 }
 
-func statusLabel(status string) string {
+func statusLabel(tr *i18n.Translator, status string) string {
 	switch status {
 	case "running":
-		return "работает"
+		return tr.T(i18n.KeyPanelStatusRunning)
 	case "stopped":
-		return "остановлен"
+		return tr.T(i18n.KeyPanelStatusStopped)
 	case "starting":
-		return "запускается"
+		return tr.T(i18n.KeyPanelStatusStarting)
 	case "unhealthy":
-		return "нездоров"
+		return tr.T(i18n.KeyPanelStatusUnhealthy)
 	case "service_unavailable":
-		return "недоступен"
+		return tr.T(i18n.KeyPanelStatusUnavailable)
 	default:
-		return "неизвестно"
+		return tr.T(i18n.KeyPanelStatusUnknown)
 	}
 }
 
@@ -696,32 +701,44 @@ func humanSize(size int64) string {
 // backupGroupLabel groups archives by day for the last week, by ISO week for
 // the last year and by month after that. The labels are meant for humans; the
 // exact timestamp stays in <time datetime>.
-func backupGroupLabel(raw string, now time.Time) string {
+func backupGroupLabel(tr *i18n.Translator, raw string, now time.Time) string {
 	at, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
-		return "Другие"
+		return tr.T(i18n.KeyPanelGroupOther)
 	}
 	at = at.UTC()
 	now = now.UTC()
 	age := now.Sub(at)
 	switch {
 	case sameUTCDay(at, now):
-		return "Сегодня"
+		return tr.T(i18n.KeyPanelGroupToday)
 	case sameUTCDay(at, now.AddDate(0, 0, -1)):
-		return "Вчера"
+		return tr.T(i18n.KeyPanelGroupYesterday)
 	case age <= 7*24*time.Hour:
 		return at.Format("02.01.2006")
 	case age <= 365*24*time.Hour:
 		year, week := at.ISOWeek()
-		return fmt.Sprintf("Неделя %d, %d", week, year)
+		return tr.Tf(i18n.KeyPanelGroupWeek, week, year)
 	default:
-		return monthNames[at.Month()-1] + " " + at.Format("2006")
+		return tr.T(monthNameKey(at.Month())) + " " + at.Format("2006")
 	}
 }
 
-var monthNames = [...]string{
-	"Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-	"Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+// monthNameKey maps a month to its catalog key, keeping the group labels of the
+// archive pages in the operator's language.
+func monthNameKey(month time.Month) string {
+	keys := [...]string{
+		i18n.KeyPanelMonthJanuary, i18n.KeyPanelMonthFebruary,
+		i18n.KeyPanelMonthMarch, i18n.KeyPanelMonthApril,
+		i18n.KeyPanelMonthMay, i18n.KeyPanelMonthJune,
+		i18n.KeyPanelMonthJuly, i18n.KeyPanelMonthAugust,
+		i18n.KeyPanelMonthSeptember, i18n.KeyPanelMonthOctober,
+		i18n.KeyPanelMonthNovember, i18n.KeyPanelMonthDecember,
+	}
+	if month < time.January || month > time.December {
+		return i18n.KeyPanelGroupOther
+	}
+	return keys[month-1]
 }
 
 func sameUTCDay(a, b time.Time) bool {
@@ -741,69 +758,54 @@ func backupTime(raw string) (string, string) {
 	return at.Format(time.RFC3339), at.Format("02.01.2006 15:04 UTC")
 }
 
-// timeLabel renders a timestamp relative to now ("5 минут назад"). It is used
+// timeLabel renders a timestamp relative to now ("5 minutes ago"). It is used
 // where the exact value matters less than the age; invalid input is returned
 // unchanged so the page never hides data.
-func timeLabel(raw string, now time.Time) string {
+func timeLabel(tr *i18n.Translator, raw string, now time.Time) string {
 	at, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
 		return raw
 	}
-	return humanAgo(at, now)
+	return humanAgo(tr, at, now)
 }
 
-// humanAgo renders how long ago at happened in whole Russian units.
-func humanAgo(at, now time.Time) string {
+// humanAgo renders how long ago at happened in the language of the panel.
+func humanAgo(tr *i18n.Translator, at, now time.Time) string {
 	if !at.Before(now) {
-		return "только что"
+		return tr.T(i18n.KeyPanelTimeJustNow)
 	}
 	age := now.Sub(at)
 	var value int
-	var one, few, many string
+	var key string
 	switch {
 	case age < time.Minute:
-		return "только что"
+		return tr.T(i18n.KeyPanelTimeJustNow)
 	case age < time.Hour:
-		value, one, few, many = int(age/time.Minute), "минуту", "минуты", "минут"
+		value, key = int(age/time.Minute), i18n.KeyPanelTimeMinuteAgo
 	case age < 24*time.Hour:
-		value, one, few, many = int(age/time.Hour), "час", "часа", "часов"
+		value, key = int(age/time.Hour), i18n.KeyPanelTimeHourAgo
 	case age < 30*24*time.Hour:
-		value, one, few, many = int(age/(24*time.Hour)), "день", "дня", "дней"
+		value, key = int(age/(24*time.Hour)), i18n.KeyPanelTimeDayAgo
 	case age < 365*24*time.Hour:
-		value, one, few, many = int(age/(30*24*time.Hour)), "месяц", "месяца", "месяцев"
+		value, key = int(age/(30*24*time.Hour)), i18n.KeyPanelTimeMonthAgo
 	default:
-		value, one, few, many = int(age/(365*24*time.Hour)), "год", "года", "лет"
+		value, key = int(age/(365*24*time.Hour)), i18n.KeyPanelTimeYearAgo
 	}
 	if value < 1 {
 		value = 1
 	}
-	return fmt.Sprintf("%d %s назад", value, pluralRu(value, one, few, many))
-}
-
-func pluralRu(value int, one, few, many string) string {
-	value %= 100
-	if value >= 11 && value <= 14 {
-		return many
-	}
-	switch value % 10 {
-	case 1:
-		return one
-	case 2, 3, 4:
-		return few
-	default:
-		return many
-	}
+	return tr.Pluralf(key, value)
 }
 
 // healthLabel turns the ops health verdict into an operator-facing word.
-func healthLabel(health string) string {
+func healthLabel(tr *i18n.Translator, health string) string {
 	switch health {
 	case "healthy":
-		return "в порядке"
+		return tr.T(i18n.KeyPanelHealthOK)
 	case "unhealthy":
-		return "проблемы"
+		return tr.T(i18n.KeyPanelHealthProblems)
 	default:
-		return "неизвестно"
+		return tr.T(i18n.KeyPanelHealthUnknown)
 	}
 }
 

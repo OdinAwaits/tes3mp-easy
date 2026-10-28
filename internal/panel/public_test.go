@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Saagilat/tes3mp-easy/internal/i18n"
+
 	"github.com/Saagilat/tes3mp-easy/internal/ops"
 	"github.com/Saagilat/tes3mp-easy/test/fixtures"
 )
@@ -466,8 +468,8 @@ func TestPublicBackupsPage(t *testing.T) {
 		"mods-2025-01-15_11-00-00.tar.gz",
 		// Human-readable timestamps: relative age in the card, absolute UTC in
 		// the title, day/week/month group headings.
-		"1 час назад", `title="23.10.2026 11:00 UTC"`,
-		"Сегодня", "Неделя 40, 2026", "Январь 2025",
+		"1 hour ago", `title="23.10.2026 11:00 UTC"`,
+		"Today", "Week 40, 2026", "January 2025",
 		"Состояния", "Моды", "Моды:",
 		"/backups/state/state-manual-2026-10-23_11-00-00.tar.gz",
 		"/backups/state/state-manual-2026-10-23_11-00-00.tar.gz/bundle",
@@ -582,7 +584,7 @@ func TestPublicBackupsOpsFailure(t *testing.T) {
 		t.Fatalf("backups ops failure = %d, want 503", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "Сервер временно недоступен") {
+	if !strings.Contains(body, "The server is temporarily unavailable") {
 		t.Fatalf("page does not show a service-unavailable message:\n%s", body)
 	}
 	if strings.Contains(body, "systemd is unavailable") {
@@ -835,8 +837,7 @@ func TestPublicHomePage(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"Morrowind with friends", "running", "работает", "25565",
-		"Публичные архивы", "/backups", "/backups#state", "/backups#mods",
+		"Morrowind with friends", "running", "Public archives", "25565", "/backups", "/backups#state", "/backups#mods",
 		"/admin/login",
 	} {
 		if !strings.Contains(body, want) {
@@ -861,6 +862,7 @@ func TestPublicHomePage(t *testing.T) {
 
 func TestHumanAgo(t *testing.T) {
 	now := sessionTestNow
+	tr := i18n.New(i18n.Russian)
 	tests := []struct {
 		offset time.Duration
 		want   string
@@ -880,17 +882,25 @@ func TestHumanAgo(t *testing.T) {
 		{offset: 365 * 24 * time.Hour, want: "1 год назад"},
 	}
 	for _, tt := range tests {
-		if got := humanAgo(now.Add(-tt.offset), now); got != tt.want {
+		if got := humanAgo(tr, now.Add(-tt.offset), now); got != tt.want {
 			t.Errorf("humanAgo(-%s) = %q, want %q", tt.offset, got, tt.want)
 		}
 	}
-	if got := humanAgo(now.Add(time.Hour), now); got != "только что" {
+	if got := humanAgo(tr, now.Add(time.Hour), now); got != "только что" {
 		t.Errorf("humanAgo(future) = %q, want %q", got, "только что")
+	}
+	english := i18n.New(i18n.English)
+	if got := humanAgo(english, now.Add(-2*time.Minute), now); got != "2 minutes ago" {
+		t.Errorf("humanAgo(en, -2m) = %q, want %q", got, "2 minutes ago")
+	}
+	if got := humanAgo(english, now.Add(-time.Minute), now); got != "1 minute ago" {
+		t.Errorf("humanAgo(en, -1m) = %q, want %q", got, "1 minute ago")
 	}
 }
 
 func TestBackupGroupLabel(t *testing.T) {
 	now := sessionTestNow
+	tr := i18n.New(i18n.Russian)
 	tests := []struct {
 		raw  string
 		want string
@@ -903,9 +913,12 @@ func TestBackupGroupLabel(t *testing.T) {
 		{raw: "not-a-time", want: "Другие"},
 	}
 	for _, tt := range tests {
-		if got := backupGroupLabel(tt.raw, now); got != tt.want {
+		if got := backupGroupLabel(tr, tt.raw, now); got != tt.want {
 			t.Errorf("backupGroupLabel(%q) = %q, want %q", tt.raw, got, tt.want)
 		}
+	}
+	if got := backupGroupLabel(i18n.New(i18n.English), "2025-01-15T11:00:00Z", now); got != "January 2025" {
+		t.Errorf("backupGroupLabel(en) = %q, want %q", got, "January 2025")
 	}
 }
 
@@ -921,7 +934,7 @@ func TestPublicHomeShowsServiceUnavailable(t *testing.T) {
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, "service_unavailable") ||
-		!strings.Contains(body, "Сервер временно недоступен") {
+		!strings.Contains(body, "The server is temporarily unavailable") {
 		t.Fatalf("home page does not show service_unavailable:\n%s", body)
 	}
 	if strings.Contains(body, "running") {

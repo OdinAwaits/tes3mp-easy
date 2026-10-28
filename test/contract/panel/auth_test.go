@@ -30,7 +30,7 @@ func TestPanelAuthContract(t *testing.T) {
 		"password": {initial},
 	}, nil)
 	requireStatus(t, resp, http.StatusForbidden, "POST /admin/login without CSRF")
-	requireContains(t, resp.Body, "Форма устарела")
+	requireContains(t, resp.Body, "The form is stale")
 
 	// A wrong password keeps the session gate closed and is auditable.
 	resp = p.request(t, client, http.MethodGet, "/admin/login", nil, nil)
@@ -41,7 +41,7 @@ func TestPanelAuthContract(t *testing.T) {
 		"password": {"definitely wrong"},
 	}, nil)
 	requireStatus(t, resp, http.StatusUnauthorized, "POST /admin/login wrong password")
-	requireContains(t, resp.Body, "Неверный пароль")
+	requireContains(t, resp.Body, "Wrong password")
 
 	resp = p.request(t, client, http.MethodGet, "/admin/login", nil, nil)
 	requireStatus(t, resp, http.StatusOK, "GET /admin/login before success")
@@ -81,7 +81,7 @@ func TestPanelAuthContract(t *testing.T) {
 		"confirm_password": {"different password"},
 	}, nil)
 	requireStatus(t, resp, http.StatusBadRequest, "POST /admin/password mismatch")
-	requireContains(t, resp.Body, "Пароли не совпадают")
+	requireContains(t, resp.Body, "The passwords do not match")
 
 	resp = p.request(t, client, http.MethodGet, "/admin/password", nil, nil)
 	requireStatus(t, resp, http.StatusOK, "GET /admin/password before short")
@@ -93,7 +93,7 @@ func TestPanelAuthContract(t *testing.T) {
 		"confirm_password": {"short"},
 	}, nil)
 	requireStatus(t, resp, http.StatusBadRequest, "POST /admin/password short")
-	requireContains(t, resp.Body, "не менее 12")
+	requireContains(t, resp.Body, "at least 12 characters")
 
 	resp = p.request(t, client, http.MethodGet, "/admin/password", nil, nil)
 	requireStatus(t, resp, http.StatusOK, "GET /admin/password before wrong current")
@@ -105,7 +105,7 @@ func TestPanelAuthContract(t *testing.T) {
 		"confirm_password": {newPassword},
 	}, nil)
 	requireStatus(t, resp, http.StatusUnauthorized, "POST /admin/password wrong current")
-	requireContains(t, resp.Body, "Текущий пароль неверен")
+	requireContains(t, resp.Body, "The current password is wrong")
 
 	resp = p.request(t, client, http.MethodGet, "/admin/password", nil, nil)
 	requireStatus(t, resp, http.StatusOK, "GET /admin/password before success")

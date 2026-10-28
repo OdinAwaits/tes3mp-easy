@@ -132,7 +132,7 @@ func TestAdminAuthenticationAndPasswordChange(t *testing.T) {
 
 	rec = panelRequest(t, env.handler, http.MethodGet, "/admin/password",
 		nil, []*http.Cookie{sessionCookie}, nil)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "временным паролем") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "temporary password") {
 		t.Fatalf("GET /admin/password = %d", rec.Code)
 	}
 	passwordCSRF := csrfInputToken(t, rec.Body.String())

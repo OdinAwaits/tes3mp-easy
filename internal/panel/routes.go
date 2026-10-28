@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 )
 
 const maxAuthFormBytes = 16 << 10
@@ -27,6 +29,7 @@ type panelHandler struct {
 	logger    *log.Logger
 	now       func() time.Time
 	metrics   *metricsStore
+	language  *languageSetting
 
 	doctorMu     sync.Mutex
 	doctorReport Doctor
@@ -36,12 +39,14 @@ type panelHandler struct {
 }
 
 type loginPageData struct {
+	pageI18n
 	CSRF  string
 	Error string
 	Nav   string
 }
 
 type passwordPageData struct {
+	pageI18n
 	CSRF       string
 	Error      string
 	MustChange bool
@@ -66,8 +71,14 @@ func newPanelHandler(cfg Config, auth *authStore, opsClient Ops, logger *log.Log
 	if err != nil {
 		return nil, err
 	}
+	normalized := cfg.Normalize()
+	language, err := openLanguageSetting(normalized.DataDir,
+		i18n.Language(normalized.Language), logger)
+	if err != nil {
+		return nil, err
+	}
 	return &panelHandler{
-		cfg:       cfg.Normalize(),
+		cfg:       normalized,
 		auth:      auth,
 		ops:       opsClient,
 		sessions:  newSessionStore(),
@@ -77,6 +88,7 @@ func newPanelHandler(cfg Config, auth *authStore, opsClient Ops, logger *log.Log
 		logger:    logger,
 		now:       now,
 		metrics:   newMetricsStore(cfg.Root),
+		language:  language,
 	}, nil
 }
 
@@ -130,6 +142,7 @@ func allPanelRoutes() []panelRoute {
 			{pattern: "GET /admin/login", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(h.handleLoginGet) }},
 			{pattern: "POST /admin/login", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(h.handleLoginPost) }},
 			{pattern: "POST /admin/logout", handle: func(h *panelHandler) http.Handler { return h.authenticated(true, h.handleLogout) }},
+			{pattern: "POST /admin/language", handle: func(h *panelHandler) http.Handler { return h.authenticated(true, h.handleLanguage) }},
 			{pattern: "GET /admin/password", nav: "password", handle: func(h *panelHandler) http.Handler { return h.authenticated(true, h.handlePasswordGet) }},
 			{pattern: "POST /admin/password", nav: "password", handle: func(h *panelHandler) http.Handler { return h.authenticated(true, h.handlePasswordPost) }},
 			{pattern: "GET /admin", nav: "dashboard", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleDashboard) }},
@@ -220,13 +233,13 @@ func (h *panelHandler) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	if allowed, retry := h.limiter.allow(limitKey, now); !allowed {
 		w.Header().Set("Retry-After", retryAfterSeconds(retry))
 		h.renderLogin(w, r, http.StatusTooManyRequests,
-			"Слишком много попыток входа. Подождите и попробуйте снова.")
+			h.tr().T(i18n.KeyPanelAuthRateLimited))
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxAuthFormBytes)
 	if err := r.ParseForm(); err != nil {
-		h.renderLogin(w, r, http.StatusBadRequest, "Некорректная форма входа.")
+		h.renderLogin(w, r, http.StatusBadRequest, h.tr().T(i18n.KeyPanelAuthBadForm))
 		return
 	}
 
@@ -237,7 +250,7 @@ func (h *panelHandler) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	if !h.sessions.consumeLoginCSRF(cookieValue, r.PostForm.Get(csrfFormField), now) {
 		clearLoginCSRFCookie(w)
 		h.renderLogin(w, r, http.StatusForbidden,
-			"Форма устарела. Обновите страницу и попробуйте снова.")
+			h.tr().T(i18n.KeyPanelAuthStaleForm))
 		return
 	}
 
@@ -245,13 +258,13 @@ func (h *panelHandler) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	if password == "" {
 		h.limiter.fail(limitKey, now)
 		h.logger.Printf("auth: empty password from %s", ip)
-		h.renderLogin(w, r, http.StatusUnauthorized, "Введите пароль.")
+		h.renderLogin(w, r, http.StatusUnauthorized, h.tr().T(i18n.KeyPanelAuthPasswordRequired))
 		return
 	}
 	if !h.auth.verify(password) {
 		h.limiter.fail(limitKey, now)
 		h.logger.Printf("auth: failed login from %s", ip)
-		h.renderLogin(w, r, http.StatusUnauthorized, "Неверный пароль.")
+		h.renderLogin(w, r, http.StatusUnauthorized, h.tr().T(i18n.KeyPanelAuthPasswordInvalid))
 		return
 	}
 
@@ -298,7 +311,11 @@ func (h *panelHandler) renderLogin(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	setLoginCSRFCookie(w, token, h.now())
-	h.render(w, status, "login.html", loginPageData{CSRF: token, Error: message})
+	h.render(w, status, "login.html", loginPageData{
+		pageI18n: h.pageI18n(),
+		CSRF:     token,
+		Error:    message,
+	})
 }
 
 func (h *panelHandler) render(w http.ResponseWriter, status int, name string, data any) {
@@ -446,13 +463,13 @@ func (h *panelHandler) handlePasswordPost(w http.ResponseWriter, r *http.Request
 	if allowed, retry := h.limiter.allow(limitKey, now); !allowed {
 		w.Header().Set("Retry-After", retryAfterSeconds(retry))
 		h.renderPassword(w, session, http.StatusTooManyRequests,
-			"Слишком много попыток. Подождите и попробуйте снова.")
+			h.tr().T(i18n.KeyPanelAuthRateLimitedChange))
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxAuthFormBytes)
 	if err := r.ParseForm(); err != nil {
-		h.renderPassword(w, session, http.StatusBadRequest, "Некорректная форма.")
+		h.renderPassword(w, session, http.StatusBadRequest, h.tr().T(i18n.KeyPanelAuthBadFormChange))
 		return
 	}
 
@@ -461,16 +478,16 @@ func (h *panelHandler) handlePasswordPost(w http.ResponseWriter, r *http.Request
 	confirm := r.PostForm.Get("confirm_password")
 	switch {
 	case next != confirm:
-		h.renderPassword(w, session, http.StatusBadRequest, "Пароли не совпадают.")
+		h.renderPassword(w, session, http.StatusBadRequest, h.tr().T(i18n.KeyPanelAuthPasswordMismatch))
 		return
 	case next == current:
 		h.renderPassword(w, session, http.StatusBadRequest,
-			"Новый пароль должен отличаться от текущего.")
+			h.tr().T(i18n.KeyPanelAuthPasswordSame))
 		return
 	case validateNewPassword(next) != nil:
-		message := "Новый пароль должен содержать не менее 12 символов."
+		message := h.tr().T(i18n.KeyPanelAuthPasswordShort)
 		if len(next) > maxPasswordBytes {
-			message = "Новый пароль слишком длинный."
+			message = h.tr().T(i18n.KeyPanelAuthPasswordLong)
 		}
 		h.renderPassword(w, session, http.StatusBadRequest, message)
 		return
@@ -480,12 +497,12 @@ func (h *panelHandler) handlePasswordPost(w http.ResponseWriter, r *http.Request
 		if errors.Is(err, errCurrentPassword) {
 			h.limiter.fail(limitKey, now)
 			h.logger.Printf("auth: failed password change from %s", ip)
-			h.renderPassword(w, session, http.StatusUnauthorized, "Текущий пароль неверен.")
+			h.renderPassword(w, session, http.StatusUnauthorized, h.tr().T(i18n.KeyPanelAuthPasswordWrong))
 			return
 		}
 		h.logger.Printf("auth: change password from %s: %v", ip, err)
 		h.renderPassword(w, session, http.StatusInternalServerError,
-			"Не удалось сохранить пароль.")
+			h.tr().T(i18n.KeyPanelAuthPasswordSaveFail))
 		return
 	}
 	h.limiter.reset(limitKey)
@@ -509,6 +526,7 @@ func (h *panelHandler) handlePasswordPost(w http.ResponseWriter, r *http.Request
 func (h *panelHandler) renderPassword(w http.ResponseWriter, session sessionState,
 	status int, message string) {
 	h.render(w, status, "password.html", passwordPageData{
+		pageI18n:   h.pageI18n(),
 		CSRF:       session.CSRF,
 		Error:      message,
 		MustChange: session.MustChange,
@@ -520,4 +538,37 @@ func (h *panelHandler) handleLogout(w http.ResponseWriter, r *http.Request, sess
 	clearSessionCookie(w)
 	h.logger.Printf("auth: logout from %s", clientIP(r))
 	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+}
+
+// handleLanguage switches the interface language of the whole panel. The
+// choice is stored in panel-data/settings.json, so it survives a restart and
+// every browser sees the same panel.
+func (h *panelHandler) handleLanguage(w http.ResponseWriter, r *http.Request, session sessionState) {
+	h.private(w)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	language, ok := i18n.Parse(r.PostForm.Get("language"))
+	if !ok {
+		http.Error(w, "unsupported language", http.StatusBadRequest)
+		return
+	}
+	if err := h.language.Set(language); err != nil {
+		h.logger.Printf("panel: set language: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	h.logger.Printf("panel: language switched to %s from %s", language, clientIP(r))
+	http.Redirect(w, r, languageReturnPath(r), http.StatusSeeOther)
+}
+
+// languageReturnPath keeps the operator on the page the selector was used on,
+// but never leaves the panel: anything else falls back to the dashboard.
+func languageReturnPath(r *http.Request) string {
+	next := r.PostForm.Get("next")
+	if !strings.HasPrefix(next, "/admin") || strings.Contains(next, "//") {
+		return "/admin"
+	}
+	return next
 }

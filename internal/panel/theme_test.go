@@ -117,10 +117,10 @@ func TestAdminDashboardMarksActiveNav(t *testing.T) {
 		t.Fatalf("GET /admin = %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `<a href="/admin" aria-current="page">Обзор</a>`) {
+	if !strings.Contains(body, `<a href="/admin" aria-current="page">Overview</a>`) {
 		t.Fatal("dashboard does not mark the overview link as current")
 	}
-	if strings.Contains(body, `<a href="/admin/logs" aria-current="page">Логи</a>`) {
+	if strings.Contains(body, `<a href="/admin/logs" aria-current="page">Logs</a>`) {
 		t.Fatal("dashboard marks more than one nav item as current")
 	}
 }

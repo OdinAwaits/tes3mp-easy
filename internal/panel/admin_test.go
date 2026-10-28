@@ -300,7 +300,7 @@ func TestAdminDashboardShowsServerStatus(t *testing.T) {
 		t.Fatalf("GET /admin = %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"Панель запущена", "работает", "Friends"} {
+	for _, want := range []string{"Панель запущена", "running", "Friends"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard does not contain %q:\n%s", want, body)
 		}
@@ -488,11 +488,11 @@ func TestAdminStatusAPI(t *testing.T) {
 		t.Fatalf("status response = %+v", response)
 	}
 	// The dashboard polls this endpoint and renders the labels verbatim, so the
-	// machine state and the Russian label must both be present.
-	if response.StatusLabel != "работает" || response.HealthLabel != "в порядке" {
+	// machine state and the localized label must both be present.
+	if response.StatusLabel != "running" || response.HealthLabel != "ok" {
 		t.Fatalf("labels = %q/%q", response.StatusLabel, response.HealthLabel)
 	}
-	if response.StartedAtLabel == nil || *response.StartedAtLabel != "2 часа назад" {
+	if response.StartedAtLabel == nil || *response.StartedAtLabel != "2 hours ago" {
 		t.Fatalf("started_at_label = %v", response.StartedAtLabel)
 	}
 	if response.CanStart || !response.CanStop {
@@ -516,10 +516,10 @@ func TestAdminDashboardRendersLabelsAndActions(t *testing.T) {
 		canStop     bool
 		withStarted bool
 	}{
-		{state: "running", statusLabel: "работает", canStop: true, withStarted: true},
-		{state: "starting", statusLabel: "запускается", canStop: true},
-		{state: "stopped", statusLabel: "остановлен", canStart: true},
-		{state: "unhealthy", statusLabel: "нездоров", canStart: true},
+		{state: "running", statusLabel: "running", canStop: true, withStarted: true},
+		{state: "starting", statusLabel: "starting", canStop: true},
+		{state: "stopped", statusLabel: "stopped", canStart: true},
+		{state: "unhealthy", statusLabel: "unhealthy", canStart: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.state, func(t *testing.T) {
@@ -540,7 +540,7 @@ func TestAdminDashboardRendersLabelsAndActions(t *testing.T) {
 				t.Fatalf("status badge is not %q (%q):\n%s", tt.statusLabel,
 					tt.state, body)
 			}
-			if !strings.Contains(body, `data-status="healthy">в порядке<`) {
+			if !strings.Contains(body, `data-status="healthy">ok<`) {
 				t.Fatalf("health badge is not localized:\n%s", body)
 			}
 			// A disabled button is the negation of the matching permission.
@@ -552,7 +552,7 @@ func TestAdminDashboardRendersLabelsAndActions(t *testing.T) {
 				`data-server-action="stop" disabled`); stopDisabled == tt.canStop {
 				t.Fatalf("stop button disabled=%v for state %q", stopDisabled, tt.state)
 			}
-			if tt.withStarted && !strings.Contains(body, "2 часа назад") {
+			if tt.withStarted && !strings.Contains(body, "2 hours ago") {
 				t.Fatalf("started_at is not human readable:\n%s", body)
 			}
 		})
@@ -1010,7 +1010,7 @@ func TestAdminStaffListsPlayersAndSetsRank(t *testing.T) {
 	rec = env.request(t, http.MethodGet,
 		"/admin/staff?ok=staff_saved&restart=1", nil)
 	if rec.Code != http.StatusOK ||
-		!strings.Contains(rec.Body.String(), "Нужен перезапуск сервера") {
+		!strings.Contains(rec.Body.String(), "Restart the server to apply the changes.") {
 		t.Fatalf("staff restart banner = %d: %s", rec.Code, rec.Body.String())
 	}
 }
