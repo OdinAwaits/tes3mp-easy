@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -87,8 +90,8 @@ func (c *fontSetChooser) id(label string) string {
 }
 
 // fontsDirOf is the Fonts folder the preview reads. A machine without a
-// configured Morrowind path has no folder yet, and the preview falls back to
-// the launcher font instead of failing the dialog.
+// configured Morrowind path has no folder yet: the sample says so and stays on
+// the launcher font.
 func (s *shell) fontsDirOf() string {
 	configDir, err := s.service.OpenMWConfigDir()
 	if err != nil {
@@ -97,12 +100,43 @@ func (s *shell) fontsDirOf() string {
 	return filepath.Join(configDir, "Fonts")
 }
 
+// fontCacheDirOf is the client cache the preview downloads a missing set into.
+func (s *shell) fontCacheDirOf() string {
+	dir, err := s.service.FontCacheDir()
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
+// fontPreviewFiles is where the sample reads the TTF files from and how it gets
+// a set that is neither installed nor cached. The cache is read as well, so the
+// install after a preview download needs no network.
+func (s *shell) fontPreviewFiles() fontPreviewFiles {
+	files := fontPreviewFiles{
+		dir:      s.fontsDirOf(),
+		cacheDir: s.fontCacheDirOf(),
+	}
+	files.ensure = func(setID string) error {
+		result, err := s.service.EnsureFontsCached(context.Background(), setID,
+			nil)
+		if err != nil {
+			return err
+		}
+		if len(result.Warnings) > 0 {
+			return errors.New(strings.Join(result.Warnings, "; "))
+		}
+		return nil
+	}
+	return files
+}
+
 // showFontsDialog switches the font set from the Installation checklist. The
 // files are downloaded in the background, and the row shows the progress.
 func (s *shell) showFontsDialog() {
 	tr := s.service.Translator()
 	chooser := newFontSetChooser(tr, s.service.FontSet(), nil)
-	preview := newFontPreview(tr, s.fontsDirOf(), chooser.selected())
+	preview := newFontPreview(tr, s.fontPreviewFiles(), chooser.selected())
 	chooser.picker.OnChanged = func(label string) {
 		if id := chooser.id(label); id != "" {
 			preview.selectSet(id)

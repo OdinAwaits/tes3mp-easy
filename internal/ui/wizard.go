@@ -202,7 +202,7 @@ func (w *setupWizard) fontsObjects(tr *i18n.Translator) []fyne.CanvasObject {
 	w.fontsStatus.Wrapping = fyne.TextWrapWord
 	w.fontSetID = w.shell.service.FontSet()
 	chooser := newFontSetChooser(tr, w.fontSetID, w.selectFontSet)
-	w.fontPreview = newFontPreview(tr, w.shell.fontsDirOf(), w.fontSetID)
+	w.fontPreview = newFontPreview(tr, w.shell.fontPreviewFiles(), w.fontSetID)
 	w.renderFontsState(tr)
 
 	// settings.cfg belongs to the same screen: the font set and the four
@@ -212,6 +212,8 @@ func (w *setupWizard) fontsObjects(tr *i18n.Translator) []fyne.CanvasObject {
 	w.uiVideoStatus.Wrapping = fyne.TextWrapWord
 	w.uiVideoStatus.SetText(uiVideoStateLabel(tr, w.uiVideoState))
 	w.uiVideoForm = newUIVideoForm(openmwcfg.Defaults())
+	w.uiVideoForm.onChanged(w.uiVideoChanged)
+	w.uiVideoChanged()
 
 	objects := []fyne.CanvasObject{
 		wizardHint(tr, i18n.KeyWizardFontsHint),
@@ -265,6 +267,19 @@ func (w *setupWizard) tes3mpObjects(tr *i18n.Translator) []fyne.CanvasObject {
 	}
 }
 
+// uiVideoChanged redraws the font sample with the size the form describes right
+// now. An invalid entry keeps the previous size: the form reports it on save.
+func (w *setupWizard) uiVideoChanged() {
+	if w.fontPreview == nil || w.uiVideoForm == nil {
+		return
+	}
+	values, err := w.uiVideoForm.values()
+	if err != nil {
+		return
+	}
+	w.fontPreview.setScaling(values.FontSize, values.ScalingFactor)
+}
+
 // loadUIVideo fills the step from the current settings.cfg. The file appears
 // after the first game launch, so the defaults are shown until then.
 func (w *setupWizard) loadUIVideo() {
@@ -277,6 +292,7 @@ func (w *setupWizard) loadUIVideo() {
 	if w.uiVideoForm != nil {
 		w.uiVideoForm.set(state.Values)
 	}
+	w.uiVideoChanged()
 	if w.uiVideoStatus != nil {
 		w.uiVideoStatus.SetText(
 			uiVideoStateLabel(w.shell.service.Translator(), state))

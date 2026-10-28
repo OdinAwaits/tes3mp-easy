@@ -262,22 +262,31 @@ const (
 	KeyLogsOpenFolder = "logs.open_folder"
 	KeyLogsHint       = "logs.hint"
 
-	KeyWizardTitle          = "wizard.title"
-	KeyWizardStep           = "wizard.step"
-	KeyWizardCancel         = "wizard.cancel"
-	KeyWizardBack           = "wizard.back"
-	KeyWizardNext           = "wizard.next"
-	KeyWizardFinish         = "wizard.finish"
-	KeyWizardRetry          = "wizard.retry"
-	KeyWizardMorrowindTitle = "wizard.morrowind.title"
-	KeyWizardMorrowindHint  = "wizard.morrowind.hint"
-	KeyWizardFontsTitle     = "wizard.fonts.title"
-	KeyWizardFontsHint      = "wizard.fonts.hint"
-	KeyWizardFontsPending   = "wizard.fonts.pending"
-	KeyWizardFontsPartial   = "wizard.fonts.partial"
-	KeyFontsPreviewHint     = "fonts.set.preview_hint"
-	KeyWizardTES3MPTitle    = "wizard.tes3mp.title"
-	KeyWizardTES3MPHint     = "wizard.tes3mp.hint"
+	KeyWizardTitle             = "wizard.title"
+	KeyWizardStep              = "wizard.step"
+	KeyWizardCancel            = "wizard.cancel"
+	KeyWizardBack              = "wizard.back"
+	KeyWizardNext              = "wizard.next"
+	KeyWizardFinish            = "wizard.finish"
+	KeyWizardRetry             = "wizard.retry"
+	KeyWizardMorrowindTitle    = "wizard.morrowind.title"
+	KeyWizardMorrowindHint     = "wizard.morrowind.hint"
+	KeyWizardFontsTitle        = "wizard.fonts.title"
+	KeyWizardFontsHint         = "wizard.fonts.hint"
+	KeyWizardFontsPending      = "wizard.fonts.pending"
+	KeyWizardFontsPartial      = "wizard.fonts.partial"
+	KeyFontsPreviewHint        = "fonts.set.preview_hint"
+	KeyFontsPreviewSlotUI      = "fonts.preview.slot.interface"
+	KeyFontsPreviewSlotDaedric = "fonts.preview.slot.daedric"
+	KeyFontsPreviewSlotConsole = "fonts.preview.slot.console"
+	KeyFontsPreviewDownloading = "fonts.preview.downloading"
+	KeyFontsPreviewMissing     = "fonts.preview.missing"
+	KeyFontsPreviewFailed      = "fonts.preview.failed"
+	KeyFontsPreviewNoFolder    = "fonts.preview.no_folder"
+	KeyFontsPreviewSize        = "fonts.preview.size"
+	KeyFontsPreviewSizeClipped = "fonts.preview.size_clipped"
+	KeyWizardTES3MPTitle       = "wizard.tes3mp.title"
+	KeyWizardTES3MPHint        = "wizard.tes3mp.hint"
 
 	KeySetupFind                = "setup.find"
 	KeySetupChoose              = "setup.choose"
@@ -585,22 +594,31 @@ var catalogs = map[Language]map[string]string{
 		KeyLogsOpenFolder: "Open log folder",
 		KeyLogsHint:       "The last %d lines are shown. The full file is in the log folder.",
 
-		KeyWizardTitle:          "First-run setup",
-		KeyWizardStep:           "Step %d of %d",
-		KeyWizardCancel:         "Cancel setup",
-		KeyWizardBack:           "Back",
-		KeyWizardNext:           "Next",
-		KeyWizardFinish:         "Finish",
-		KeyWizardRetry:          "Retry",
-		KeyWizardMorrowindTitle: "Morrowind",
-		KeyWizardMorrowindHint:  "Select the original game folder. The client only reads it.",
-		KeyWizardFontsTitle:     "Fonts and interface",
-		KeyWizardFontsHint:      "The files replace the low-resolution stock fonts in My Games/OpenMW/Fonts and openmw.cfg gets the matching fallback= lines — text stops looking blurry at high resolution and Cyrillic stops showing as boxes. The set is checked before every launch; a failed download is retried on the next Play. The four values below are the same ones the Configure dialog writes to settings.cfg, with their range in the label.",
-		KeyWizardFontsPending:   "The %s font set will be downloaded in the background after setup; Play is not blocked by it.",
-		KeyWizardFontsPartial:   "Some fonts are missing (%s). They will be downloaded again in the background.",
-		KeyFontsPreviewHint:     "The sample uses the installed file of the chosen set; before the download it falls back to the launcher font.",
-		KeyWizardTES3MPTitle:    "TES3MP",
-		KeyWizardTES3MPHint:     "The client downloads and verifies TES3MP %s. No server details are needed for this step.",
+		KeyWizardTitle:             "First-run setup",
+		KeyWizardStep:              "Step %d of %d",
+		KeyWizardCancel:            "Cancel setup",
+		KeyWizardBack:              "Back",
+		KeyWizardNext:              "Next",
+		KeyWizardFinish:            "Finish",
+		KeyWizardRetry:             "Retry",
+		KeyWizardMorrowindTitle:    "Morrowind",
+		KeyWizardMorrowindHint:     "Select the original game folder. The client only reads it.",
+		KeyWizardFontsTitle:        "Fonts and interface",
+		KeyWizardFontsHint:         "The files replace the low-resolution stock fonts in My Games/OpenMW/Fonts and openmw.cfg gets the matching fallback= lines — text stops looking blurry at high resolution and Cyrillic stops showing as boxes. The set is checked before every launch; a failed download is retried on the next Play. The four values below are the same ones the Configure dialog writes to settings.cfg, with their range in the label.",
+		KeyWizardFontsPending:      "The %s font set will be downloaded in the background after setup; Play is not blocked by it.",
+		KeyWizardFontsPartial:      "Some fonts are missing (%s). They will be downloaded again in the background.",
+		KeyFontsPreviewHint:        "The sample shows the three files of the chosen set at the size the game draws them; missing files are downloaded in the background, and only a failed download falls back to the launcher font.",
+		KeyFontsPreviewSlotUI:      "Interface (Magic Cards)",
+		KeyFontsPreviewSlotDaedric: "Daedric",
+		KeyFontsPreviewSlotConsole: "Console (MonoFont)",
+		KeyFontsPreviewDownloading: "Downloading…",
+		KeyFontsPreviewMissing:     "The set is not downloaded yet.",
+		KeyFontsPreviewFailed:      "Not downloaded: %s",
+		KeyFontsPreviewNoFolder:    "Set the Morrowind folder first: the sample needs the downloaded font files.",
+		KeyFontsPreviewSize:        "In game: %d × %s = %d px",
+		KeyFontsPreviewSizeClipped: "In game: %d × %s = %d px, shown at %d px",
+		KeyWizardTES3MPTitle:       "TES3MP",
+		KeyWizardTES3MPHint:        "The client downloads and verifies TES3MP %s. No server details are needed for this step.",
 
 		KeySetupFind:                "Find automatically",
 		KeySetupChoose:              "Choose folder",
@@ -906,22 +924,31 @@ var catalogs = map[Language]map[string]string{
 		KeyLogsOpenFolder: "Открыть папку с логом",
 		KeyLogsHint:       "Показаны последние %d строк. Полный файл лежит в папке с логом.",
 
-		KeyWizardTitle:          "Первая настройка",
-		KeyWizardStep:           "Шаг %d из %d",
-		KeyWizardCancel:         "Отменить настройку",
-		KeyWizardBack:           "Назад",
-		KeyWizardNext:           "Далее",
-		KeyWizardFinish:         "Готово",
-		KeyWizardRetry:          "Повторить",
-		KeyWizardMorrowindTitle: "Morrowind",
-		KeyWizardMorrowindHint:  "Выберите папку с оригинальной игрой. Клиент только читает её.",
-		KeyWizardFontsTitle:     "Шрифты и интерфейс",
-		KeyWizardFontsHint:      "Файлы заменяют низкоприоритетные стандартные шрифты в My Games/OpenMW/Fonts, а в openmw.cfg добавляются строки fallback= — текст перестаёт быть размытым на высоком разрешении, а кириллица — квадратиками. Набор проверяется перед каждым запуском; неудачная загрузка повторяется при следующем Play. Четыре значения ниже — те же, что диалог «Настроить» пишет в settings.cfg; диапазон указан в подписи.",
-		KeyWizardFontsPending:   "Набор шрифтов %s будет скачан в фоне после настройки; Play из-за этого не блокируется.",
-		KeyWizardFontsPartial:   "Часть шрифтов отсутствует (%s). Они будут скачаны заново в фоне.",
-		KeyFontsPreviewHint:     "Образец набран установленным файлом выбранного набора; до загрузки используется шрифт лаунчера.",
-		KeyWizardTES3MPTitle:    "TES3MP",
-		KeyWizardTES3MPHint:     "Клиент скачает и проверит TES3MP %s. Адрес сервера для этого шага не нужен.",
+		KeyWizardTitle:             "Первая настройка",
+		KeyWizardStep:              "Шаг %d из %d",
+		KeyWizardCancel:            "Отменить настройку",
+		KeyWizardBack:              "Назад",
+		KeyWizardNext:              "Далее",
+		KeyWizardFinish:            "Готово",
+		KeyWizardRetry:             "Повторить",
+		KeyWizardMorrowindTitle:    "Morrowind",
+		KeyWizardMorrowindHint:     "Выберите папку с оригинальной игрой. Клиент только читает её.",
+		KeyWizardFontsTitle:        "Шрифты и интерфейс",
+		KeyWizardFontsHint:         "Файлы заменяют низкоприоритетные стандартные шрифты в My Games/OpenMW/Fonts, а в openmw.cfg добавляются строки fallback= — текст перестаёт быть размытым на высоком разрешении, а кириллица — квадратиками. Набор проверяется перед каждым запуском; неудачная загрузка повторяется при следующем Play. Четыре значения ниже — те же, что диалог «Настроить» пишет в settings.cfg; диапазон указан в подписи.",
+		KeyWizardFontsPending:      "Набор шрифтов %s будет скачан в фоне после настройки; Play из-за этого не блокируется.",
+		KeyWizardFontsPartial:      "Часть шрифтов отсутствует (%s). Они будут скачаны заново в фоне.",
+		KeyFontsPreviewHint:        "Образец показывает три файла выбранного набора в том кегле, которым их нарисует игра; отсутствующие файлы докачиваются в фоне, шрифт лаунчера остаётся только при ошибке загрузки.",
+		KeyFontsPreviewSlotUI:      "Интерфейс (Magic Cards)",
+		KeyFontsPreviewSlotDaedric: "Daedric",
+		KeyFontsPreviewSlotConsole: "Консоль (MonoFont)",
+		KeyFontsPreviewDownloading: "Загрузка…",
+		KeyFontsPreviewMissing:     "Набор ещё не скачан.",
+		KeyFontsPreviewFailed:      "Не скачано: %s",
+		KeyFontsPreviewNoFolder:    "Сначала укажите папку Morrowind: образцу нужны скачанные файлы шрифтов.",
+		KeyFontsPreviewSize:        "В игре: %d × %s = %d px",
+		KeyFontsPreviewSizeClipped: "В игре: %d × %s = %d px, показано %d px",
+		KeyWizardTES3MPTitle:       "TES3MP",
+		KeyWizardTES3MPHint:        "Клиент скачает и проверит TES3MP %s. Адрес сервера для этого шага не нужен.",
 
 		KeySetupFind:                "Найти автоматически",
 		KeySetupChoose:              "Выбрать папку",

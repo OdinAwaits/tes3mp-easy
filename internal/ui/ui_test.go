@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -592,33 +593,154 @@ func TestFontSetChooserMapsLabelsToIDs(t *testing.T) {
 	}
 }
 
-func TestFontPreviewFollowsTheInstalledFile(t *testing.T) {
+// errTestFontDownload stands in for a failed preview download.
+var errTestFontDownload = errors.New("download failed")
+
+func writePreviewFonts(t *testing.T, dir string, assets []fonts.Asset) {
+	t.Helper()
+	for _, asset := range assets {
+		if err := os.WriteFile(filepath.Join(dir, asset.Name),
+			[]byte("pretend "+asset.Name), 0o600); err != nil {
+			t.Fatalf("write %s: %v", asset.Name, err)
+		}
+	}
+}
+
+func TestFontPreviewShowsEverySlotFile(t *testing.T) {
 	tr := i18n.New(i18n.English)
 	dir := t.TempDir()
 	assets := fonts.ResolveSet(fonts.SetInter).Assets
-	preview := newFontPreview(tr, dir, fonts.SetInter)
-	if preview.text.FontSource == nil {
-		t.Fatal("preview has no font source")
+	preview := newFontPreview(tr, fontPreviewFiles{dir: dir}, fonts.SetInter)
+	if len(preview.slots) != len(assets) {
+		t.Fatalf("slots = %d, want %d", len(preview.slots), len(assets))
 	}
-	if got := preview.text.FontSource.Name(); got == assets[0].Name {
+	if got := preview.slots[0].text.FontSource.Name(); got == assets[0].Name {
 		t.Fatalf("preview used %q before the set was installed", got)
 	}
-	path := filepath.Join(dir, assets[0].Name)
-	if err := os.WriteFile(path, []byte("pretend ttf"), 0o600); err != nil {
-		t.Fatalf("write font: %v", err)
+	if !preview.slots[0].status.Visible() {
+		t.Fatal("a missing file must be named, not silently replaced")
+	}
+	writePreviewFonts(t, dir, assets)
+	preview.selectSet(fonts.SetInter)
+	for index, slot := range preview.slots {
+		if got := slot.text.FontSource.Name(); got != assets[index].Name {
+			t.Fatalf("slot %d font = %q, want %q", index, got,
+				assets[index].Name)
+		}
+		if slot.status.Visible() {
+			t.Fatalf("slot %d still reports %q", index, slot.status.Text)
+		}
+	}
+	if !strings.Contains(preview.slots[0].text.Text, "Съешь") {
+		t.Fatalf("interface sample = %q, want Latin and Cyrillic",
+			preview.slots[0].text.Text)
+	}
+	if !strings.Contains(preview.slots[2].text.Text, "AddItem") {
+		t.Fatalf("console sample = %q, want a console line",
+			preview.slots[2].text.Text)
+	}
+}
+
+func TestFontPreviewDownloadsMissingSet(t *testing.T) {
+	tr := i18n.New(i18n.English)
+	fontsDir := t.TempDir()
+	cacheDir := t.TempDir()
+	assets := fonts.ResolveSet(fonts.SetPlex).Assets
+	var asked []string
+	preview := newFontPreview(tr,
+		fontPreviewFiles{dir: fontsDir, cacheDir: cacheDir}, fonts.SetPlex)
+	preview.async = func(work func(), done func()) {
+		work()
+		done()
+	}
+	preview.files.ensure = func(setID string) error {
+		asked = append(asked, setID)
+		writePreviewFonts(t, cacheDir, assets)
+		return nil
+	}
+	preview.selectSet(fonts.SetPlex)
+	if len(asked) != 1 || asked[0] != fonts.SetPlex {
+		t.Fatalf("ensure calls = %v, want one for %q", asked, fonts.SetPlex)
+	}
+	for index, slot := range preview.slots {
+		if got := slot.text.FontSource.Name(); got != assets[index].Name {
+			t.Fatalf("slot %d font = %q, want the cached %q", index, got,
+				assets[index].Name)
+		}
+	}
+	// A second draw of the same set reads the cache instead of the network.
+	preview.selectSet(fonts.SetPlex)
+	if len(asked) != 1 {
+		t.Fatalf("ensure calls = %v, want no repeat download", asked)
+	}
+}
+
+func TestFontPreviewNamesADownloadFailure(t *testing.T) {
+	tr := i18n.New(i18n.English)
+	assets := fonts.ResolveSet(fonts.SetInter).Assets
+	preview := newFontPreview(tr,
+		fontPreviewFiles{dir: t.TempDir(), cacheDir: t.TempDir()},
+		fonts.SetInter)
+	preview.async = func(work func(), done func()) {
+		work()
+		done()
+	}
+	preview.files.ensure = func(string) error {
+		return errTestFontDownload
 	}
 	preview.selectSet(fonts.SetInter)
-	if got := preview.text.FontSource.Name(); got != assets[0].Name {
-		t.Fatalf("preview font = %q, want %q", got, assets[0].Name)
+	if preview.downloading {
+		t.Fatal("preview is still downloading after the failure")
 	}
-	// A set without files keeps the launcher font instead of an empty sample.
-	other := newFontPreview(tr, dir, fonts.SetPlex)
-	plexName := fonts.ResolveSet(fonts.SetPlex).Assets[0].Name
-	if got := other.text.FontSource.Name(); got == plexName {
-		t.Fatalf("preview invented the missing file %q", got)
+	for index, slot := range preview.slots {
+		if got := slot.text.FontSource.Name(); got == assets[index].Name {
+			t.Fatalf("slot %d invented %q", index, got)
+		}
+		if !slot.status.Visible() ||
+			!strings.Contains(slot.status.Text, errTestFontDownload.Error()) {
+			t.Fatalf("slot %d status = %q", index, slot.status.Text)
+		}
 	}
-	if other.text.Text == "" || !strings.Contains(other.text.Text, "Съешь") {
-		t.Fatalf("sample = %q, want Latin and Cyrillic", other.text.Text)
+	if !preview.retry.Visible() {
+		t.Fatal("a failed download must offer Retry")
+	}
+}
+
+func TestFontPreviewSizeFollowsSettings(t *testing.T) {
+	tr := i18n.New(i18n.English)
+	dir := t.TempDir()
+	writePreviewFonts(t, dir, fonts.ResolveSet(fonts.SetInter).Assets)
+	preview := newFontPreview(tr, fontPreviewFiles{dir: dir}, fonts.SetInter)
+	if got := preview.slots[0].text.TextSize; got != fontPreviewDefaultSize {
+		t.Fatalf("sample size = %v, want the default %d", got,
+			fontPreviewDefaultSize)
+	}
+	if preview.sizeNote.Visible() {
+		t.Fatal("the size line belongs to a screen with size fields")
+	}
+
+	preview.setScaling(16, 1.25)
+	if got := preview.slots[2].text.TextSize; got != 20 {
+		t.Fatalf("sample size = %v, want 20", got)
+	}
+	if !strings.Contains(preview.sizeNote.Text, "16 × 1.25 = 20 px") {
+		t.Fatalf("size note = %q", preview.sizeNote.Text)
+	}
+
+	preview.setScaling(32, 4)
+	if got := preview.slots[0].text.TextSize; got != fontPreviewMaxSize {
+		t.Fatalf("sample size = %v, want the clamp %d", got,
+			fontPreviewMaxSize)
+	}
+	if !strings.Contains(preview.sizeNote.Text, "128") ||
+		!strings.Contains(preview.sizeNote.Text, "32 px") {
+		t.Fatalf("clamped note = %q, want the real and the shown size",
+			preview.sizeNote.Text)
+	}
+
+	preview.setScaling(0, 1)
+	if got := preview.slots[0].text.TextSize; got != fontPreviewMaxSize {
+		t.Fatalf("an invalid size changed the sample to %v", got)
 	}
 }
 

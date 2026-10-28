@@ -150,6 +150,103 @@ func TestInstallWritesFontsAndXML(t *testing.T) {
 	}
 }
 
+func TestEnsureCachedFillsCacheWithoutInstalling(t *testing.T) {
+	var requested []string
+	assets, bodies := testAssets(t, "")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		name := strings.TrimPrefix(request.URL.Path, "/")
+		requested = append(requested, name)
+		body, ok := bodies[name]
+		if !ok {
+			http.NotFound(writer, request)
+			return
+		}
+		_, _ = writer.Write(body)
+	}))
+	defer server.Close()
+
+	assets, _ = testAssets(t, server.URL)
+	configDir := t.TempDir()
+	cacheDir := t.TempDir()
+	options := Options{
+		ConfigDir: configDir,
+		CacheDir:  cacheDir,
+		Assets:    assets,
+		Client:    server.Client(),
+		Attempts:  1,
+	}
+	result, err := EnsureCached(context.Background(), options)
+	if err != nil {
+		t.Fatalf("EnsureCached: %v", err)
+	}
+	if !result.Downloaded || result.Cached {
+		t.Fatalf("result = %+v, want a download", result)
+	}
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %q", result.Warnings)
+	}
+	if len(requested) != 3 {
+		t.Fatalf("requested = %v, want three fonts", requested)
+	}
+	for name, body := range bodies {
+		cached, err := os.ReadFile(filepath.Join(cacheDir, "fonts", name))
+		if err != nil || string(cached) != string(body) {
+			t.Fatalf("cached %s = %q, %v", name, cached, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "Fonts")); !os.IsNotExist(err) {
+		t.Fatalf("EnsureCached wrote the OpenMW directory: %v", err)
+	}
+
+	// The install that follows the preview download needs no network.
+	install, err := Install(context.Background(), options)
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if install.Downloaded || !install.Cached {
+		t.Fatalf("install result = %+v, want a cache hit", install)
+	}
+	if len(requested) != 3 {
+		t.Fatalf("install requested the network again: %v", requested)
+	}
+	if !install.State.Installed {
+		t.Fatalf("state = %+v, want installed", install.State)
+	}
+}
+
+func TestEnsureCachedWarnsWhenAFontFails(t *testing.T) {
+	assets, bodies := testAssets(t, "")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter,
+		request *http.Request,
+	) {
+		name := strings.TrimPrefix(request.URL.Path, "/")
+		if name == "Serif.ttf" {
+			http.NotFound(writer, request)
+			return
+		}
+		_, _ = writer.Write(bodies[name])
+	}))
+	defer server.Close()
+	assets, _ = testAssets(t, server.URL)
+
+	result, err := EnsureCached(context.Background(), Options{
+		ConfigDir: t.TempDir(),
+		CacheDir:  t.TempDir(),
+		Assets:    assets,
+		Client:    server.Client(),
+		Attempts:  1,
+	})
+	if err != nil {
+		t.Fatalf("EnsureCached: %v", err)
+	}
+	if len(result.Warnings) != 1 ||
+		!strings.Contains(result.Warnings[0], "Serif.ttf") {
+		t.Fatalf("warnings = %q", result.Warnings)
+	}
+}
+
 func TestInstallPrunesFontCacheOfOtherSets(t *testing.T) {
 	assets, bodies := testAssets(t, "")
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter,

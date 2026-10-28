@@ -77,6 +77,56 @@ func (s *Service) InstallFontsWithProgress(ctx context.Context,
 	return result, nil
 }
 
+// EnsureFontsCached downloads one catalog set into the client cache without
+// touching the OpenMW directory. The font preview calls it when the chosen set
+// has no files yet, so the sample shows the real font before Finish; the
+// install that follows reads the same cache and needs no network. Per-file
+// failures come back as warnings, not as an error.
+func (s *Service) EnsureFontsCached(ctx context.Context, setID string,
+	progress func(fonts.Progress),
+) (fonts.Result, error) {
+	if s == nil {
+		return fonts.Result{}, errors.New("app service is nil")
+	}
+	configDir, err := s.OpenMWConfigDir()
+	if err != nil {
+		return fonts.Result{}, err
+	}
+	cacheDir, err := s.absoluteCacheDir()
+	if err != nil {
+		return fonts.Result{}, err
+	}
+	options := fonts.DefaultOptions(configDir, cacheDir)
+	options.Set = strings.TrimSpace(setID)
+	if options.Set == "" {
+		options.Set = s.FontSet()
+	}
+	options.Progress = progress
+	if s.httpClient != nil {
+		options.Client = s.httpClient
+	}
+	result, err := fonts.EnsureCached(ctx, options)
+	if err != nil {
+		s.LogError("cache fonts", err)
+		return result, err
+	}
+	if len(result.Warnings) > 0 {
+		s.LogWarnf("fonts preview: %s", strings.Join(result.Warnings, "; "))
+	}
+	return result, nil
+}
+
+// FontCacheDir is the folder the preview reads after a cache download. It is
+// not the install target: Fonts/ stays untouched until the user applies the
+// set.
+func (s *Service) FontCacheDir() (string, error) {
+	cacheDir, err := s.absoluteCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cacheDir, "fonts"), nil
+}
+
 // FontsState verifies the files of the selected set in the active OpenMW Fonts
 // directory. Files of another set count as missing.
 func (s *Service) FontsState() (fonts.State, error) {

@@ -100,6 +100,16 @@ func (f *uiVideoForm) values() (openmwcfg.Settings, error) {
 	return values, nil
 }
 
+// onChanged subscribes to every entry. The wizard uses it to redraw the font
+// sample while a size is typed; the dialog does not need it.
+func (f *uiVideoForm) onChanged(callback func()) {
+	for _, entry := range []*widget.Entry{
+		f.ttf, f.fontSize, f.scaling, f.framerate,
+	} {
+		entry.OnChanged = func(string) { callback() }
+	}
+}
+
 // fields lists the four managed values in display order.
 func (f *uiVideoForm) fields() []uiVideoField {
 	return []uiVideoField{

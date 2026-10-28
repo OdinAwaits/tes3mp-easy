@@ -121,24 +121,7 @@ func Install(ctx context.Context, options Options) (Result, error) {
 		if err := ctx.Err(); err != nil {
 			return Result{}, err
 		}
-		options.report(Progress{Stage: StageDownloading, Asset: asset.Name})
-		cachePath := filepath.Join(options.CacheDir, "fonts", asset.Name)
-		fetched, err := download.Fetch(ctx, download.Options{
-			URL:       asset.URL,
-			SHA256:    asset.SHA256,
-			Dest:      cachePath,
-			Client:    options.Client,
-			Attempts:  options.Attempts,
-			RetryWait: options.RetryWait,
-			Progress: func(update download.Progress) {
-				options.report(Progress{
-					Stage:      StageDownloading,
-					Asset:      asset.Name,
-					Downloaded: update.Downloaded,
-					Total:      update.Total,
-				})
-			},
-		})
+		fetched, err := fetchAsset(ctx, options, asset)
 		if err != nil {
 			if ctx.Err() != nil {
 				return Result{}, ctx.Err()
@@ -182,6 +165,63 @@ func Install(ctx context.Context, options Options) (Result, error) {
 	}
 	result.State = state
 	return result, nil
+}
+
+// EnsureCached downloads the files of one set into CacheDir/fonts and verifies
+// them, without writing anything into the OpenMW directory. The font preview
+// uses it to show the chosen set before Finish; Install reads the same cache,
+// so the install that follows needs no network. Failures are warnings, like in
+// Install: a preview without files is not an error of the launcher.
+func EnsureCached(ctx context.Context, options Options) (Result, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	options = options.withDefaults()
+	if err := options.validate(); err != nil {
+		return Result{}, err
+	}
+	result := Result{}
+	for _, asset := range options.Assets {
+		if err := ctx.Err(); err != nil {
+			return Result{}, err
+		}
+		fetched, err := fetchAsset(ctx, options, asset)
+		if err != nil {
+			if ctx.Err() != nil {
+				return Result{}, ctx.Err()
+			}
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("font %s: %v", asset.Name, err))
+			continue
+		}
+		result.Downloaded = result.Downloaded || fetched.Downloaded
+		result.Cached = result.Cached || fetched.Cached
+	}
+	return result, nil
+}
+
+// fetchAsset fills the cache with one font and reports its byte progress, so
+// Install and EnsureCached download exactly the same way.
+func fetchAsset(ctx context.Context, options Options,
+	asset Asset,
+) (download.Result, error) {
+	options.report(Progress{Stage: StageDownloading, Asset: asset.Name})
+	return download.Fetch(ctx, download.Options{
+		URL:       asset.URL,
+		SHA256:    asset.SHA256,
+		Dest:      filepath.Join(options.CacheDir, "fonts", asset.Name),
+		Client:    options.Client,
+		Attempts:  options.Attempts,
+		RetryWait: options.RetryWait,
+		Progress: func(update download.Progress) {
+			options.report(Progress{
+				Stage:      StageDownloading,
+				Asset:      asset.Name,
+				Downloaded: update.Downloaded,
+				Total:      update.Total,
+			})
+		},
+	})
 }
 
 // InspectSet verifies the files of one catalog set. Files of another set count
