@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Saagilat/tes3mp-easy/internal/archive"
+	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 )
 
 // opsRestorer contains the import operations used by the restore workflow.
@@ -40,8 +40,10 @@ type restoreHTTPError struct {
 
 func (e *restoreHTTPError) Error() string { return e.message }
 
-func restoreErrorf(status int, format string, args ...any) error {
-	return &restoreHTTPError{status: status, message: fmt.Sprintf(format, args...)}
+// restoreErrorf builds a localized HTTP error. The translator comes from the
+// panel handler so the operator reads the message in the panel language.
+func restoreErrorf(tr *i18n.Translator, status int, key string, args ...any) error {
+	return &restoreHTTPError{status: status, message: tr.Tf(key, args...)}
 }
 
 func (h *panelHandler) handleStateRestore(w http.ResponseWriter, r *http.Request,
@@ -49,13 +51,13 @@ func (h *panelHandler) handleStateRestore(w http.ResponseWriter, r *http.Request
 ) {
 	if h.ops == nil {
 		h.renderStateFailure(w, r, session, http.StatusServiceUnavailable,
-			"ops не настроен: восстановление недоступно.", "")
+			i18n.KeyPanelAdminRestoreUnavail, "")
 		return
 	}
 	restorer, ok := h.ops.(opsRestorer)
 	if !ok {
 		h.renderStateFailure(w, r, session, http.StatusServiceUnavailable,
-			"ops не умеет импортировать state и моды.", "")
+			i18n.KeyPanelAdminModesUnsupported, "")
 		return
 	}
 	if blocked, message := h.doctorMutationError(r.Context()); blocked {
@@ -76,7 +78,7 @@ func (h *panelHandler) handleStateRestore(w http.ResponseWriter, r *http.Request
 	}
 	if upload.Path == "" {
 		h.renderStateFailure(w, r, session, http.StatusBadRequest,
-			"В форме нет файла архива.", "file")
+			i18n.KeyPanelAdminFileMissing, "file")
 		return
 	}
 	defer h.removeUpload(upload.Path)
@@ -107,17 +109,17 @@ func (h *panelHandler) renderRestoreFailure(w http.ResponseWriter,
 ) {
 	if isRequestTooLarge(err) {
 		h.renderStateFailure(w, r, session, http.StatusRequestEntityTooLarge,
-			"Архив больше 1 ГиБ.", "file")
+			i18n.KeyPanelAdminStateTooLarge, "file")
 		return
 	}
 	switch {
 	case errors.Is(err, errMultipartUpload):
 		h.renderStateFailure(w, r, session, http.StatusBadRequest,
-			"Ожидалась multipart-форма с архивом.", "file")
+			i18n.KeyPanelAdminMultipartExpected, "file")
 		return
 	case errors.Is(err, errNoUploadFile):
 		h.renderStateFailure(w, r, session, http.StatusBadRequest,
-			"В форме нет файла архива.", "file")
+			i18n.KeyPanelAdminFileMissing, "file")
 		return
 	}
 	var restoreErr *restoreHTTPError
@@ -125,7 +127,7 @@ func (h *panelHandler) renderRestoreFailure(w http.ResponseWriter,
 		h.renderStateFailure(w, r, session, restoreErr.status, restoreErr.message, "file")
 		return
 	}
-	status, message, field := adminFailure(err)
+	status, message, field := h.adminFailure(err)
 	if field == "" {
 		field = "file"
 	}
@@ -133,7 +135,8 @@ func (h *panelHandler) renderRestoreFailure(w http.ResponseWriter,
 }
 
 func (h *panelHandler) prepareRestore(upload adminUpload) (restorePlan, func(), error) {
-	kind, err := detectRestoreArchive(upload.Path)
+	tr := h.tr()
+	kind, err := detectRestoreArchive(h.tr(), upload.Path)
 	if err != nil {
 		return restorePlan{}, nil, err
 	}
@@ -155,24 +158,24 @@ func (h *panelHandler) prepareRestore(upload adminUpload) (restorePlan, func(), 
 		}
 		return restorePlan{statePath: upload.Path, stateName: name}, nil, nil
 	default:
-		return restorePlan{}, nil, restoreErrorf(http.StatusBadRequest,
-			"Поддерживаются ZIP «состояние + моды» и state .tar.gz.")
+		return restorePlan{}, nil, restoreErrorf(tr, http.StatusBadRequest,
+			i18n.KeyPanelRestoreUnsupported)
 	}
 }
 
-func detectRestoreArchive(path string) (string, error) {
+func detectRestoreArchive(tr *i18n.Translator, path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", restoreErrorf(http.StatusInternalServerError,
-			"Не удалось прочитать загруженный файл.")
+		return "", restoreErrorf(tr, http.StatusInternalServerError,
+			i18n.KeyPanelRestoreReadFailed)
 	}
 	defer file.Close()
 
 	var header [4]byte
 	n, err := io.ReadFull(file, header[:])
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
-		return "", restoreErrorf(http.StatusBadRequest,
-			"Загруженный файл пуст или повреждён.")
+		return "", restoreErrorf(tr, http.StatusBadRequest,
+			i18n.KeyPanelRestoreEmpty)
 	}
 	switch {
 	case n >= 4 && header[0] == 'P' && header[1] == 'K' &&
@@ -181,34 +184,36 @@ func detectRestoreArchive(path string) (string, error) {
 	case n >= 2 && header[0] == 0x1f && header[1] == 0x8b:
 		return "gzip", nil
 	default:
-		return "", restoreErrorf(http.StatusBadRequest,
-			"Поддерживаются ZIP «состояние + моды» и state .tar.gz.")
+		return "", restoreErrorf(tr, http.StatusBadRequest,
+			i18n.KeyPanelRestoreUnsupported)
 	}
 }
 
 func (h *panelHandler) restoreStateName(uploadName string) (string, error) {
+	tr := h.tr()
 	if archive.ValidateStateArchiveName(uploadName) == nil {
 		return uploadName, nil
 	}
 	stateDir := filepath.Join(h.cfg.Root, "backups", "state")
 	name, err := archive.NextArchiveNameInDir(stateDir, archive.KindStateManual, h.now())
 	if err != nil {
-		return "", restoreErrorf(http.StatusInternalServerError,
-			"Не удалось выбрать имя для импортируемого состояния.")
+		return "", restoreErrorf(tr, http.StatusInternalServerError,
+			i18n.KeyPanelRestoreNameFailed)
 	}
 	return name, nil
 }
 
 func (h *panelHandler) extractRestoreBundle(zipPath string) (restorePlan, func(), error) {
+	tr := h.tr()
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
-		return restorePlan{}, nil, restoreErrorf(http.StatusUnprocessableEntity,
-			"ZIP не читается: %v", err)
+		return restorePlan{}, nil, restoreErrorf(tr, http.StatusUnprocessableEntity,
+			i18n.KeyPanelRestoreZipUnreadable, err)
 	}
 	defer reader.Close()
 	if len(reader.File) != 2 {
-		return restorePlan{}, nil, restoreErrorf(http.StatusUnprocessableEntity,
-			"ZIP должен содержать ровно два файла: state и моды.")
+		return restorePlan{}, nil, restoreErrorf(tr, http.StatusUnprocessableEntity,
+			i18n.KeyPanelRestoreZipTwoFiles)
 	}
 
 	var plan restorePlan
@@ -216,41 +221,41 @@ func (h *panelHandler) extractRestoreBundle(zipPath string) (restorePlan, func()
 		name := file.Name
 		if file.FileInfo().IsDir() || strings.ContainsAny(name, `/\`) ||
 			filepath.Base(name) != name {
-			return restorePlan{}, nil, restoreErrorf(http.StatusUnprocessableEntity,
-				"ZIP должен содержать только два архива в корне.")
+			return restorePlan{}, nil, restoreErrorf(tr, http.StatusUnprocessableEntity,
+				i18n.KeyPanelRestoreZipRootOnly)
 		}
 		switch {
 		case archive.ValidateStateArchiveName(name) == nil:
 			if plan.stateName != "" {
-				return restorePlan{}, nil, restoreErrorf(http.StatusUnprocessableEntity,
-					"В ZIP больше одного state-архива.")
+				return restorePlan{}, nil, restoreErrorf(tr, http.StatusUnprocessableEntity,
+					i18n.KeyPanelRestoreZipTwoStates)
 			}
 			plan.stateName = name
 		case archive.ValidateModsArchiveName(name) == nil:
 			if plan.modsName != "" {
-				return restorePlan{}, nil, restoreErrorf(http.StatusUnprocessableEntity,
-					"В ZIP больше одного архива модов.")
+				return restorePlan{}, nil, restoreErrorf(tr, http.StatusUnprocessableEntity,
+					i18n.KeyPanelRestoreZipTwoMods)
 			}
 			plan.modsName = name
 		default:
-			return restorePlan{}, nil, restoreErrorf(http.StatusUnprocessableEntity,
-				"Неожиданный файл в ZIP: %s", name)
+			return restorePlan{}, nil, restoreErrorf(tr, http.StatusUnprocessableEntity,
+				i18n.KeyPanelRestoreZipUnexpected, name)
 		}
 	}
 	if plan.stateName == "" || plan.modsName == "" {
-		return restorePlan{}, nil, restoreErrorf(http.StatusUnprocessableEntity,
-			"ZIP должен содержать state-архив и архив модов.")
+		return restorePlan{}, nil, restoreErrorf(tr, http.StatusUnprocessableEntity,
+			i18n.KeyPanelRestoreZipStateAndMods)
 	}
 
 	uploadsDir := filepath.Join(h.cfg.DataDir, "uploads")
 	if err := os.MkdirAll(uploadsDir, 0o2770); err != nil {
-		return restorePlan{}, nil, restoreErrorf(http.StatusInternalServerError,
-			"Не удалось подготовить временный каталог.")
+		return restorePlan{}, nil, restoreErrorf(tr, http.StatusInternalServerError,
+			i18n.KeyPanelRestoreTempDir)
 	}
 	dir, err := os.MkdirTemp(uploadsDir, "restore-")
 	if err != nil {
-		return restorePlan{}, nil, restoreErrorf(http.StatusInternalServerError,
-			"Не удалось подготовить временный каталог.")
+		return restorePlan{}, nil, restoreErrorf(tr, http.StatusInternalServerError,
+			i18n.KeyPanelRestoreTempDir)
 	}
 	cleanup := func() {
 		if err := os.RemoveAll(dir); err != nil {
@@ -264,8 +269,8 @@ func (h *panelHandler) extractRestoreBundle(zipPath string) (restorePlan, func()
 	// and custom roots may lack the setgid bit.
 	if err := os.Chmod(dir, os.ModeSetgid|0o770); err != nil {
 		cleanup()
-		return restorePlan{}, nil, restoreErrorf(http.StatusInternalServerError,
-			"Не удалось подготовить временный каталог.")
+		return restorePlan{}, nil, restoreErrorf(tr, http.StatusInternalServerError,
+			i18n.KeyPanelRestoreTempDir)
 	}
 
 	limits := archive.ZipLimits{
@@ -275,8 +280,8 @@ func (h *panelHandler) extractRestoreBundle(zipPath string) (restorePlan, func()
 	}
 	if err := archive.ExtractZipFileWithLimits(zipPath, dir, limits); err != nil {
 		cleanup()
-		return restorePlan{}, nil, restoreErrorf(http.StatusUnprocessableEntity,
-			"ZIP не распакован: %v", err)
+		return restorePlan{}, nil, restoreErrorf(tr, http.StatusUnprocessableEntity,
+			i18n.KeyPanelRestoreUnzipFailed, err)
 	}
 
 	plan.statePath = filepath.Join(dir, plan.stateName)
@@ -286,13 +291,13 @@ func (h *panelHandler) extractRestoreBundle(zipPath string) (restorePlan, func()
 		if err != nil || info.Mode()&os.ModeSymlink != 0 ||
 			!info.Mode().IsRegular() {
 			cleanup()
-			return restorePlan{}, nil, restoreErrorf(http.StatusUnprocessableEntity,
-				"ZIP не содержит ожидаемый файл %s.", filepath.Base(path))
+			return restorePlan{}, nil, restoreErrorf(tr, http.StatusUnprocessableEntity,
+				i18n.KeyPanelRestoreZipMissing, filepath.Base(path))
 		}
 		if err := os.Chmod(path, 0o640); err != nil {
 			cleanup()
-			return restorePlan{}, nil, restoreErrorf(http.StatusInternalServerError,
-				"Не удалось выставить права на распакованный архив.")
+			return restorePlan{}, nil, restoreErrorf(tr, http.StatusInternalServerError,
+				i18n.KeyPanelRestorePermissions)
 		}
 	}
 	return plan, cleanup, nil
@@ -307,45 +312,45 @@ type restoreOutcome struct {
 func (h *panelHandler) restoreArchives(ctx context.Context, restorer opsRestorer,
 	plan restorePlan,
 ) (restoreOutcome, error) {
+	tr := h.tr()
 	stateInfo, err := archive.ValidateStateLayoutFile(plan.statePath)
 	if err != nil {
-		return restoreOutcome{}, restoreErrorf(http.StatusUnprocessableEntity,
-			"State-архив не прошёл проверку: %v", err)
+		return restoreOutcome{}, restoreErrorf(tr, http.StatusUnprocessableEntity,
+			i18n.KeyPanelRestoreStateCheck, err)
 	}
 	stateSHA, err := panelFileSHA256(plan.statePath)
 	if err != nil {
-		return restoreOutcome{}, restoreErrorf(http.StatusInternalServerError,
-			"Не удалось прочитать state-архив.")
+		return restoreOutcome{}, restoreErrorf(tr, http.StatusInternalServerError,
+			i18n.KeyPanelRestoreStateRead)
 	}
 	plan.stateSHA = stateSHA
 
 	if plan.modsPath != "" {
 		if _, err := archive.ValidateModsFile(plan.modsPath); err != nil {
-			return restoreOutcome{}, restoreErrorf(http.StatusUnprocessableEntity,
-				"Архив модов не прошёл проверку: %v", err)
+			return restoreOutcome{}, restoreErrorf(tr, http.StatusUnprocessableEntity,
+				i18n.KeyPanelRestoreModsCheck, err)
 		}
 		modsSHA, err := panelFileSHA256(plan.modsPath)
 		if err != nil {
-			return restoreOutcome{}, restoreErrorf(http.StatusInternalServerError,
-				"Не удалось прочитать архив модов.")
+			return restoreOutcome{}, restoreErrorf(tr, http.StatusInternalServerError,
+				i18n.KeyPanelRestoreModsRead)
 		}
 		plan.modsSHA = modsSHA
 		if stateInfo.Current.Name != plan.modsName ||
 			stateInfo.Current.SHA256 != modsSHA {
-			return restoreOutcome{}, restoreErrorf(http.StatusUnprocessableEntity,
-				"Архив модов не соответствует состоянию: state ожидает %s (%s), "+
-					"в ZIP лежит %s (%s).",
+			return restoreOutcome{}, restoreErrorf(tr, http.StatusUnprocessableEntity,
+				i18n.KeyPanelRestoreModsMismatch,
 				stateInfo.Current.Name, stateInfo.Current.SHA256,
 				plan.modsName, modsSHA)
 		}
 		// Refuse name collisions before touching the active mods package.
-		if _, err := restoreTargetMatches(
+		if _, err := restoreTargetMatches(h.tr(),
 			filepath.Join(h.cfg.Root, "backups", "mods", plan.modsName),
 			plan.modsSHA); err != nil {
 			return restoreOutcome{}, err
 		}
 	}
-	if _, err := restoreTargetMatches(
+	if _, err := restoreTargetMatches(h.tr(),
 		filepath.Join(h.cfg.Root, "backups", "state", plan.stateName),
 		plan.stateSHA); err != nil {
 		return restoreOutcome{}, err
@@ -358,13 +363,13 @@ func (h *panelHandler) restoreArchives(ctx context.Context, restorer opsRestorer
 		if result, err := h.ops.ModsDeploy(ctx, plan.modsName); err != nil {
 			return restoreOutcome{}, err
 		} else if result.Archive != plan.modsName {
-			return restoreOutcome{}, restoreErrorf(http.StatusInternalServerError,
-				"ops задеплоил неожиданный архив модов %q.", result.Archive)
+			return restoreOutcome{}, restoreErrorf(tr, http.StatusInternalServerError,
+				i18n.KeyPanelRestoreDeployUnexpected, result.Archive)
 		}
 	} else if err := archive.VerifyStateMods(stateInfo,
 		filepath.Join(h.cfg.Root, "backups", "mods")); err != nil {
-		return restoreOutcome{}, restoreErrorf(http.StatusUnprocessableEntity,
-			"Текущий пакет модов не совпадает с состоянием: %v", err)
+		return restoreOutcome{}, restoreErrorf(tr, http.StatusUnprocessableEntity,
+			i18n.KeyPanelRestoreModsMismatchLive, err)
 	}
 
 	if err := h.ensureRestoreState(ctx, restorer, plan); err != nil {
@@ -384,8 +389,9 @@ func (h *panelHandler) restoreArchives(ctx context.Context, restorer opsRestorer
 func (h *panelHandler) ensureRestoreMods(ctx context.Context, restorer opsRestorer,
 	plan restorePlan,
 ) error {
+	tr := h.tr()
 	target := filepath.Join(h.cfg.Root, "backups", "mods", plan.modsName)
-	same, err := restoreTargetMatches(target, plan.modsSHA)
+	same, err := restoreTargetMatches(h.tr(), target, plan.modsSHA)
 	if err != nil {
 		return err
 	}
@@ -398,8 +404,8 @@ func (h *panelHandler) ensureRestoreMods(ctx context.Context, restorer opsRestor
 		return err
 	}
 	if result.Archive != plan.modsName || result.SHA256 != plan.modsSHA {
-		return restoreErrorf(http.StatusInternalServerError,
-			"ops импортировал неожиданный архив модов %q.", result.Archive)
+		return restoreErrorf(tr, http.StatusInternalServerError,
+			i18n.KeyPanelRestoreImportMods, result.Archive)
 	}
 	return nil
 }
@@ -407,8 +413,9 @@ func (h *panelHandler) ensureRestoreMods(ctx context.Context, restorer opsRestor
 func (h *panelHandler) ensureRestoreState(ctx context.Context, restorer opsRestorer,
 	plan restorePlan,
 ) error {
+	tr := h.tr()
 	target := filepath.Join(h.cfg.Root, "backups", "state", plan.stateName)
-	same, err := restoreTargetMatches(target, plan.stateSHA)
+	same, err := restoreTargetMatches(h.tr(), target, plan.stateSHA)
 	if err != nil {
 		return err
 	}
@@ -421,8 +428,8 @@ func (h *panelHandler) ensureRestoreState(ctx context.Context, restorer opsResto
 		return err
 	}
 	if result.Archive != plan.stateName {
-		return restoreErrorf(http.StatusInternalServerError,
-			"ops импортировал неожиданное состояние %q.", result.Archive)
+		return restoreErrorf(tr, http.StatusInternalServerError,
+			i18n.KeyPanelRestoreImportState, result.Archive)
 	}
 	return nil
 }
@@ -430,27 +437,26 @@ func (h *panelHandler) ensureRestoreState(ctx context.Context, restorer opsResto
 // restoreTargetMatches distinguishes an absent target (import it), an identical
 // target (reuse it), and a name collision with different bytes (refuse, because
 // a state archive refers to the exact mods filename and cannot be rewritten).
-func restoreTargetMatches(path, wantSHA string) (bool, error) {
+func restoreTargetMatches(tr *i18n.Translator, path, wantSHA string) (bool, error) {
 	info, err := os.Lstat(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		return false, nil
 	case err != nil:
-		return false, restoreErrorf(http.StatusInternalServerError,
-			"Не удалось проверить %s.", filepath.Base(path))
+		return false, restoreErrorf(tr, http.StatusInternalServerError,
+			i18n.KeyPanelRestoreFileCheck, filepath.Base(path))
 	case info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular():
-		return false, restoreErrorf(http.StatusConflict,
-			"%s уже существует и не является обычным файлом.", filepath.Base(path))
+		return false, restoreErrorf(tr, http.StatusConflict,
+			i18n.KeyPanelRestoreNotRegular, filepath.Base(path))
 	}
 	got, err := panelFileSHA256(path)
 	if err != nil {
-		return false, restoreErrorf(http.StatusInternalServerError,
-			"Не удалось прочитать %s.", filepath.Base(path))
+		return false, restoreErrorf(tr, http.StatusInternalServerError,
+			i18n.KeyPanelRestoreFileRead, filepath.Base(path))
 	}
 	if got != wantSHA {
-		return false, restoreErrorf(http.StatusConflict,
-			"%s уже существует с другим содержимым; переименуйте архив в "+
-				"ZIP или удалите старый файл вручную.", filepath.Base(path))
+		return false, restoreErrorf(tr, http.StatusConflict,
+			i18n.KeyPanelRestoreExistsDiffers, filepath.Base(path))
 	}
 	return true, nil
 }

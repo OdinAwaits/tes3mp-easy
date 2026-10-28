@@ -58,7 +58,8 @@
           }
         }
       }).catch(function () {
-        setBadge(status, "service_unavailable", "недоступен", "service_unavailable");
+        var unavailable = status.getAttribute("data-label-unavailable") || "unknown";
+        setBadge(status, "service_unavailable", unavailable, "service_unavailable");
         syncActions(true, false);
       });
     };
@@ -197,7 +198,9 @@
         return field.value !== field.getAttribute("data-initial");
       }).length;
       if (statusNode) {
-        statusNode.textContent = changed ? "Изменено: " + changed : "Изменений нет";
+        var changedLabel = statusNode.getAttribute("data-label-changed") || "";
+        var idleLabel = statusNode.getAttribute("data-label-idle") || "";
+        statusNode.textContent = changed ? changedLabel + changed : idleLabel;
       }
       if (submit) {
         submit.disabled = changed === 0;
@@ -231,9 +234,11 @@
       });
     };
     if (toggle) {
+      var pauseLabel = toggle.getAttribute("data-label-pause") || "";
+      var resumeLabel = toggle.getAttribute("data-label-resume") || "";
       toggle.addEventListener("click", function () {
         paused = !paused;
-        toggle.textContent = paused ? "Продолжить" : "Пауза";
+        toggle.textContent = paused ? resumeLabel : pauseLabel;
       });
     }
     window.setInterval(refreshLogs, 5000);

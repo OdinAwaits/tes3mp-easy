@@ -88,10 +88,10 @@ func (h *panelHandler) doctorMutationError(ctx context.Context) (bool, string) {
 		}
 	}
 	if len(failed) == 0 {
-		return true, "doctor нашёл ошибку; мутация заблокирована."
+		return true, h.tr().T(i18n.KeyPanelErrorDoctorBlocked)
 	}
-	return true, "doctor нашёл ошибку, мутация заблокирована: " +
-		strings.Join(failed, "; ")
+	return true, h.tr().Tf(i18n.KeyPanelErrorDoctorBlockedDetails,
+		strings.Join(failed, "; "))
 }
 
 type adminPage struct {
@@ -237,13 +237,13 @@ func (h *panelHandler) adminPageFor(r *http.Request, session sessionState) admin
 // adminFailure returns an HTTP status and an operator-facing message. Ops
 // messages are specific and useful to an authenticated admin; unexpected Go
 // errors stay generic and are logged separately.
-func adminFailure(err error) (int, string, string) {
+func (h *panelHandler) adminFailure(err error) (int, string, string) {
 	if err == nil {
 		return http.StatusOK, "", ""
 	}
 	if errors.Is(err, errOpsUnavailable) {
 		return http.StatusServiceUnavailable,
-			"ops не настроен: управление сервером недоступно.", ""
+			h.tr().T(i18n.KeyPanelErrorOpsUnavailable), ""
 	}
 	var opsErr *OpsError
 	if errors.As(err, &opsErr) {
@@ -255,29 +255,29 @@ func adminFailure(err error) (int, string, string) {
 		}
 		message := opsErr.Message
 		if message == "" {
-			message = adminMessageForStatus(opsErr.HTTPStatus())
+			message = h.adminMessageForStatus(opsErr.HTTPStatus())
 		}
 		return opsErr.HTTPStatus(), message, field
 	}
-	return http.StatusInternalServerError, "Внутренняя ошибка. Подробности в журнале панели.", ""
+	return http.StatusInternalServerError, h.tr().T(i18n.KeyPanelErrorInternal), ""
 }
 
-func adminMessageForStatus(status int) string {
+func (h *panelHandler) adminMessageForStatus(status int) string {
 	switch status {
 	case http.StatusBadRequest:
-		return "Проверьте имя или значение."
+		return h.tr().T(i18n.KeyPanelErrorInvalidArgument)
 	case http.StatusNotFound:
-		return "Объект не найден."
+		return h.tr().T(i18n.KeyPanelErrorNotFound)
 	case http.StatusConflict:
-		return "Другая операция уже выполняется. Попробуйте позже."
+		return h.tr().T(i18n.KeyPanelErrorLocked)
 	case http.StatusUnprocessableEntity:
-		return "Данные не прошли проверку."
+		return h.tr().T(i18n.KeyPanelErrorValidation)
 	case http.StatusInsufficientStorage:
-		return "Недостаточно свободного места."
+		return h.tr().T(i18n.KeyPanelErrorNoSpace)
 	case http.StatusServiceUnavailable:
-		return "systemd, journald или unit недоступен."
+		return h.tr().T(i18n.KeyPanelErrorServiceUnavailable)
 	default:
-		return "Внутренняя ошибка."
+		return h.tr().T(i18n.KeyPanelErrorInternalShort)
 	}
 }
 
@@ -308,7 +308,7 @@ func (h *panelHandler) ensureOps(w http.ResponseWriter, r *http.Request) bool {
 	if h.ops != nil {
 		return true
 	}
-	status, message, _ := adminFailure(errOpsUnavailable)
+	status, message, _ := h.adminFailure(errOpsUnavailable)
 	writeAPIError(w, status, adminErrorCode(errOpsUnavailable), message)
 	return false
 }
@@ -316,7 +316,7 @@ func (h *panelHandler) ensureOps(w http.ResponseWriter, r *http.Request) bool {
 func (h *panelHandler) handleDashboard(w http.ResponseWriter, r *http.Request, session sessionState) {
 	if !validMetricsWindowQuery(r) {
 		data := h.dashboardData(r, session)
-		data.MetricsError = "Параметр window должен быть одним из: 1h, 6h, 24h."
+		data.MetricsError = h.tr().T(i18n.KeyPanelAdminWindowInvalid)
 		h.render(w, http.StatusBadRequest, "dashboard.html", data)
 		return
 	}
@@ -357,17 +357,17 @@ func (h *panelHandler) dashboardData(r *http.Request,
 	if h.ops == nil {
 		data.Status = "service_unavailable"
 		data.StatusLabel = statusLabel(h.tr(), data.Status)
-		data.StatusError = "ops не настроен: управление сервером недоступно."
+		data.StatusError = h.tr().T(i18n.KeyPanelErrorOpsUnavailable)
 	} else {
 		status, err := h.ops.Status(r.Context(), "tes3mp.service")
 		if err != nil {
-			code, message, _ := adminFailure(err)
+			code, message, _ := h.adminFailure(err)
 			data.Status = "service_unavailable"
 			data.StatusLabel = statusLabel(h.tr(), data.Status)
 			if code == http.StatusServiceUnavailable {
 				data.StatusError = message
 			} else {
-				data.StatusError = adminMessageForStatus(code)
+				data.StatusError = h.adminMessageForStatus(code)
 			}
 		} else {
 			if status.State != "" {
@@ -392,7 +392,7 @@ func (h *panelHandler) dashboardData(r *http.Request,
 	data.CanStart, data.CanStop = serverActions(data.Status)
 
 	if current, err := h.readCurrentMods(); err != nil {
-		data.ModsError = "Текущий архив модов не найден."
+		data.ModsError = h.tr().T(i18n.KeyPanelAdminModsMissing)
 	} else {
 		data.Mods = &modsCurrent{
 			Name:      current.Name,
@@ -405,17 +405,17 @@ func (h *panelHandler) dashboardData(r *http.Request,
 		window = "1h"
 	}
 	if h.metrics == nil {
-		data.MetricsError = "Сбор метрик не запущен."
+		data.MetricsError = h.tr().T(i18n.KeyPanelAdminMetricsStopped)
 	} else if metrics, ok := h.metrics.snapshot(window); ok {
 		data.Metrics = metrics.view
 		data.Window = metrics.Window
 	} else {
-		data.MetricsError = "Неизвестное окно метрик."
+		data.MetricsError = h.tr().T(i18n.KeyPanelAdminMetricsWindow)
 	}
 
 	if h.ops != nil {
 		if lines, err := h.ops.Logs(r.Context(), 8); err != nil {
-			data.EventsError = "Последние события недоступны."
+			data.EventsError = h.tr().T(i18n.KeyPanelAdminEventsUnavailable)
 		} else {
 			data.Events = lines
 		}
@@ -441,7 +441,7 @@ func (h *panelHandler) handleAdminStatus(w http.ResponseWriter, r *http.Request,
 	}
 	status, err := h.ops.Status(r.Context(), "tes3mp.service")
 	if err != nil {
-		code, message, _ := adminFailure(err)
+		code, message, _ := h.adminFailure(err)
 		writeAPIError(w, code, adminErrorCode(err), message)
 		return
 	}
@@ -517,7 +517,7 @@ func (h *panelHandler) handleServerAction(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if h.ops == nil {
-		status, message, _ := adminFailure(errOpsUnavailable)
+		status, message, _ := h.adminFailure(errOpsUnavailable)
 		data := h.dashboardData(r, session)
 		data.Error = message
 		h.render(w, status, "dashboard.html", data)
@@ -540,7 +540,7 @@ func (h *panelHandler) handleServerAction(w http.ResponseWriter, r *http.Request
 		err = h.ops.Restart(r.Context())
 	}
 	if err != nil {
-		status, message, field := adminFailure(err)
+		status, message, field := h.adminFailure(err)
 		data := h.dashboardData(r, session)
 		data.Error = message
 		data.ErrorField = field
@@ -575,20 +575,20 @@ func (h *panelHandler) handleLogs(w http.ResponseWriter, r *http.Request,
 	tail, err := parseLogTail(r.URL.Query().Get("tail"))
 	if err != nil {
 		data := adminLogsPageData{adminPage: h.adminPageFor(r, session), Tail: defaultLogTail}
-		data.Error = "Параметр tail должен быть числом от 1 до 2000."
+		data.Error = h.tr().T(i18n.KeyPanelAdminTailInvalid)
 		h.render(w, http.StatusBadRequest, "admin_logs.html", data)
 		return
 	}
 	data := adminLogsPageData{adminPage: h.adminPageFor(r, session), Tail: tail}
 	if h.ops == nil {
-		status, message, _ := adminFailure(errOpsUnavailable)
+		status, message, _ := h.adminFailure(errOpsUnavailable)
 		data.Error = message
 		h.render(w, status, "admin_logs.html", data)
 		return
 	}
 	lines, err := h.ops.Logs(r.Context(), tail)
 	if err != nil {
-		status, message, _ := adminFailure(err)
+		status, message, _ := h.adminFailure(err)
 		data.Error = message
 		h.render(w, status, "admin_logs.html", data)
 		return
@@ -611,7 +611,7 @@ func (h *panelHandler) handleLogsAPI(w http.ResponseWriter, r *http.Request, _ s
 	}
 	lines, err := h.ops.Logs(r.Context(), tail)
 	if err != nil {
-		status, message, _ := adminFailure(err)
+		status, message, _ := h.adminFailure(err)
 		writeAPIError(w, status, adminErrorCode(err), message)
 		return
 	}
@@ -684,7 +684,7 @@ func (h *panelHandler) handleMods(w http.ResponseWriter, r *http.Request,
 ) {
 	data, err := h.modsPageData(r, session)
 	if err != nil {
-		status, message, _ := adminFailure(err)
+		status, message, _ := h.adminFailure(err)
 		data.Error = message
 		h.render(w, status, "admin_mods.html", data)
 		return
@@ -696,7 +696,7 @@ func (h *panelHandler) handleModsDeploy(w http.ResponseWriter, r *http.Request,
 	session sessionState,
 ) {
 	if h.ops == nil {
-		status, message, _ := adminFailure(errOpsUnavailable)
+		status, message, _ := h.adminFailure(errOpsUnavailable)
 		h.renderModsFailure(w, r, session, status, message, "")
 		return
 	}
@@ -705,18 +705,18 @@ func (h *panelHandler) handleModsDeploy(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		h.renderModsFailure(w, r, session, http.StatusBadRequest, "Некорректная форма.", "")
+		h.renderModsFailure(w, r, session, http.StatusBadRequest, h.tr().T(i18n.KeyPanelErrorBadForm), "")
 		return
 	}
 	name := r.PostForm.Get("archive")
 	if !safeArchiveName(name) || archive.ValidateModsArchiveName(name) != nil {
 		h.renderModsFailure(w, r, session, http.StatusBadRequest,
-			"Некорректное имя архива модов.", "archive")
+			h.tr().T(i18n.KeyPanelAdminModsNameInvalid), "archive")
 		return
 	}
 	result, err := h.ops.ModsDeploy(r.Context(), name)
 	if err != nil {
-		status, message, field := adminFailure(err)
+		status, message, field := h.adminFailure(err)
 		h.logger.Printf("audit: action=mods.deploy archive=%s result=error code=%s",
 			name, adminErrorCode(err))
 		h.renderModsFailure(w, r, session, status, message, field)
@@ -731,7 +731,7 @@ func (h *panelHandler) handleModsRollback(w http.ResponseWriter, r *http.Request
 	session sessionState,
 ) {
 	if h.ops == nil {
-		status, message, _ := adminFailure(errOpsUnavailable)
+		status, message, _ := h.adminFailure(errOpsUnavailable)
 		h.renderModsFailure(w, r, session, status, message, "")
 		return
 	}
@@ -741,24 +741,24 @@ func (h *panelHandler) handleModsRollback(w http.ResponseWriter, r *http.Request
 	}
 	backups, err := h.ops.BackupsList(r.Context(), "mods", adminBackupPageSize, "")
 	if err != nil {
-		status, message, field := adminFailure(err)
+		status, message, field := h.adminFailure(err)
 		h.renderModsFailure(w, r, session, status, message, field)
 		return
 	}
 	name := previousModsArchive(backups)
 	if name == "" {
 		h.renderModsFailure(w, r, session, http.StatusConflict,
-			"Нет предыдущего архива для отката.", "archive")
+			h.tr().T(i18n.KeyPanelAdminNoPrevious), "archive")
 		return
 	}
 	if archive.ValidateModsArchiveName(name) != nil {
 		h.renderModsFailure(w, r, session, http.StatusUnprocessableEntity,
-			"Предыдущий архив имеет неверное имя.", "archive")
+			h.tr().T(i18n.KeyPanelAdminPreviousInvalid), "archive")
 		return
 	}
 	result, err := h.ops.ModsDeploy(r.Context(), name)
 	if err != nil {
-		status, message, field := adminFailure(err)
+		status, message, field := h.adminFailure(err)
 		h.logger.Printf("audit: action=mods.rollback archive=%s result=error code=%s",
 			name, adminErrorCode(err))
 		h.renderModsFailure(w, r, session, status, message, field)
@@ -784,7 +784,7 @@ func (h *panelHandler) handleModsUpload(w http.ResponseWriter, r *http.Request,
 ) {
 	if h.ops == nil {
 		h.renderModsFailure(w, r, session, http.StatusServiceUnavailable,
-			"ops не настроен: импорт модов недоступен.", "")
+			h.tr().T(i18n.KeyPanelAdminModsImportUnavail), "")
 		return
 	}
 	if blocked, message := h.doctorMutationError(r.Context()); blocked {
@@ -805,14 +805,14 @@ func (h *panelHandler) handleModsUpload(w http.ResponseWriter, r *http.Request,
 	}
 	if upload.Path == "" {
 		h.renderModsFailure(w, r, session, http.StatusBadRequest,
-			"В форме нет файла архива.", "file")
+			h.tr().T(i18n.KeyPanelAdminFileMissing), "file")
 		return
 	}
 	defer h.removeUpload(upload.Path)
 
 	result, err := h.ops.ModsImport(r.Context(), upload.Path)
 	if err != nil {
-		status, message, field := adminFailure(err)
+		status, message, field := h.adminFailure(err)
 		h.logger.Printf("audit: action=mods.upload size=%d result=error code=%s",
 			upload.Size, adminErrorCode(err))
 		h.renderModsFailure(w, r, session, status, message, field)
@@ -907,17 +907,17 @@ func (h *panelHandler) renderModsUploadFailure(w http.ResponseWriter,
 	switch {
 	case errors.Is(err, errMultipartUpload):
 		h.renderModsFailure(w, r, session, http.StatusBadRequest,
-			"Ожидалась multipart-форма с архивом.", "file")
+			h.tr().T(i18n.KeyPanelAdminMultipartExpected), "file")
 	case errors.Is(err, errNoUploadFile):
 		h.renderModsFailure(w, r, session, http.StatusBadRequest,
-			"В форме нет файла архива.", "file")
+			h.tr().T(i18n.KeyPanelAdminFileMissing), "file")
 	case isRequestTooLarge(err):
 		h.renderModsFailure(w, r, session, http.StatusRequestEntityTooLarge,
-			"Архив больше 512 MiB.", "file")
+			h.tr().T(i18n.KeyPanelAdminModsTooLarge), "file")
 	default:
 		h.logger.Printf("panel: mods upload: %v", err)
 		h.renderModsFailure(w, r, session, http.StatusInternalServerError,
-			"Не удалось сохранить загруженный файл.", "file")
+			h.tr().T(i18n.KeyPanelAdminUploadFailed), "file")
 	}
 }
 
@@ -1048,7 +1048,7 @@ func (h *panelHandler) handleState(w http.ResponseWriter, r *http.Request,
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 || parsed > maxBackupLimit {
 			page := h.adminPageFor(r, session)
-			page.Error = "Параметр limit должен быть числом от 1 до 500."
+			page.Error = h.tr().T(i18n.KeyPanelAdminLimitInvalid)
 			data := adminStatePageData{
 				adminPage: page, Limit: adminBackupPageSize,
 				ModsURL: "/admin/mods",
@@ -1061,7 +1061,7 @@ func (h *panelHandler) handleState(w http.ResponseWriter, r *http.Request,
 	before := r.URL.Query().Get("before")
 	if before != "" && !safeArchiveName(before) {
 		page := h.adminPageFor(r, session)
-		page.Error = "Некорректное имя архива в параметре before."
+		page.Error = h.tr().T(i18n.KeyPanelAdminBeforeInvalid)
 		data := adminStatePageData{
 			adminPage: page, Limit: limit,
 			ModsURL: "/admin/mods",
@@ -1071,7 +1071,7 @@ func (h *panelHandler) handleState(w http.ResponseWriter, r *http.Request,
 	}
 	data, err := h.statePageData(r, session, before, limit)
 	if err != nil {
-		status, message, _ := adminFailure(err)
+		status, message, _ := h.adminFailure(err)
 		data.Error = message
 		h.render(w, status, "state.html", data)
 		return
@@ -1084,7 +1084,7 @@ func (h *panelHandler) handleStateCreate(w http.ResponseWriter, r *http.Request,
 ) {
 	if h.ops == nil {
 		h.renderStateFailure(w, r, session, http.StatusServiceUnavailable,
-			"ops не настроен: создание бэкапа недоступно.", "")
+			h.tr().T(i18n.KeyPanelAdminBackupUnavailable), "")
 		return
 	}
 	if blocked, message := h.doctorMutationError(r.Context()); blocked {
@@ -1095,7 +1095,7 @@ func (h *panelHandler) handleStateCreate(w http.ResponseWriter, r *http.Request,
 	if err != nil {
 		h.logger.Printf("audit: action=state.create result=error code=%s",
 			adminErrorCode(err))
-		status, message, field := adminFailure(err)
+		status, message, field := h.adminFailure(err)
 		h.renderStateFailure(w, r, session, status, message, field)
 		return
 	}
@@ -1108,7 +1108,7 @@ func (h *panelHandler) handleStateDeploy(w http.ResponseWriter, r *http.Request,
 ) {
 	if h.ops == nil {
 		h.renderStateFailure(w, r, session, http.StatusServiceUnavailable,
-			"ops не настроен: восстановление недоступно.", "")
+			h.tr().T(i18n.KeyPanelAdminRestoreUnavail), "")
 		return
 	}
 	if blocked, message := h.doctorMutationError(r.Context()); blocked {
@@ -1117,20 +1117,20 @@ func (h *panelHandler) handleStateDeploy(w http.ResponseWriter, r *http.Request,
 	}
 	if err := r.ParseForm(); err != nil {
 		h.renderStateFailure(w, r, session, http.StatusBadRequest,
-			"Некорректная форма.", "")
+			h.tr().T(i18n.KeyPanelErrorBadForm), "")
 		return
 	}
 	name := r.PostForm.Get("archive")
 	if !safeArchiveName(name) || archive.ValidateStateArchiveName(name) != nil {
 		h.renderStateFailure(w, r, session, http.StatusBadRequest,
-			"Некорректное имя state-архива.", "archive")
+			h.tr().T(i18n.KeyPanelAdminStateNameInvalid), "archive")
 		return
 	}
 	result, err := h.ops.StateDeploy(r.Context(), name)
 	if err != nil {
 		h.logger.Printf("audit: action=state.deploy archive=%s result=error code=%s",
 			name, adminErrorCode(err))
-		status, message, field := adminFailure(err)
+		status, message, field := h.adminFailure(err)
 		h.renderStateFailure(w, r, session, status, message, field)
 		return
 	}
@@ -1206,16 +1206,19 @@ func (h *panelHandler) serveAdminArchive(w http.ResponseWriter, r *http.Request,
 type adminConfigFieldDef struct {
 	Key   string
 	Label string
-	Kind  string
+	// LabelKey wins over Label: technical keys such as loginTime stay as they
+	// are, operator-facing labels are translated.
+	LabelKey string
+	Kind     string
 }
 
 var adminConfigFields = map[string][]adminConfigFieldDef{
 	"server": {
-		{Key: "hostname", Label: "Имя сервера", Kind: "string"},
-		{Key: "port", Label: "Порт (1024..65535)", Kind: "int"},
-		{Key: "maximumPlayers", Label: "Максимум игроков (1..64)", Kind: "int"},
-		{Key: "password", Label: "Пароль сервера (пусто = без пароля)", Kind: "password"},
-		{Key: "logLevel", Label: "Уровень логов (0..4)", Kind: "int"},
+		{Key: "hostname", LabelKey: i18n.KeyPanelConfigHostname, Kind: "string"},
+		{Key: "port", LabelKey: i18n.KeyPanelConfigPort, Kind: "int"},
+		{Key: "maximumPlayers", LabelKey: i18n.KeyPanelConfigMaxPlayers, Kind: "int"},
+		{Key: "password", LabelKey: i18n.KeyPanelConfigPassword, Kind: "password"},
+		{Key: "logLevel", LabelKey: i18n.KeyPanelConfigLogLevel, Kind: "int"},
 		{Key: "masterServerEnabled", Label: "Master server", Kind: "bool"},
 	},
 	"config": {
@@ -1267,16 +1270,24 @@ func (h *panelHandler) configSnapshot(ctx context.Context,
 	return ConfigSnapshot{File: file, Values: values}, nil
 }
 
+func configFieldLabel(tr *i18n.Translator, def adminConfigFieldDef) string {
+	if def.LabelKey != "" {
+		return tr.T(def.LabelKey)
+	}
+	return def.Label
+}
+
 func (h *panelHandler) configSections(r *http.Request) ([]adminConfigSection, error) {
 	sections := make([]adminConfigSection, 0, 3)
 	for _, item := range []struct {
-		file  string
-		title string
-		note  string
+		file     string
+		titleKey string
+		noteKey  string
 	}{
-		{file: "server", title: "Сервер"},
-		{file: "config", title: "Игровые настройки", note: "Таблицы и списки показываются только для чтения."},
-		{file: "banlist", title: "Банлист"},
+		{file: "server", titleKey: i18n.KeyPanelConfigSectionServer},
+		{file: "config", titleKey: i18n.KeyPanelConfigSectionGame,
+			noteKey: i18n.KeyPanelConfigGameNote},
+		{file: "banlist", titleKey: i18n.KeyPanelConfigSectionBanlist},
 	} {
 		snapshot, err := h.configSnapshot(r.Context(), item.file)
 		if err != nil {
@@ -1284,20 +1295,20 @@ func (h *panelHandler) configSections(r *http.Request) ([]adminConfigSection, er
 		}
 		section := adminConfigSection{
 			File:  item.file,
-			Title: item.title,
-			Note:  item.note,
+			Title: h.tr().T(item.titleKey),
+			Note:  h.tr().T(item.noteKey),
 		}
 		if item.file == "banlist" {
 			for _, list := range []struct {
-				key   string
-				label string
+				key      string
+				labelKey string
 			}{
-				{key: "playerNames", label: "Имена игроков (по одному на строку)"},
-				{key: "ipAddresses", label: "IP-адреса (по одному на строку)"},
+				{key: "playerNames", labelKey: i18n.KeyPanelConfigBanNames},
+				{key: "ipAddresses", labelKey: i18n.KeyPanelConfigBanIPs},
 			} {
 				section.Banlist = append(section.Banlist, adminConfigList{
 					Key:   list.key,
-					Label: list.label,
+					Label: h.tr().T(list.labelKey),
 					Value: strings.Join(stringList(snapshot.Values[list.key]), "\n"),
 				})
 			}
@@ -1309,7 +1320,7 @@ func (h *panelHandler) configSections(r *http.Request) ([]adminConfigSection, er
 				}
 				field := adminConfigField{
 					Key:   def.Key,
-					Label: def.Label,
+					Label: configFieldLabel(h.tr(), def),
 					Kind:  def.Kind,
 					Value: fmt.Sprint(value),
 				}
@@ -1345,7 +1356,7 @@ func (h *panelHandler) handleConfig(w http.ResponseWriter, r *http.Request,
 	data := adminConfigPageData{adminPage: h.adminPageFor(r, session)}
 	sections, err := h.configSections(r)
 	if err != nil {
-		status, message, _ := adminFailure(err)
+		status, message, _ := h.adminFailure(err)
 		data.Error = message
 		h.render(w, status, "admin_config.html", data)
 		return
@@ -1364,7 +1375,7 @@ func (h *panelHandler) handleConfigPost(w http.ResponseWriter, r *http.Request,
 	}
 	if h.ops == nil {
 		data := adminConfigPageData{adminPage: h.adminPageFor(r, session)}
-		status, message, _ := adminFailure(errOpsUnavailable)
+		status, message, _ := h.adminFailure(errOpsUnavailable)
 		data.Error = message
 		h.render(w, status, "admin_config.html", data)
 		return
@@ -1376,7 +1387,7 @@ func (h *panelHandler) handleConfigPost(w http.ResponseWriter, r *http.Request,
 	r.Body = http.MaxBytesReader(w, r.Body, maxConfigFormBytes)
 	if err := r.ParseForm(); err != nil {
 		h.renderConfigFailure(w, r, session, http.StatusBadRequest,
-			"Некорректная форма.", "")
+			h.tr().T(i18n.KeyPanelErrorBadForm), "")
 		return
 	}
 	h.handleConfigForm(w, r, session, file)
@@ -1387,7 +1398,7 @@ func (h *panelHandler) handleConfigForm(w http.ResponseWriter, r *http.Request,
 ) {
 	snapshot, err := h.configSnapshot(r.Context(), file)
 	if err != nil {
-		status, message, _ := adminFailure(err)
+		status, message, _ := h.adminFailure(err)
 		h.renderConfigFailure(w, r, session, status, message, "")
 		return
 	}
@@ -1418,7 +1429,7 @@ func (h *panelHandler) handleConfigForm(w http.ResponseWriter, r *http.Request,
 				snapshot.Values[def.Key])
 			if parseErr != nil {
 				h.renderConfigFailure(w, r, session, http.StatusBadRequest,
-					"Проверьте значение поля "+def.Label+".", def.Key)
+					h.tr().Tf(i18n.KeyPanelAdminFieldInvalid, def.Label), def.Key)
 				return
 			}
 			if changedField {
@@ -1429,7 +1440,7 @@ func (h *panelHandler) handleConfigForm(w http.ResponseWriter, r *http.Request,
 
 	if len(changed) == 0 {
 		data := adminConfigPageData{adminPage: h.adminPageFor(r, session)}
-		data.Notice = "Изменений нет."
+		data.Notice = h.tr().T(i18n.KeyPanelCommonNoChanges)
 		data.Sections, _ = h.configSections(r)
 		h.render(w, http.StatusOK, "admin_config.html", data)
 		return
@@ -1442,7 +1453,7 @@ func (h *panelHandler) handleConfigForm(w http.ResponseWriter, r *http.Request,
 	sort.Strings(keys)
 	for _, key := range keys {
 		if err := h.ops.ConfigSet(r.Context(), file, key, changed[key]); err != nil {
-			status, message, field := adminFailure(err)
+			status, message, field := h.adminFailure(err)
 			if field == "" {
 				field = key
 			}
@@ -1455,11 +1466,11 @@ func (h *panelHandler) handleConfigForm(w http.ResponseWriter, r *http.Request,
 	}
 
 	data := adminConfigPageData{adminPage: h.adminPageFor(r, session)}
-	data.Notice = fmt.Sprintf("Сохранено полей: %d.", len(changed))
+	data.Notice = h.tr().Tf(i18n.KeyPanelAdminSavedFields, len(changed))
 	data.RestartRequired = true
 	data.Sections, err = h.configSections(r)
 	if err != nil {
-		status, message, _ := adminFailure(err)
+		status, message, _ := h.adminFailure(err)
 		data.Error = message
 		h.render(w, status, "admin_config.html", data)
 		return
@@ -1530,11 +1541,11 @@ func (h *panelHandler) renderConfigFailure(w http.ResponseWriter, r *http.Reques
 func (h *panelHandler) handleStaff(w http.ResponseWriter, r *http.Request,
 	session sessionState,
 ) {
-	players, err := readStaffPlayers(h.cfg.Root)
+	players, err := readStaffPlayers(h.tr(), h.cfg.Root)
 	data := adminStaffPageData{adminPage: h.adminPageFor(r, session), Players: players}
 	if err != nil {
 		h.logger.Printf("panel: read staff players: %v", err)
-		data.Error = "Не удалось прочитать список игроков."
+		data.Error = h.tr().T(i18n.KeyPanelAdminPlayersUnreadable)
 		h.render(w, http.StatusInternalServerError, "admin_staff.html", data)
 		return
 	}
@@ -1548,11 +1559,11 @@ func (h *panelHandler) handleStaffSet(w http.ResponseWriter, r *http.Request,
 	player := r.PathValue("player")
 	if !validPlayerName(player) {
 		h.renderStaffFailure(w, r, session, http.StatusBadRequest,
-			"Некорректное имя игрока.", "player")
+			h.tr().T(i18n.KeyPanelAdminPlayerInvalid), "player")
 		return
 	}
 	if h.ops == nil {
-		status, message, _ := adminFailure(errOpsUnavailable)
+		status, message, _ := h.adminFailure(errOpsUnavailable)
 		h.renderStaffFailure(w, r, session, status, message, "")
 		return
 	}
@@ -1562,17 +1573,17 @@ func (h *panelHandler) handleStaffSet(w http.ResponseWriter, r *http.Request,
 	}
 	if err := r.ParseForm(); err != nil {
 		h.renderStaffFailure(w, r, session, http.StatusBadRequest,
-			"Некорректная форма.", "")
+			h.tr().T(i18n.KeyPanelErrorBadForm), "")
 		return
 	}
 	rank, err := strconv.Atoi(r.PostForm.Get("rank"))
 	if err != nil || rank < 0 || rank > 3 {
 		h.renderStaffFailure(w, r, session, http.StatusBadRequest,
-			"Ранг должен быть числом от 0 до 3.", "rank")
+			h.tr().T(i18n.KeyPanelAdminRankInvalid), "rank")
 		return
 	}
 	if err := h.ops.StaffSet(r.Context(), player, rank); err != nil {
-		status, message, field := adminFailure(err)
+		status, message, field := h.adminFailure(err)
 		h.logger.Printf("audit: action=staff.set player=%s rank=%d result=error code=%s",
 			player, rank, adminErrorCode(err))
 		h.renderStaffFailure(w, r, session, status, message, field)
@@ -1586,7 +1597,7 @@ func (h *panelHandler) renderStaffFailure(w http.ResponseWriter, r *http.Request
 	session sessionState,
 	status int, message, field string,
 ) {
-	players, _ := readStaffPlayers(h.cfg.Root)
+	players, _ := readStaffPlayers(h.tr(), h.cfg.Root)
 	data := adminStaffPageData{
 		adminPage: h.adminPageFor(r, session),
 		Players:   players,
@@ -1607,7 +1618,7 @@ func validPlayerName(name string) bool {
 	return true
 }
 
-func readStaffPlayers(root string) ([]adminStaffPlayer, error) {
+func readStaffPlayers(tr *i18n.Translator, root string) ([]adminStaffPlayer, error) {
 	dir := filepath.Join(root, "players")
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -1648,7 +1659,7 @@ func readStaffPlayers(root string) ([]adminStaffPlayer, error) {
 			SetURL: "/admin/staff/" + url.PathEscape(fileBase),
 		}
 		if err := json.Unmarshal(data, &raw); err != nil {
-			player.Error = "повреждённый JSON"
+			player.Error = tr.T(i18n.KeyPanelStaffBadJSON)
 		} else {
 			if raw.Name != "" {
 				player.Name = raw.Name
@@ -1656,7 +1667,7 @@ func readStaffPlayers(root string) ([]adminStaffPlayer, error) {
 			player.Rank = raw.Settings.StaffRank
 			if player.Rank < 0 || player.Rank > 3 {
 				player.Rank = -1
-				player.Error = "некорректный ранг"
+				player.Error = tr.T(i18n.KeyPanelStaffBadRank)
 			}
 		}
 		players = append(players, player)

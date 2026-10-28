@@ -1105,6 +1105,28 @@ body.auth {
   text-align: center;
 }
 
+/* The password page has no top bar, so the language selector sits under the
+   form; its buttons must stay inline instead of stretching like a form submit. */
+.auth-language {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.auth-language form.language-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  justify-content: center;
+  margin: 0;
+}
+
+.auth-card .auth-language button[type="submit"] {
+  width: auto;
+  margin-top: 0;
+  flex: 0 0 auto;
+}
+
 @media (max-width: 900px) {
   .archive-grid {
     grid-template-columns: 1fr;

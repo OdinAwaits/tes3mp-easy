@@ -470,14 +470,14 @@ func TestPublicBackupsPage(t *testing.T) {
 		// the title, day/week/month group headings.
 		"1 hour ago", `title="23.10.2026 11:00 UTC"`,
 		"Today", "Week 40, 2026", "January 2025",
-		"Состояния", "Моды", "Моды:",
+		"Snapshots", "Mods", "Mods:",
 		"/backups/state/state-manual-2026-10-23_11-00-00.tar.gz",
 		"/backups/state/state-manual-2026-10-23_11-00-00.tar.gz/bundle",
 		"/backups/mods/mods-2026-10-23_11-00-00.tar.gz",
-		"Скачать состояние + моды (.zip)",
+		"Download snapshot and mods (.zip)",
 		"state_before=state-2026-10-20_12-00-00.tar.gz",
 		"mods_before=mods-2026-10-01_11-00-00.tar.gz", "limit=2",
-		"Более старые состояния", "Более старые моды",
+		"Older snapshots", "Older mods",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("backups page does not contain %q:\n%s", want, body)
@@ -518,8 +518,8 @@ func TestPublicStateBackupsPageMarksMissingMods(t *testing.T) {
 	for _, want := range []string{
 		"state-manual-2026-10-23_11-00-00.tar.gz",
 		"/backups/state/state-manual-2026-10-23_11-00-00.tar.gz",
-		"mods-2026-10-23_11-00-00.tar.gz", "файл отсутствует",
-		"Архивов модов пока нет.",
+		"mods-2026-10-23_11-00-00.tar.gz", "file missing",
+		"No mod archives yet.",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("state backups page does not contain %q:\n%s", want, body)
@@ -538,8 +538,8 @@ func TestPublicBackupsDefaultsAndValidation(t *testing.T) {
 		t.Fatalf("default backups = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "Состояний пока нет") ||
-		!strings.Contains(body, "Архивов модов пока нет") {
+	if !strings.Contains(body, "No snapshots yet") ||
+		!strings.Contains(body, "No mod archives yet") {
 		t.Fatal("empty backups page has no empty-state messages")
 	}
 	if len(env.ops.backupsCalls) != 2 {
@@ -844,7 +844,7 @@ func TestPublicHomePage(t *testing.T) {
 			t.Fatalf("home page does not contain %q:\n%s", want, body)
 		}
 	}
-	for _, unwanted := range []string{name, sum, "Текущие моды", "sha256"} {
+	for _, unwanted := range []string{name, sum, "Current mods", "sha256"} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("home page still shows %q:\n%s", unwanted, body)
 		}

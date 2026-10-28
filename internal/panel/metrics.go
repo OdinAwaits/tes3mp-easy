@@ -516,6 +516,9 @@ type metricsCharts struct {
 	Disk dashboardChart `json:"disk"`
 }
 
+// buildMetricsView assembles the dashboard view. Chart titles stay empty on
+// purpose: the panel templates localize the accessible <title> of every chart,
+// so a language switch never depends on rebuilding the in-memory samples.
 func buildMetricsView(window metricsWindowData, latest metricsSample,
 	hasLatest bool, now time.Time, spec metricsWindowSpec,
 ) metricsView {
@@ -551,7 +554,7 @@ func buildMetricsView(window metricsWindowData, latest metricsSample,
 	}
 
 	from := now.Add(-spec.duration)
-	view.RAMChart = buildChart(window.Samples, "RAM игры", rangeLabel(humanSizeLabel(float64(metricsRAMLimit))),
+	view.RAMChart = buildChart(window.Samples, "", rangeLabel(humanSizeLabel(float64(metricsRAMLimit))),
 		from, now, float64(metricsRAMLimit), humanSizeLabel, func(sample metricsSample) *float64 {
 			if sample.GameRAM == nil {
 				return nil
@@ -568,7 +571,7 @@ func buildMetricsView(window metricsWindowData, latest metricsSample,
 	if diskMax < float64(1<<30) {
 		diskMax = float64(1 << 30)
 	}
-	view.DiskChart = buildChart(window.Samples, "Свободно на диске", rangeLabel(humanSizeLabel(diskMax)),
+	view.DiskChart = buildChart(window.Samples, "", rangeLabel(humanSizeLabel(diskMax)),
 		from, now, diskMax, humanSizeLabel, func(sample metricsSample) *float64 {
 			if sample.DiskFree == nil {
 				return nil
@@ -625,7 +628,7 @@ func buildChart(samples []metricsSample, title, rangeLabel string,
 }
 
 func buildDualCPUChart(samples []metricsSample, from, to time.Time) dashboardChart {
-	chart := buildChart(samples, "CPU игры и системы",
+	chart := buildChart(samples, "",
 		rangeLabel(percentLabel(metricsMaxCPU)), from, to,
 		metricsMaxCPU, percentLabel, nil, "")
 	chart.Lines = append(chart.Lines, chartLines(samples,

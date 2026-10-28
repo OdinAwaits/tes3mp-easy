@@ -1,24 +1,24 @@
-{{define "title"}}Логи — tes3mp-easy{{end}}
+{{define "title"}}{{.T "panel.logs.title"}}{{end}}
 {{define "scripts"}}
   <script defer src="/static/admin.js"></script>
 {{end}}
 {{define "content"}}
 <main class="page">
     <div class="page-head">
-      <p class="eyebrow">Диагностика</p>
-      <h1>Логи</h1>
-      <p class="lead">Последние строки журнала panel и игрового сервера обновляются автоматически.</p>
+      <p class="eyebrow">{{.T "panel.logs.eyebrow"}}</p>
+      <h1>{{.T "panel.logs.heading"}}</h1>
+      <p class="lead">{{.T "panel.logs.lead"}}</p>
     </div>
 
     {{template "notices" .}}
 
     <form class="toolbar" method="get" action="/admin/logs">
       <div class="field">
-        <label for="tail">Последних строк</label>
+        <label for="tail">{{.T "panel.logs.tail"}}</label>
         <input id="tail" type="number" name="tail" min="1" max="2000" value="{{.Tail}}">
       </div>
-      <button type="submit">Показать</button>
-      <button class="button button--ghost" type="button" id="log-toggle">Пауза</button>
+      <button type="submit">{{.T "panel.logs.show"}}</button>
+      <button class="button button--ghost" type="button" id="log-toggle" data-label-pause="{{.T "panel.logs.pause"}}" data-label-resume="{{.T "panel.logs.resume"}}">{{.T "panel.logs.pause"}}</button>
     </form>
 
     <pre class="log-panel" id="admin-logs" data-tail="{{.Tail}}">{{range .Lines}}{{.}}

@@ -300,7 +300,7 @@ func TestAdminDashboardShowsServerStatus(t *testing.T) {
 		t.Fatalf("GET /admin = %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"Панель запущена", "running", "Friends"} {
+	for _, want := range []string{"The panel is running", "running", "Friends"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard does not contain %q:\n%s", want, body)
 		}
@@ -535,12 +535,13 @@ func TestAdminDashboardRendersLabelsAndActions(t *testing.T) {
 				t.Fatalf("GET /admin = %d: %s", rec.Code, rec.Body.String())
 			}
 			body := rec.Body.String()
-			if !strings.Contains(body,
-				`data-status="`+tt.state+`">`+tt.statusLabel+`<`) {
+			if !strings.Contains(body, `data-status="`+tt.state+`"`) ||
+				!strings.Contains(body, `>`+tt.statusLabel+`<`) {
 				t.Fatalf("status badge is not %q (%q):\n%s", tt.statusLabel,
 					tt.state, body)
 			}
-			if !strings.Contains(body, `data-status="healthy">ok<`) {
+			if !strings.Contains(body, `data-status="healthy"`) ||
+				!strings.Contains(body, `>ok<`) {
 				t.Fatalf("health badge is not localized:\n%s", body)
 			}
 			// A disabled button is the negation of the matching permission.
@@ -594,7 +595,7 @@ func TestAdminModsPageDeployAndRollback(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		"mods-2026-10-23_12-00-00.tar.gz", "mods-2026-10-22_12-00-00.tar.gz",
-		"Rollback", "multipart/form-data", "Формат архива",
+		"Rollback", "multipart/form-data", "Archive layout",
 		"requiredDataFiles.json", "Morrowind.esm", "scripts/",
 	} {
 		if !strings.Contains(body, want) {
@@ -772,17 +773,17 @@ func TestAdminStatePageGroupsAndValidatesInput(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"state-manual", "state-predeploy", "Восстановить",
-		"Скачать состояние", "mods-2026-10-23_12-00-00.tar.gz",
-		"Показать более старые", "state-2026-10-20_12-00-00.tar.gz",
-		"Восстановить из скачанного архива", "/admin/state/restore",
+		"state-manual", "state-predeploy", "Restore",
+		"Download snapshot", "mods-2026-10-23_12-00-00.tar.gz",
+		"Show older", "state-2026-10-20_12-00-00.tar.gz",
+		"Restore from a downloaded archive", "/admin/state/restore",
 		"enctype=\"multipart/form-data\"",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("state page does not contain %q:\n%s", want, body)
 		}
 	}
-	if got := strings.Count(body, "Скачать моды"); got != 2 {
+	if got := strings.Count(body, "Download mods"); got != 2 {
 		t.Fatalf("mods download links = %d, want 2 (missing archive hidden):\n%s",
 			got, body)
 	}
@@ -913,7 +914,7 @@ func TestAdminConfigSavesWholeFormDiff(t *testing.T) {
 	if call.key != "port" || call.value != 25566 {
 		t.Fatalf("full form changed %+v, want only port", call)
 	}
-	if !strings.Contains(rec.Body.String(), "Сохранено полей: 1") {
+	if !strings.Contains(rec.Body.String(), "Fields saved: 1") {
 		t.Fatalf("full form page has no diff count:\n%s", rec.Body.String())
 	}
 
@@ -922,7 +923,7 @@ func TestAdminConfigSavesWholeFormDiff(t *testing.T) {
 	if rec.Code != http.StatusOK || len(env.ops.configSets) != 1 {
 		t.Fatalf("second unchanged form = %d calls=%+v", rec.Code, env.ops.configSets)
 	}
-	if !strings.Contains(rec.Body.String(), "Изменений нет") {
+	if !strings.Contains(rec.Body.String(), "No changes") {
 		t.Fatalf("unchanged form page has no notice:\n%s", rec.Body.String())
 	}
 }
@@ -940,7 +941,7 @@ func TestAdminConfigSaveFailureHighlightsField(t *testing.T) {
 	}
 	body := rec.Body.String()
 	if !strings.Contains(body, "loginTime must be in 10..600") ||
-		!strings.Contains(body, "Проверьте поле: loginTime") {
+		!strings.Contains(body, "Check this field: loginTime") {
 		t.Fatalf("config failure does not highlight the field:\n%s", body)
 	}
 }
@@ -978,7 +979,7 @@ func TestAdminStaffListsPlayersAndSetsRank(t *testing.T) {
 		t.Fatalf("GET /admin/staff = %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"John Doe", "Jane", "повреждённый JSON"} {
+	for _, want := range []string{"John Doe", "Jane", "broken JSON"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("staff page does not contain %q:\n%s", want, body)
 		}

@@ -1,34 +1,34 @@
-{{define "title"}}Состояния — tes3mp-easy{{end}}
+{{define "title"}}{{.T "panel.state.title"}}{{end}}
 {{define "content"}}
 <main class="page">
     <div class="page-head">
-      <p class="eyebrow">Резервные копии</p>
-      <h1>Состояния</h1>
-      <p class="lead">Состояние хранит игроков, мир и config.lua. Пароль сервера и banlist.json остаются в живых конфигах и в state не попадают. Моды — отдельные неизменяемые архивы, на которые ссылается состояние.</p>
+      <p class="eyebrow">{{.T "panel.state.eyebrow"}}</p>
+      <h1>{{.T "panel.state.heading"}}</h1>
+      <p class="lead">{{.T "panel.state.lead"}}</p>
     </div>
 
     {{template "notices" .}}
 
     {{if .MissingMods}}
-      <p class="notice" role="status">Текущий архив модов не найден. Восстановление недоступно, пока моды не задеплоены.</p>
+      <p class="notice" role="status">{{.T "panel.state.missing_mods"}}</p>
     {{else}}
-      <p class="muted">Текущие моды: <code>{{.CurrentMods}}</code></p>
+      <p class="muted">{{.THf "panel.state.current_mods" .CurrentMods}}</p>
     {{end}}
 
     <section class="card card--warning">
-      <h2>Восстановить из скачанного архива</h2>
-      <p>ZIP «состояние + моды» импортирует моды и восстановит состояние; отдельный state <code>.tar.gz</code> — только на активном пакете модов.</p>
-      <form method="post" action="/admin/state/restore" enctype="multipart/form-data" data-confirm="Восстановить состояние из архива? players/, world/ и config.lua будут заменены.">
+      <h2>{{.T "panel.state.restore_heading"}}</h2>
+      <p>{{.TH "panel.state.restore_hint"}}</p>
+      <form method="post" action="/admin/state/restore" enctype="multipart/form-data" data-confirm="{{.T "panel.state.restore_confirm"}}">
         {{template "csrf" .}}
         <div class="field">
-          <label for="restore-file">Архив .zip или state .tar.gz, до 1 ГиБ</label>
+          <label for="restore-file">{{.T "panel.state.file_label"}}</label>
           <input id="restore-file" type="file" name="file" accept=".zip,.tar.gz,application/zip,application/gzip" required>
         </div>
-        <button class="button button--danger" type="submit">Загрузить и восстановить</button>
+        <button class="button button--danger" type="submit">{{.T "panel.state.upload_restore"}}</button>
       </form>
       <details class="format-hint">
-        <summary>Что именно заменяется</summary>
-        <p class="muted">players/, world/ и config.lua заменяются; пароль в tes3mp-server-default.cfg и banlist.json не меняются. Моды подменяются только из ZIP. Если сервер работает, он будет перезапущен. Перед восстановлением ops создаст state-predeploy-*.</p>
+        <summary>{{.T "panel.state.what_changes"}}</summary>
+        <p class="muted">{{.T "panel.state.what_changes_txt"}}</p>
       </details>
     </section>
 
@@ -36,18 +36,18 @@
       <div class="actions">
         <form method="post" action="/admin/state/create">
           {{template "csrf" .}}
-          <button class="button button--primary" type="submit">Создать состояние</button>
+          <button class="button button--primary" type="submit">{{.T "panel.state.create"}}</button>
         </form>
-        <a class="button button--secondary" href="{{.ModsURL}}">Управление модами</a>
+        <a class="button button--secondary" href="{{.ModsURL}}">{{.T "panel.state.manage_mods"}}</a>
       </div>
       <form class="field" method="get" action="/admin/state">
-        <label for="limit">Записей на страницу</label>
+        <label for="limit">{{.T "panel.state.limit"}}</label>
         <input id="limit" type="number" name="limit" min="1" max="500" value="{{.Limit}}">
-        <button class="button button--secondary button--small" type="submit">Показать</button>
+        <button class="button button--secondary button--small" type="submit">{{.T "panel.common.show"}}</button>
       </form>
     </div>
 
-    {{if .Empty}}<p class="empty-state">Состояний пока нет.</p>{{end}}
+    {{if .Empty}}<p class="empty-state">{{.T "panel.state.empty"}}</p>{{end}}
 
     <div class="stack">
       {{range .Groups}}
@@ -57,11 +57,11 @@
             <table>
               <thead>
                 <tr>
-                  <th>Архив</th>
-                  <th>Моды</th>
-                  <th>Размер</th>
-                  <th>Дата (UTC)</th>
-                  <th>Действия</th>
+                  <th>{{$.T "panel.common.archive"}}</th>
+                  <th>{{$.T "panel.state.mods"}}</th>
+                  <th>{{$.T "panel.common.size"}}</th>
+                  <th>{{$.T "panel.common.date_utc"}}</th>
+                  <th>{{$.T "panel.common.actions"}}</th>
                 </tr>
               </thead>
               <tbody>
@@ -69,36 +69,36 @@
                   <tr>
                     <td>
                       <code>{{.Name}}</code>
-                      {{if .Current}} <span class="badge" data-status="ok">текущий</span>{{end}}
-                      {{if not .ModsAvailable}} <span class="badge" data-status="warn">Моды отсутствуют</span>{{end}}
+                      {{if .Current}} <span class="badge" data-status="ok">{{$.T "panel.common.current"}}</span>{{end}}
+                      {{if not .ModsAvailable}} <span class="badge" data-status="warn">{{$.T "panel.state.mods_missing"}}</span>{{end}}
                     </td>
                     <td>
                       {{if .ModsArchive}}
                         <code>{{.ModsArchive}}</code>
-                        {{if .ModsCurrent}}<div class="muted">активны</div>{{else}}<div class="muted">не активны</div>{{end}}
+                        {{if .ModsCurrent}}<div class="muted">{{$.T "panel.state.mods_active"}}</div>{{else}}<div class="muted">{{$.T "panel.state.mods_inactive"}}</div>{{end}}
                       {{else}}
-                        <span class="muted">ссылка не читается</span>
+                        <span class="muted">{{$.T "panel.backups.link_unreadable"}}</span>
                       {{end}}
                     </td>
                     <td>{{.SizeLabel}}</td>
                     <td><time datetime="{{.Mtime}}">{{.MtimeLabel}}</time></td>
                     <td>
                       <div class="row-actions">
-                        <a class="button button--secondary button--small" href="{{.DownloadURL}}">Скачать состояние</a>
+                        <a class="button button--secondary button--small" href="{{.DownloadURL}}">{{$.T "panel.state.download_state"}}</a>
                         {{if and .ModsArchive .ModsAvailable}}
-                          <a class="button button--secondary button--small" href="{{.ModsDownloadURL}}">Скачать моды</a>
+                          <a class="button button--secondary button--small" href="{{.ModsDownloadURL}}">{{$.T "panel.state.download_mods"}}</a>
                         {{end}}
                         {{if and .ModsAvailable (not .ModsCurrent)}}
-                          <form method="post" action="/admin/mods/deploy" data-confirm="Задеплоить моды {{.ModsArchive}}? Сервер будет перезапущен.">
+                          <form method="post" action="/admin/mods/deploy" data-confirm="{{$.Tf "panel.state.deploy_confirm" .ModsArchive}}">
                             {{template "csrf" $}}
                             <input type="hidden" name="archive" value="{{.ModsArchive}}">
-                            <button class="button button--secondary button--small" type="submit">Задеплоить моды</button>
+                            <button class="button button--secondary button--small" type="submit">{{$.T "panel.state.deploy_mods"}}</button>
                           </form>
                         {{end}}
-                        <form method="post" action="/admin/state/deploy" data-confirm="Восстановить состояние {{.Name}}? Текущие players/, world/ и config.lua будут заменены.">
+                        <form method="post" action="/admin/state/deploy" data-confirm="{{$.Tf "panel.state.restore_row_confirm" .Name}}">
                           {{template "csrf" $}}
                           <input type="hidden" name="archive" value="{{.Name}}">
-                          <button class="button button--danger button--small" type="submit"{{if not .CanRestore}} disabled title="Сначала задеплойте указанный архив модов"{{end}}>Восстановить</button>
+                          <button class="button button--danger button--small" type="submit"{{if not .CanRestore}} disabled title="{{$.T "panel.state.deploy_first"}}"{{end}}>{{$.T "panel.state.restore_button"}}</button>
                         </form>
                       </div>
                     </td>
@@ -111,6 +111,6 @@
       {{end}}
     </div>
 
-    {{if .NextURL}}<p class="pagination"><a class="button button--secondary" href="{{.NextURL}}">Показать более старые</a></p>{{end}}
+    {{if .NextURL}}<p class="pagination"><a class="button button--secondary" href="{{.NextURL}}">{{.T "panel.state.older"}}</a></p>{{end}}
   </main>
 {{end}}

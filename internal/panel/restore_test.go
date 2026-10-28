@@ -165,7 +165,7 @@ func TestAdminStateRestoreRejectsMismatchedBundleBeforeMutation(t *testing.T) {
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("mismatched bundle = %d, want 422: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "не соответствует состоянию") {
+	if !strings.Contains(rec.Body.String(), "does not match the snapshot") {
 		t.Fatalf("bundle error is not explanatory:\n%s", rec.Body.String())
 	}
 	if len(env.ops.importNamedCalls) != 0 || len(env.ops.stateImports) != 0 ||

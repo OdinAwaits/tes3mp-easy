@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
+	"html/template"
 	"io"
 	"io/fs"
 	"log"
@@ -182,6 +184,26 @@ func (p pageI18n) Tf(key string, args ...any) string {
 // Pluralf selects the plural form of key for count and formats it.
 func (p pageI18n) Pluralf(key string, count int) string {
 	return p.settings.Translator().Pluralf(key, count)
+}
+
+// TH translates key and keeps inline markup such as <code> alive. The catalog is
+// compiled into the binary and no user input reaches these strings, so the
+// markup is as trusted as the template itself.
+func (p pageI18n) TH(key string) template.HTML { return template.HTML(p.T(key)) }
+
+// THf translates key, applies fmt.Sprintf arguments and keeps inline markup of
+// the sentence. String arguments are HTML-escaped first: archive and player
+// names come from the operator, so they must never become markup.
+func (p pageI18n) THf(key string, args ...any) template.HTML {
+	safe := make([]any, len(args))
+	for i, arg := range args {
+		if text, ok := arg.(string); ok {
+			safe[i] = html.EscapeString(text)
+			continue
+		}
+		safe[i] = arg
+	}
+	return template.HTML(p.Tf(key, safe...))
 }
 
 // Lang returns the language tag for the <html lang> attribute.

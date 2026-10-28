@@ -162,6 +162,105 @@ func TestAdminLanguageRejectsUnknownValueAndForeignRedirect(t *testing.T) {
 	}
 }
 
+func TestPageI18nKeepsMarkupButEscapesArguments(t *testing.T) {
+	dir := t.TempDir()
+	setting, err := openLanguageSetting(dir, i18n.English, nil)
+	if err != nil {
+		t.Fatalf("openLanguageSetting: %v", err)
+	}
+	page := pageI18n{settings: setting}
+
+	// Sentences that wrap <code> around technical terms keep the markup.
+	if got := string(page.TH(i18n.KeyPanelDashboardDoctorHint)); !strings.Contains(got, "<code>doctor</code>") {
+		t.Fatalf("TH dropped inline markup: %q", got)
+	}
+	// Archive names come from the operator, so they must never become markup.
+	got := string(page.THf(i18n.KeyPanelModsRollbackText, "<script>alert(1)</script>"))
+	if strings.Contains(got, "<script>") {
+		t.Fatalf("THf escaped the sentence but not the argument: %q", got)
+	}
+	if !strings.Contains(got, "&lt;script&gt;") {
+		t.Fatalf("THf did not escape the argument: %q", got)
+	}
+}
+
+func TestAdminPagesAreTranslatedInBothLanguages(t *testing.T) {
+	env := newAdminTestEnv(t, &fakeAdminOps{
+		statuses:        map[string]Status{"tes3mp.service": {State: "running"}},
+		backups:         map[string]Backups{"state": stateBackupsFixture(), "mods": modsBackupsFixture()},
+		configSnapshots: adminConfigSnapshots(),
+	})
+	pages := []string{"/admin", "/admin/logs", "/admin/mods", "/admin/state",
+		"/admin/config", "/admin/staff", "/admin/password"}
+
+	for _, path := range pages {
+		rec := env.request(t, http.MethodGet, path, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d: %s", path, rec.Code, rec.Body.String())
+		}
+		// The language selector prints every language in its own script
+		// ("Русский"), which is not untranslated text.
+		if hasCyrillic(withoutLanguageNames(rec.Body.String())) {
+			t.Fatalf("GET %s in English still contains Russian text:\n%s", path, rec.Body.String())
+		}
+	}
+
+	if err := env.h.language.Set(i18n.Russian); err != nil {
+		t.Fatalf("switch to ru: %v", err)
+	}
+	for _, path := range pages {
+		rec := env.request(t, http.MethodGet, path, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s in Russian = %d: %s", path, rec.Code, rec.Body.String())
+		}
+		body := rec.Body.String()
+		if !strings.Contains(body, `<html lang="ru">`) {
+			t.Fatalf("GET %s has no Russian lang attribute", path)
+		}
+		if !hasCyrillic(body) {
+			t.Fatalf("GET %s did not translate the page body:\n%s", path, body)
+		}
+	}
+}
+
+func TestPasswordPageOffersLanguageSelector(t *testing.T) {
+	env := newAdminTestEnv(t, &fakeAdminOps{})
+	rec := env.request(t, http.MethodGet, "/admin/password", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /admin/password = %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`action="/admin/language"`,
+		`name="next" value="/admin/password"`,
+		`name="language" value="en"`,
+		`name="language" value="ru"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("password page has no language selector (%q):\n%s", want, body)
+		}
+	}
+}
+
+// hasCyrillic reports whether a rendered page still carries untranslated
+// Russian text, which is how the bilingual regression test detects leftovers.
+func hasCyrillic(text string) bool {
+	for _, r := range text {
+		if r >= '\u0400' && r <= '\u04FF' {
+			return true
+		}
+	}
+	return false
+}
+
+// withoutLanguageNames drops the endonyms of the language selector.
+func withoutLanguageNames(text string) string {
+	for _, language := range i18n.Supported() {
+		text = strings.ReplaceAll(text, i18n.DisplayName(language), "")
+	}
+	return text
+}
+
 func TestPageI18nWithoutSettingsFallsBackToEnglish(t *testing.T) {
 	var page pageI18n
 	if got := page.T(i18n.KeyPanelNavLogs); got != "Logs" {

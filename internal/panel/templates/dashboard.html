@@ -1,30 +1,30 @@
-{{define "title"}}Панель — tes3mp-easy{{end}}
+{{define "title"}}{{.T "panel.dashboard.title"}}{{end}}
 {{define "scripts"}}
   <script defer src="/static/admin.js"></script>
 {{end}}
 {{define "content"}}
 <main class="page">
     <div class="page-head">
-      <p class="eyebrow">Сервер</p>
+      <p class="eyebrow">{{.T "panel.dashboard.eyebrow"}}</p>
       <h1>{{.ServerName}}</h1>
-      <p class="lead">Панель запущена. Статус, ресурсы и последние события. Графики — 24 часа в памяти панели, на диск не пишутся.</p>
+      <p class="lead">{{.T "panel.dashboard.lead"}}</p>
     </div>
 
     {{template "notices" .}}
 
     <section class="card">
-      <h2>Сервер</h2>
+      <h2>{{.T "panel.dashboard.server"}}</h2>
       {{if .StatusError}}<p role="alert">{{.StatusError}}</p>{{end}}
       <div class="status-line">
-        <span class="badge" id="server-status" data-status="{{.Status}}">{{.StatusLabel}}</span>
-        <span class="muted" id="server-started-wrap"{{if not .StartedAt}} hidden{{end}}>с <time {{if .StartedAt}}datetime="{{.StartedAt}}" title="{{.StartedAt}}" {{end}}id="server-started">{{.StartedAtLabel}}</time></span>
+        <span class="badge" id="server-status" data-status="{{.Status}}" data-label-unavailable="{{.T "panel.status.unavailable"}}">{{.StatusLabel}}</span>
+        <span class="muted" id="server-started-wrap"{{if not .StartedAt}} hidden{{end}}>{{.T "panel.dashboard.since"}} <time {{if .StartedAt}}datetime="{{.StartedAt}}" title="{{.StartedAt}}" {{end}}id="server-started">{{.StartedAtLabel}}</time></span>
       </div>
       <dl class="meta-list">
-        <dt>Адрес</dt>
+        <dt>{{.T "panel.dashboard.address"}}</dt>
         <dd><code>{{.Address}}:{{.Port}}</code></dd>
-        <dt>Health</dt>
-        <dd><span class="badge" id="server-health" data-status="{{.Health}}">{{.HealthLabel}}</span></dd>
-        <dt>Моды</dt>
+        <dt>{{.T "panel.dashboard.health"}}</dt>
+        <dd><span class="badge" id="server-health" data-status="{{.Health}}" data-label-unavailable="{{.T "panel.status.unavailable"}}">{{.HealthLabel}}</span></dd>
+        <dt>{{.T "panel.dashboard.mods"}}</dt>
         <dd>
           {{if .Mods}}<code>{{.Mods.Name}}</code> <span class="muted">{{.Mods.SizeLabel}}</span>
           {{else}}<span role="alert">{{.ModsError}}</span>{{end}}
@@ -33,48 +33,48 @@
       <div class="actions">
         <form method="post" action="/admin/server/start">
           {{template "csrf" .}}
-          <button class="button button--primary" type="submit" data-server-action="start"{{if not .CanStart}} disabled{{end}}>Запустить</button>
+          <button class="button button--primary" type="submit" data-server-action="start"{{if not .CanStart}} disabled{{end}}>{{.T "panel.dashboard.start"}}</button>
         </form>
-        <form method="post" action="/admin/server/restart" data-confirm="Перезапустить сервер? Игроки будут отключены.">
+        <form method="post" action="/admin/server/restart" data-confirm="{{.T "panel.dashboard.confirm_restart"}}">
           {{template "csrf" .}}
-          <button class="button button--secondary" type="submit">Перезапустить</button>
+          <button class="button button--secondary" type="submit">{{.T "panel.dashboard.restart"}}</button>
         </form>
-        <form method="post" action="/admin/server/stop" data-confirm="Остановить сервер? Игроки будут отключены.">
+        <form method="post" action="/admin/server/stop" data-confirm="{{.T "panel.dashboard.confirm_stop"}}">
           {{template "csrf" .}}
-          <button class="button button--danger" type="submit" data-server-action="stop"{{if not .CanStop}} disabled{{end}}>Остановить</button>
+          <button class="button button--danger" type="submit" data-server-action="stop"{{if not .CanStop}} disabled{{end}}>{{.T "panel.dashboard.stop"}}</button>
         </form>
-        <a class="button button--ghost" href="/admin/logs">Логи</a>
+        <a class="button button--ghost" href="/admin/logs">{{.T "panel.dashboard.logs"}}</a>
       </div>
-      <p class="muted">Мутации блокируются, пока <code>doctor</code> в статусе <code>error</code>. Метрики на это не влияют.</p>
+      <p class="muted">{{.TH "panel.dashboard.doctor_hint"}}</p>
     </section>
 
     <section class="card" id="resources" data-window="{{.Window}}">
       <div class="page-subhead">
-        <h2>Ресурсы</h2>
-        <nav class="tabs" aria-label="Окно графиков">
-          <a href="/admin?window=1h"{{if eq .Window "1h"}} aria-current="page"{{end}}>1 ч</a>
-          <a href="/admin?window=6h"{{if eq .Window "6h"}} aria-current="page"{{end}}>6 ч</a>
-          <a href="/admin?window=24h"{{if eq .Window "24h"}} aria-current="page"{{end}}>24 ч</a>
+        <h2>{{.T "panel.dashboard.resources"}}</h2>
+        <nav class="tabs" aria-label="{{.T "panel.dashboard.window_aria"}}">
+          <a href="/admin?window=1h"{{if eq .Window "1h"}} aria-current="page"{{end}}>{{.T "panel.dashboard.window_1h"}}</a>
+          <a href="/admin?window=6h"{{if eq .Window "6h"}} aria-current="page"{{end}}>{{.T "panel.dashboard.window_6h"}}</a>
+          <a href="/admin?window=24h"{{if eq .Window "24h"}} aria-current="page"{{end}}>{{.T "panel.dashboard.window_24h"}}</a>
         </nav>
       </div>
       {{if .MetricsError}}<p role="alert">{{.MetricsError}}</p>{{end}}
       {{if .Metrics.Available}}
         <div class="metric-row">
-          <div class="metric"><span class="metric-value" data-metric="ram">{{.Metrics.CurrentRAM}}</span><span class="metric-meta">RAM игры</span></div>
-          <div class="metric"><span class="metric-value" data-metric="game-cpu">{{.Metrics.CurrentGameCPU}}</span><span class="metric-meta">CPU игры</span></div>
-          <div class="metric"><span class="metric-value" data-metric="sys-cpu">{{.Metrics.CurrentSysCPU}}</span><span class="metric-meta">CPU системы</span></div>
-          <div class="metric"><span class="metric-value" data-metric="sys-ram">{{.Metrics.CurrentSysRAM}}</span><span class="metric-meta">RAM системы</span></div>
-          <div class="metric"><span class="metric-value" data-metric="swap">{{.Metrics.CurrentSwap}}</span><span class="metric-meta">swap</span></div>
-          <div class="metric"><span class="metric-value" data-metric="disk">{{.Metrics.CurrentDisk}}</span><span class="metric-meta">свободно на диске</span></div>
+          <div class="metric"><span class="metric-value" data-metric="ram">{{.Metrics.CurrentRAM}}</span><span class="metric-meta">{{.T "panel.dashboard.ram"}}</span></div>
+          <div class="metric"><span class="metric-value" data-metric="game-cpu">{{.Metrics.CurrentGameCPU}}</span><span class="metric-meta">{{.T "panel.dashboard.game_cpu"}}</span></div>
+          <div class="metric"><span class="metric-value" data-metric="sys-cpu">{{.Metrics.CurrentSysCPU}}</span><span class="metric-meta">{{.T "panel.dashboard.sys_cpu"}}</span></div>
+          <div class="metric"><span class="metric-value" data-metric="sys-ram">{{.Metrics.CurrentSysRAM}}</span><span class="metric-meta">{{.T "panel.dashboard.sys_ram"}}</span></div>
+          <div class="metric"><span class="metric-value" data-metric="swap">{{.Metrics.CurrentSwap}}</span><span class="metric-meta">{{.T "panel.dashboard.swap"}}</span></div>
+          <div class="metric"><span class="metric-value" data-metric="disk">{{.Metrics.CurrentDisk}}</span><span class="metric-meta">{{.T "panel.dashboard.disk_free"}}</span></div>
         </div>
       {{else}}
-        <p class="muted">cgroup игры не читается: сервер остановлен. Системные метрики доступны.</p>
+        <p class="muted">{{.T "panel.dashboard.no_cgroup"}}</p>
       {{end}}
 
-      <h3>RAM игры</h3>
-      <p class="metric-meta">{{.Metrics.RAMChart.RangeLabel}}; пики видны, пропуски — разрыв.</p>
+      <h3>{{.T "panel.dashboard.ram_chart"}}</h3>
+      <p class="metric-meta">{{.THf "panel.dashboard.ram_hint" .Metrics.RAMChart.RangeLabel}}</p>
       <svg class="chart" id="chart-ram" viewBox="0 0 600 170" role="img" aria-labelledby="ram-title">
-        <title id="ram-title">{{.Metrics.RAMChart.Title}}</title>
+        <title id="ram-title">{{.T "panel.dashboard.ram_chart"}}</title>
         <line class="chart-grid" x1="40" y1="20" x2="590" y2="20"></line>
         <line class="chart-grid" x1="40" y1="75" x2="590" y2="75"></line>
         <line class="chart-grid" x1="40" y1="130" x2="590" y2="130"></line>
@@ -89,10 +89,10 @@
         <text class="chart-label" x="590" y="158" text-anchor="end" data-chart-label="ram:end">{{.Metrics.RAMChart.EndLabel}}</text>
       </svg>
 
-      <h3>CPU игры и системы</h3>
-      <p class="metric-meta">Игра — <span class="tag">янтарный</span>, система — <span class="tag">синий</span>.</p>
+      <h3>{{.T "panel.dashboard.cpu_chart"}}</h3>
+      <p class="metric-meta">{{.TH "panel.dashboard.cpu_hint"}}</p>
       <svg class="chart" id="chart-cpu" viewBox="0 0 600 170" role="img" aria-labelledby="cpu-title">
-        <title id="cpu-title">{{.Metrics.CPUChart.Title}}</title>
+        <title id="cpu-title">{{.T "panel.dashboard.cpu_chart"}}</title>
         <line class="chart-grid" x1="40" y1="20" x2="590" y2="20"></line>
         <line class="chart-grid" x1="40" y1="75" x2="590" y2="75"></line>
         <line class="chart-grid" x1="40" y1="130" x2="590" y2="130"></line>
@@ -107,10 +107,10 @@
         <text class="chart-label" x="590" y="158" text-anchor="end" data-chart-label="cpu:end">{{.Metrics.CPUChart.EndLabel}}</text>
       </svg>
 
-      <h3>Свободно на диске</h3>
-      <p class="metric-meta">{{.Metrics.DiskChart.RangeLabel}}; свободное место в выбранном окне.</p>
+      <h3>{{.T "panel.dashboard.disk_chart"}}</h3>
+      <p class="metric-meta">{{.THf "panel.dashboard.disk_hint" .Metrics.DiskChart.RangeLabel}}</p>
       <svg class="chart" id="chart-disk" viewBox="0 0 600 170" role="img" aria-labelledby="disk-title">
-        <title id="disk-title">{{.Metrics.DiskChart.Title}}</title>
+        <title id="disk-title">{{.T "panel.dashboard.disk_chart"}}</title>
         <line class="chart-grid" x1="40" y1="20" x2="590" y2="20"></line>
         <line class="chart-grid" x1="40" y1="75" x2="590" y2="75"></line>
         <line class="chart-grid" x1="40" y1="130" x2="590" y2="130"></line>
@@ -124,33 +124,33 @@
         <text class="chart-label" x="315" y="158" text-anchor="middle" data-chart-label="disk:midtime">{{.Metrics.DiskChart.MidTime}}</text>
         <text class="chart-label" x="590" y="158" text-anchor="end" data-chart-label="disk:end">{{.Metrics.DiskChart.EndLabel}}</text>
       </svg>
-      <noscript><p class="muted">Графики обновляются раз в 15 секунд через <code>admin.js</code>; без JavaScript показаны значения на момент загрузки.</p></noscript>
+      <noscript><p class="muted">{{.TH "panel.dashboard.no_script"}}</p></noscript>
     </section>
 
 
     <div class="grid">
       <section class="card">
-        <h2>Последние события</h2>
+        <h2>{{.T "panel.dashboard.events"}}</h2>
         {{if .EventsError}}<p role="alert">{{.EventsError}}</p>{{end}}
         {{if .Events}}<div class="log-panel">{{range .Events}}{{.}}
-{{end}}</div>{{else}}<p class="muted">Событий пока нет.</p>{{end}}
+{{end}}</div>{{else}}<p class="muted">{{.T "panel.dashboard.events_empty"}}</p>{{end}}
         <div class="actions">
-          <a class="button button--secondary" href="/admin/logs">Открыть логи</a>
-          <span class="muted">Аудит без паролей и содержимого файлов</span>
+          <a class="button button--secondary" href="/admin/logs">{{.T "panel.dashboard.open_logs"}}</a>
+          <span class="muted">{{.T "panel.dashboard.audit_hint"}}</span>
         </div>
       </section>
 
       <section class="card">
-        <h2>Быстрые действия</h2>
+        <h2>{{.T "panel.dashboard.quick_actions"}}</h2>
         <div class="actions">
           <form method="post" action="/admin/state/create">
             {{template "csrf" .}}
-            <button class="button button--primary" type="submit">Создать состояние</button>
+            <button class="button button--primary" type="submit">{{.T "panel.dashboard.create_state"}}</button>
           </form>
-          <a class="button button--ghost" href="/admin/mods">Загрузить моды</a>
-          <a class="button button--ghost" href="/admin/state">Восстановить</a>
+          <a class="button button--ghost" href="/admin/mods">{{.T "panel.dashboard.upload_mods"}}</a>
+          <a class="button button--ghost" href="/admin/state">{{.T "panel.dashboard.restore"}}</a>
         </div>
-        <p class="muted">Мутации блокируются, пока <code>doctor</code> в статусе <code>error</code>. Метрики на это не влияют.</p>
+        <p class="muted">{{.TH "panel.dashboard.doctor_hint"}}</p>
       </section>
     </div>
   </main>

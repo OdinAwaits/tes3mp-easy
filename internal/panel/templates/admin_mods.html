@@ -1,32 +1,32 @@
-{{define "title"}}Моды — tes3mp-easy{{end}}
+{{define "title"}}{{.T "panel.mods.title"}}{{end}}
 {{define "content"}}
 <main class="page">
     <div class="page-head">
-      <p class="eyebrow">Контент</p>
-      <h1>Моды</h1>
-      <p class="lead">Загрузите архив модов, проверьте его и задеплойте на сервер.</p>
+      <p class="eyebrow">{{.T "panel.mods.eyebrow"}}</p>
+      <h1>{{.T "panel.mods.heading"}}</h1>
+      <p class="lead">{{.T "panel.mods.lead"}}</p>
     </div>
 
     {{template "notices" .}}
 
     <div class="grid">
       <section class="card">
-        <h2>Текущий архив</h2>
+        <h2>{{.T "panel.mods.current_heading"}}</h2>
         {{if .Current}}
           <dl class="meta-list">
-            <dt>Архив</dt>
+            <dt>{{.T "panel.common.archive"}}</dt>
             <dd><code>{{.Current}}</code></dd>
           </dl>
         {{else}}
-          <p class="muted">Моды ещё не задеплоены.</p>
+          <p class="muted">{{.T "panel.mods.not_deployed"}}</p>
         {{end}}
       </section>
 
       <section class="card">
-        <h2>Загрузить архив</h2>
-        <p class="muted">Архив до 512 MiB. После импорта его нужно задеплоить отдельно.</p>
+        <h2>{{.T "panel.mods.upload_heading"}}</h2>
+        <p class="muted">{{.T "panel.mods.upload_hint"}}</p>
         <details class="format-hint" open>
-          <summary>Формат архива</summary>
+          <summary>{{.T "panel.mods.format"}}</summary>
           <pre><code>mods.tar.gz
 ├── plugins/
 │   ├── mod.esp
@@ -35,13 +35,13 @@
 └── scripts/
     └── test.lua</code></pre>
           <ul>
-            <li>В корне только <code>plugins/</code> и <code>scripts/</code>; <code>requiredDataFiles.json</code> лежит внутри <code>plugins/</code>, не в корне.</li>
-            <li>Плагины: <code>.esp</code>, <code>.esm</code>, <code>.omwaddon</code>, <code>.omwscripts</code>, <code>.omwgame</code>. Каждый модовый плагин из JSON должен быть в <code>plugins/</code>, и наоборот (кроме трёх базовых ESM).</li>
-            <li>CRC32 в JSON — <code>0x1A2B3C4D</code>: 8 hex-цифр в верхнем регистре; пустой массив <code>[]</code> означает проверку только наличия файла.</li>
-            <li><code>Morrowind.esm</code>, <code>Tribunal.esm</code>, <code>Bloodmoon.esm</code> в архив не включать.</li>
-            <li>В <code>scripts/</code> только <code>.lua</code> верхнего уровня; имена — буквы, цифры, <code>_</code>, <code>-</code>.</li>
+            <li>{{.TH "panel.mods.format_root"}}</li>
+            <li>{{.TH "panel.mods.format_plugins"}}</li>
+            <li>{{.TH "panel.mods.format_crc"}}</li>
+            <li>{{.TH "panel.mods.format_base_esm"}}</li>
+            <li>{{.TH "panel.mods.format_scripts"}}</li>
           </ul>
-          <p class="muted">Пример <code>plugins/requiredDataFiles.json</code>:</p>
+          <p class="muted">{{.TH "panel.mods.example"}}</p>
           <pre><code>[
   {"Morrowind.esm": []},
   {"Tribunal.esm": []},
@@ -52,26 +52,26 @@
         <form method="post" action="/admin/mods/upload" enctype="multipart/form-data">
           {{template "csrf" .}}
           <div class="field">
-            <label for="mods-file">Архив .tar.gz</label>
+            <label for="mods-file">{{.T "panel.mods.file_label"}}</label>
             <input id="mods-file" type="file" name="file" accept=".tar.gz,application/gzip" required>
           </div>
-          <button type="submit">Загрузить</button>
+          <button type="submit">{{.T "panel.mods.upload"}}</button>
         </form>
       </section>
     </div>
 
     <section class="card">
-      <h2>Архивы модов</h2>
-      {{if .Empty}}<p class="empty-state">Архивов модов пока нет.</p>{{end}}
+      <h2>{{.T "panel.mods.archives_heading"}}</h2>
+      {{if .Empty}}<p class="empty-state">{{.T "panel.mods.empty"}}</p>{{end}}
       {{if .Items}}
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Архив</th>
-                <th>Размер</th>
-                <th>Дата (UTC)</th>
-                <th>Действие</th>
+                <th>{{.T "panel.common.archive"}}</th>
+                <th>{{.T "panel.common.size"}}</th>
+                <th>{{.T "panel.common.date_utc"}}</th>
+                <th>{{.T "panel.common.action"}}</th>
               </tr>
             </thead>
             <tbody>
@@ -79,7 +79,7 @@
                 <tr>
                   <td>
                     <code>{{.Name}}</code>
-                    {{if .Current}}<span class="tag">(текущий)</span>{{end}}
+                    {{if .Current}}<span class="tag">{{$.T "panel.mods.current_tag"}}</span>{{end}}
                   </td>
                   <td>{{.SizeLabel}}</td>
                   <td><time datetime="{{.Mtime}}">{{.MtimeLabel}}</time></td>
@@ -87,7 +87,7 @@
                     <form method="post" action="/admin/mods/deploy">
                       {{template "csrf" $}}
                       <input type="hidden" name="archive" value="{{.Name}}">
-                      <button class="button button--small" type="submit">Deploy</button>
+                      <button class="button button--small" type="submit">{{$.T "panel.mods.deploy"}}</button>
                     </form>
                   </td>
                 </tr>
@@ -100,11 +100,11 @@
 
     {{if .Previous}}
       <section class="card card--warning">
-        <h2>Откат</h2>
-        <p>Откат задеплоит предыдущий архив <code>{{.Previous}}</code>. Если сервер запущен, он будет перезапущен.</p>
+        <h2>{{.T "panel.mods.rollback_heading"}}</h2>
+        <p>{{.THf "panel.mods.rollback_text" .Previous}}</p>
         <form method="post" action="/admin/mods/rollback">
           {{template "csrf" .}}
-          <button class="button button--danger" type="submit">Rollback</button>
+          <button class="button button--danger" type="submit">{{.T "panel.mods.rollback"}}</button>
         </form>
       </section>
     {{end}}

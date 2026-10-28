@@ -185,7 +185,7 @@ func TestAdminAuthenticationAndPasswordChange(t *testing.T) {
 
 	rec = panelRequest(t, env.handler, http.MethodGet, "/admin",
 		nil, []*http.Cookie{rotatedCookie}, nil)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Панель запущена") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "The panel is running") {
 		t.Fatalf("GET /admin = %d", rec.Code)
 	}
 	dashboardCSRF := csrfInputToken(t, rec.Body.String())

@@ -1,24 +1,24 @@
-{{define "title"}}Staff — tes3mp-easy{{end}}
+{{define "title"}}{{.T "panel.staff.title"}}{{end}}
 {{define "content"}}
 <main class="page">
     <div class="page-head">
-      <p class="eyebrow">Игроки</p>
-      <h1>Staff</h1>
-      <p class="lead">Назначайте ранги игрокам. Изменение применится после перезапуска сервера.</p>
+      <p class="eyebrow">{{.T "panel.staff.eyebrow"}}</p>
+      <h1>{{.T "panel.staff.heading"}}</h1>
+      <p class="lead">{{.T "panel.staff.lead"}}</p>
     </div>
 
     {{template "notices" .}}
 
     <section class="card">
-      <h2>Игроки</h2>
-      {{if .Empty}}<p class="empty-state">Игроков пока нет.</p>{{end}}
+      <h2>{{.T "panel.staff.players"}}</h2>
+      {{if .Empty}}<p class="empty-state">{{.T "panel.staff.empty"}}</p>{{end}}
       {{if .Players}}
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Игрок</th>
-                <th>Изменить</th>
+                <th>{{.T "panel.staff.player"}}</th>
+                <th>{{.T "panel.staff.change"}}</th>
               </tr>
             </thead>
             <tbody>

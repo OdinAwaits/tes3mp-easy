@@ -48,6 +48,7 @@ type loginPageData struct {
 type passwordPageData struct {
 	pageI18n
 	CSRF       string
+	Path       string
 	Error      string
 	MustChange bool
 	Nav        string
@@ -528,6 +529,7 @@ func (h *panelHandler) renderPassword(w http.ResponseWriter, session sessionStat
 	h.render(w, status, "password.html", passwordPageData{
 		pageI18n:   h.pageI18n(),
 		CSRF:       session.CSRF,
+		Path:       "/admin/password",
 		Error:      message,
 		MustChange: session.MustChange,
 	})

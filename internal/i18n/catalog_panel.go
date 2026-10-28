@@ -202,6 +202,20 @@ const (
 	KeyPanelConfigReset      = "panel.config.reset"
 	KeyPanelConfigStatusIdle = "panel.config.status_idle"
 
+	KeyPanelConfigSectionServer  = "panel.config.section_server"
+	KeyPanelConfigSectionGame    = "panel.config.section_game"
+	KeyPanelConfigSectionBanlist = "panel.config.section_banlist"
+	KeyPanelConfigGameNote       = "panel.config.game_note"
+	KeyPanelConfigHostname       = "panel.config.field_hostname"
+	KeyPanelConfigPort           = "panel.config.field_port"
+	KeyPanelConfigMaxPlayers     = "panel.config.field_max_players"
+	KeyPanelConfigPassword       = "panel.config.field_password"
+	KeyPanelConfigLogLevel       = "panel.config.field_log_level"
+	KeyPanelConfigBanNames       = "panel.config.banlist_names"
+	KeyPanelConfigBanIPs         = "panel.config.banlist_ips"
+
+	KeyPanelStateRestoreRowConfirm = "panel.state.restore_row_confirm"
+
 	KeyPanelStaffTitle   = "panel.staff.title"
 	KeyPanelStaffEyebrow = "panel.staff.eyebrow"
 	KeyPanelStaffHeading = "panel.staff.heading"
@@ -246,6 +260,7 @@ const (
 	KeyPanelErrorValidation           = "panel.error.validation"
 	KeyPanelErrorNoSpace              = "panel.error.no_space"
 	KeyPanelErrorServiceUnavailable   = "panel.error.service_unavailable"
+	KeyPanelErrorBadForm              = "panel.error.bad_form"
 
 	KeyPanelAuthRateLimited       = "panel.auth.rate_limited"
 	KeyPanelAuthBadForm           = "panel.auth.bad_form"
@@ -296,6 +311,8 @@ const (
 	KeyPanelAdminPlayerInvalid     = "panel.admin.player_invalid"
 	KeyPanelAdminRankInvalid       = "panel.admin.rank_invalid"
 	KeyPanelAdminFieldInvalid      = "panel.admin.field_invalid"
+	KeyPanelAdminModsNameInvalid   = "panel.admin.mods_name_invalid"
+	KeyPanelAdminModsImportUnavail = "panel.admin.mods_import_unavailable"
 
 	KeyPanelStatusRunning     = "panel.status.running"
 	KeyPanelStatusStopped     = "panel.status.stopped"
@@ -439,7 +456,7 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelBackupsModsFileMissing: "file missing",
 		KeyPanelBackupsLinkUnreadable:  "link unreadable",
 		KeyPanelBackupsDownloadState:   "Download snapshot",
-		KeyPanelBackupsDownloadBundle:  "Download snapshot + mods (.zip)",
+		KeyPanelBackupsDownloadBundle:  "Download snapshot and mods (.zip)",
 		KeyPanelBackupsDownloadMods:    "Download mods",
 		KeyPanelBackupsOlderState:      "Older snapshots",
 		KeyPanelBackupsOlderMods:       "Older mods",
@@ -567,6 +584,20 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelConfigReset:      "Cancel",
 		KeyPanelConfigStatusIdle: "No changes",
 
+		KeyPanelConfigSectionServer:  "Server",
+		KeyPanelConfigSectionGame:    "Game settings",
+		KeyPanelConfigSectionBanlist: "Banlist",
+		KeyPanelConfigGameNote:       "Tables and lists are shown read-only.",
+		KeyPanelConfigHostname:       "Server name",
+		KeyPanelConfigPort:           "Port (1024..65535)",
+		KeyPanelConfigMaxPlayers:     "Max players (1..64)",
+		KeyPanelConfigPassword:       "Server password (empty = no password)",
+		KeyPanelConfigLogLevel:       "Log level (0..4)",
+		KeyPanelConfigBanNames:       "Player names (one per line)",
+		KeyPanelConfigBanIPs:         "IP addresses (one per line)",
+
+		KeyPanelStateRestoreRowConfirm: "Restore snapshot %s? The current players/, world/ and config.lua will be replaced.",
+
 		KeyPanelStaffTitle:   "Staff — tes3mp-easy",
 		KeyPanelStaffEyebrow: "Players",
 		KeyPanelStaffHeading: "Staff",
@@ -609,6 +640,7 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelErrorValidation:           "The data failed validation.",
 		KeyPanelErrorNoSpace:              "Not enough free space.",
 		KeyPanelErrorServiceUnavailable:   "systemd, journald or the unit is unavailable.",
+		KeyPanelErrorBadForm:              "Invalid form.",
 
 		KeyPanelAuthRateLimited:       "Too many sign-in attempts. Wait and try again.",
 		KeyPanelAuthBadForm:           "Invalid sign-in form.",
@@ -659,6 +691,8 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelAdminPlayerInvalid:     "Invalid player name.",
 		KeyPanelAdminRankInvalid:       "The rank must be a number from 0 to 3.",
 		KeyPanelAdminFieldInvalid:      "Check the value of the field %s.",
+		KeyPanelAdminModsNameInvalid:   "Invalid mod archive name.",
+		KeyPanelAdminModsImportUnavail: "ops is not configured: importing mods is unavailable.",
 
 		KeyPanelStatusRunning:     "running",
 		KeyPanelStatusStopped:     "stopped",
@@ -808,7 +842,7 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelBackupsModsFileMissing: "файл отсутствует",
 		KeyPanelBackupsLinkUnreadable:  "ссылка не читается",
 		KeyPanelBackupsDownloadState:   "Скачать состояние",
-		KeyPanelBackupsDownloadBundle:  "Скачать состояние + моды (.zip)",
+		KeyPanelBackupsDownloadBundle:  "Скачать состояние и моды (.zip)",
 		KeyPanelBackupsDownloadMods:    "Скачать моды",
 		KeyPanelBackupsOlderState:      "Более старые состояния",
 		KeyPanelBackupsOlderMods:       "Более старые моды",
@@ -936,6 +970,20 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelConfigReset:      "Отменить",
 		KeyPanelConfigStatusIdle: "Изменений нет",
 
+		KeyPanelConfigSectionServer:  "Сервер",
+		KeyPanelConfigSectionGame:    "Игровые настройки",
+		KeyPanelConfigSectionBanlist: "Банлист",
+		KeyPanelConfigGameNote:       "Таблицы и списки показываются только для чтения.",
+		KeyPanelConfigHostname:       "Имя сервера",
+		KeyPanelConfigPort:           "Порт (1024..65535)",
+		KeyPanelConfigMaxPlayers:     "Максимум игроков (1..64)",
+		KeyPanelConfigPassword:       "Пароль сервера (пусто = без пароля)",
+		KeyPanelConfigLogLevel:       "Уровень логов (0..4)",
+		KeyPanelConfigBanNames:       "Имена игроков (по одной на строку)",
+		KeyPanelConfigBanIPs:         "IP-адреса (по одному на строку)",
+
+		KeyPanelStateRestoreRowConfirm: "Восстановить состояние %s? Текущие players/, world/ и config.lua будут заменены.",
+
 		KeyPanelStaffTitle:   "Staff — tes3mp-easy",
 		KeyPanelStaffEyebrow: "Игроки",
 		KeyPanelStaffHeading: "Staff",
@@ -978,6 +1026,7 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelErrorValidation:           "Данные не прошли проверку.",
 		KeyPanelErrorNoSpace:              "Недостаточно свободного места.",
 		KeyPanelErrorServiceUnavailable:   "systemd, journald или unit недоступен.",
+		KeyPanelErrorBadForm:              "Некорректная форма.",
 
 		KeyPanelAuthRateLimited:       "Слишком много попыток входа. Подождите и попробуйте снова.",
 		KeyPanelAuthBadForm:           "Некорректная форма входа.",
@@ -1028,6 +1077,8 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelAdminPlayerInvalid:     "Некорректное имя игрока.",
 		KeyPanelAdminRankInvalid:       "Ранг должен быть числом от 0 до 3.",
 		KeyPanelAdminFieldInvalid:      "Проверьте значение поля %s.",
+		KeyPanelAdminModsNameInvalid:   "Некорректное имя архива модов.",
+		KeyPanelAdminModsImportUnavail: "ops не настроен: импорт модов недоступен.",
 
 		KeyPanelStatusRunning:     "работает",
 		KeyPanelStatusStopped:     "остановлен",

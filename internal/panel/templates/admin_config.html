@@ -1,24 +1,24 @@
-{{define "title"}}Настройки — tes3mp-easy{{end}}
+{{define "title"}}{{.T "panel.config.title"}}{{end}}
 {{define "scripts"}}
   <script defer src="/static/admin.js"></script>
 {{end}}
 {{define "content"}}
 <main class="page">
     <div class="page-head">
-      <p class="eyebrow">Конфигурация</p>
-      <h1>Настройки</h1>
-      <p class="lead">Форма отправляется целиком. Панель сравнивает поля и передаёт только изменения.</p>
+      <p class="eyebrow">{{.T "panel.config.eyebrow"}}</p>
+      <h1>{{.T "panel.config.heading"}}</h1>
+      <p class="lead">{{.T "panel.config.lead"}}</p>
     </div>
 
     {{template "notices" .}}
-    <p class="muted">Если ничего не менять, кнопка неактивна и показано «Изменений нет»; лишняя мутация не выполняется.</p>
+    <p class="muted">{{.T "panel.config.hint"}}</p>
 
     <div class="stack">
       {{range .Sections}}
         <section class="card">
           <h2>{{.Title}}</h2>
           {{if .Note}}<p class="muted">{{.Note}}</p>{{end}}
-          {{if .Error}}<p role="alert">Проверьте поле: {{.Error}}</p>{{end}}
+          {{if .Error}}<p role="alert">{{$.Tf "panel.config.field_error" .Error}}</p>{{end}}
 
           <form method="post" action="/admin/config/{{.File}}" data-config-form>
             {{template "csrf" $}}
@@ -28,8 +28,8 @@
                   <label for="{{.Key}}">{{.Label}}</label>
                   {{if eq .Kind "bool"}}
                     <select id="{{.Key}}" name="{{.Key}}">
-                      <option value="true"{{if .Checked}} selected{{end}}>Да</option>
-                      <option value="false"{{if not .Checked}} selected{{end}}>Нет</option>
+                      <option value="true"{{if .Checked}} selected{{end}}>{{$.T "panel.config.yes"}}</option>
+                      <option value="false"{{if not .Checked}} selected{{end}}>{{$.T "panel.config.no"}}</option>
                     </select>
                   {{else}}
                     <input id="{{.Key}}" name="{{.Key}}" value="{{.Value}}"
@@ -45,9 +45,9 @@
               {{end}}
             </div>
             <div class="actions">
-              <button class="button button--primary" type="submit" data-config-submit>Сохранить изменения</button>
-              <button class="button button--secondary" type="reset">Отменить</button>
-              <span class="muted" data-config-status>Изменений нет</span>
+              <button class="button button--primary" type="submit" data-config-submit>{{$.T "panel.config.save"}}</button>
+              <button class="button button--secondary" type="reset">{{$.T "panel.config.reset"}}</button>
+              <span class="muted" data-config-status data-label-changed="{{$.T "panel.common.changed_prefix"}}" data-label-idle="{{$.T "panel.common.no_changes"}}">{{$.T "panel.config.status_idle"}}</span>
             </div>
           </form>
 
