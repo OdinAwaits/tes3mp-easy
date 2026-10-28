@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -191,7 +192,7 @@ func TestAdminPagesAreTranslatedInBothLanguages(t *testing.T) {
 		configSnapshots: adminConfigSnapshots(),
 	})
 	pages := []string{"/admin", "/admin/logs", "/admin/mods", "/admin/state",
-		"/admin/config", "/admin/staff", "/admin/password"}
+		"/admin/config", "/admin/staff", "/admin/password", "/", "/backups"}
 
 	for _, path := range pages {
 		rec := env.request(t, http.MethodGet, path, nil)
@@ -202,6 +203,10 @@ func TestAdminPagesAreTranslatedInBothLanguages(t *testing.T) {
 		// ("Русский"), which is not untranslated text.
 		if hasCyrillic(withoutLanguageNames(rec.Body.String())) {
 			t.Fatalf("GET %s in English still contains Russian text:\n%s", path, rec.Body.String())
+		}
+		// A misspelled key leaks the catalog key instead of a sentence.
+		if key := panelKeyPattern.FindString(rec.Body.String()); key != "" {
+			t.Fatalf("GET %s renders the raw catalog key %q:\n%s", path, key, rec.Body.String())
 		}
 	}
 
@@ -220,8 +225,15 @@ func TestAdminPagesAreTranslatedInBothLanguages(t *testing.T) {
 		if !hasCyrillic(body) {
 			t.Fatalf("GET %s did not translate the page body:\n%s", path, body)
 		}
+		if key := panelKeyPattern.FindString(body); key != "" {
+			t.Fatalf("GET %s renders the raw catalog key %q:\n%s", path, key, body)
+		}
 	}
 }
+
+// panelKeyPattern matches a catalog key such as panel.dashboard.noscript, which
+// reaches the page only when a template asks for a key the catalog lacks.
+var panelKeyPattern = regexp.MustCompile(`panel\.[a-z_]+\.[a-z_]+`)
 
 func TestPasswordPageOffersLanguageSelector(t *testing.T) {
 	env := newAdminTestEnv(t, &fakeAdminOps{})
