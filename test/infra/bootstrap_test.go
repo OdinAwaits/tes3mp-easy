@@ -1112,7 +1112,8 @@ func TestBootstrapInstallsReleaseBinariesAndStartsPanel(t *testing.T) {
 	assertInstalledFile(t, h, "opt/tes3mp-easy/bin/tes3mp-easy-panel")
 	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.env",
 		"TES3MP_PANEL_TLS_MODE=acme",
-		"TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10")
+		"TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10",
+		"TES3MP_PANEL_RUNTIME_ROOT="+filepath.Join(h.installRoot, "opt/tes3mp-easy/tes3mp"))
 	assertPathMode(t, filepath.Join(h.installRoot, "etc/tes3mp-easy/panel.env"),
 		0o640, false)
 
@@ -1857,7 +1858,8 @@ func TestBootstrapAutoDetectsPublicAddress(t *testing.T) {
 	assertContains(t, got.stdout, "panel TLS: acme for 203.0.113.10 (")
 	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.env",
 		"TES3MP_PANEL_TLS_MODE=acme",
-		"TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10")
+		"TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10",
+		"TES3MP_PANEL_RUNTIME_ROOT="+filepath.Join(h.installRoot, "opt/tes3mp-easy/tes3mp"))
 }
 
 func TestBootstrapConfiguresStagingTLS(t *testing.T) {
@@ -1919,7 +1921,8 @@ func TestBootstrapConfiguresFilesTLS(t *testing.T) {
 	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.env",
 		"TES3MP_PANEL_TLS_MODE=files",
 		"TES3MP_PANEL_TLS_CERT="+certDest,
-		"TES3MP_PANEL_TLS_KEY="+keyDest)
+		"TES3MP_PANEL_TLS_KEY="+keyDest,
+		"TES3MP_PANEL_RUNTIME_ROOT="+filepath.Join(h.installRoot, "opt/tes3mp-easy/tes3mp"))
 	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.crt", "BEGIN CERTIFICATE")
 	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.key", "BEGIN PRIVATE KEY")
 	for _, path := range []string{envPath, certDest, keyDest} {

@@ -19,6 +19,7 @@ import (
 
 	"github.com/Saagilat/tes3mp-easy/internal/archive"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
+	"github.com/Saagilat/tes3mp-easy/internal/serverruntime"
 )
 
 const (
@@ -104,6 +105,13 @@ type adminPage struct {
 	Error           string
 	ErrorField      string
 	RestartRequired bool
+
+	// PanelVersion, ServerVersion and ClientVersion are the three versions the
+	// admin header shows on every page. ServerVersion is "—" when the install
+	// marker of the runtime is absent, so the header keeps its shape.
+	PanelVersion  string
+	ServerVersion string
+	ClientVersion string
 }
 
 type dashboardPageData struct {
@@ -242,7 +250,21 @@ func (h *panelHandler) adminPageFor(r *http.Request, session sessionState) admin
 		Notice:    localized.T(adminNoticeMessages[status]),
 	}
 	page.RestartRequired = query.Get("restart") == "1" || adminRestartNotices[status]
+	page.PanelVersion = Version
+	page.ClientVersion = ClientVersion
+	page.ServerVersion = h.serverVersion()
 	return page
+}
+
+// serverVersion reads the TES3MP release from the runtime install marker. A
+// missing or unreadable marker is not an error for the page: the header shows a
+// dash, because an older runtime without the marker is a valid install.
+func (h *panelHandler) serverVersion() string {
+	info, err := serverruntime.ReadInfo(h.cfg.RuntimeRoot)
+	if err != nil || info.Version == "" {
+		return "—"
+	}
+	return info.Version
 }
 
 // adminFailure returns an HTTP status and an operator-facing message. Ops

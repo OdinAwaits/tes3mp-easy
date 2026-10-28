@@ -86,6 +86,15 @@ HTTP-контракты — в `03-contracts.md`; при расхождении 
 - «Сменить пароль» и «Выйти» собраны в меню «Аккаунт» (`<details>`), чтобы не
   растягивать навигацию. Опасные POST-формы помечены `data-confirm`, и
   `admin.js` спрашивает подтверждение перед отправкой.
+- В шапке рядом с логотипом на всех админских страницах — строка версий
+  `TES3MP <сервер> · panel <панель> · client <клиент>`. Версия TES3MP берётся из
+  маркера установки `<runtime-root>/.tes3mp-install-info`, который пишет
+  `bootstrap.sh` (`TES3MP_PANEL_RUNTIME_ROOT`, по умолчанию
+  `/opt/tes3mp-easy/tes3mp`); версия панели и клиента — из сборки
+  (`panel.Version`, `panel.ClientVersion`), то есть из того же дерева, что и
+  сервер. Маркер только читается: отсутствующий или старый маркер даёт `—`
+  вместо ошибки страницы, поэтому версии видны на любой странице без
+  `ops doctor`.
 - Все стили — во внешнем CSS. Inline `style=` запрещён действующим CSP
   (`default-src 'self'`), поэтому шаблоны не содержат inline-стилей.
 - Таблицы обёрнуты в `.table-wrap` и прокручиваются по горизонтали; при
@@ -138,6 +147,7 @@ Systemd-лимиты: `MemoryHigh=48M`, `MemoryMax=64M`, `GOMAXPROCS=1`,
 | `TES3MP_PANEL_TLS_CERT` | `--tls-cert` | `<data-dir>/tls/cert.pem` | Сертификат (в `files` — входной) |
 | `TES3MP_PANEL_TLS_KEY` | `--tls-key` | `<data-dir>/tls/key.pem` | Приватный ключ (в `files` — входной) |
 | `TES3MP_PANEL_LANGUAGE` | `--language` | `en` | Язык интерфейса по умолчанию; переключатель в панели перекрывает его |
+| `TES3MP_PANEL_RUNTIME_ROOT` | `--runtime-root` | `/opt/tes3mp-easy/tes3mp` | Установленный сервер; из `.tes3mp-install-info` берётся версия TES3MP для шапки |
 
 `--public-address` в режиме `acme` принимает только публичный IP без порта,
 scheme и path; частные, loopback, link-local, CGNAT (`100.64.0.0/10`) и
@@ -147,6 +157,7 @@ scheme и path; частные, loopback, link-local, CGNAT (`100.64.0.0/10`) и
 ```ini
 TES3MP_PANEL_TLS_MODE=acme
 TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10
+TES3MP_PANEL_RUNTIME_ROOT=/opt/tes3mp-easy/tes3mp
 ```
 
 Если публичный IP не задан, `/api/v1/server` не сможет отдать стабильный

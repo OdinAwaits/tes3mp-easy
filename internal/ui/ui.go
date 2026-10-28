@@ -90,12 +90,14 @@ func (s *shell) render() {
 
 	s.body = container.NewStack()
 	header := container.NewBorder(nil, nil, s.brand(tr), s.headerActions(tr), nil)
-	footer := widget.NewLabelWithStyle(
-		tr.Tf(i18n.KeyFooterPath, s.service.ConfigPath()),
-		fyne.TextAlignLeading,
-		fyne.TextStyle{Monospace: true},
+	// The footer answers "which build am I running?" without opening About:
+	// configuration path on the left, client and TES3MP versions on the right.
+	footer := container.NewBorder(nil, nil,
+		footerLabel(tr.Tf(i18n.KeyFooterPath, s.service.ConfigPath()),
+			fyne.TextAlignLeading),
+		footerLabel(footerVersion(tr), fyne.TextAlignTrailing),
+		nil,
 	)
-	footer.Importance = widget.LowImportance
 	content := container.NewBorder(
 		container.NewPadded(header),
 		container.NewPadded(footer),
@@ -105,6 +107,19 @@ func (s *shell) render() {
 	)
 	s.window.SetContent(content)
 	s.showScreen(s.screen)
+}
+
+// footerLabel is one monospace line of the footer. Both footer fields stay
+// low-importance so the path and the versions never compete with the content.
+func footerLabel(text string, alignment fyne.TextAlign) *widget.Label {
+	label := widget.NewLabelWithStyle(text, alignment, fyne.TextStyle{Monospace: true})
+	label.Importance = widget.LowImportance
+	return label
+}
+
+// footerVersion renders the client and bundled TES3MP releases.
+func footerVersion(tr *i18n.Translator) string {
+	return tr.Tf(i18n.KeyFooterVersion, app.Version, app.TES3MPVersion)
 }
 
 // showScreen swaps the body and keeps the rail in sync with the selection.

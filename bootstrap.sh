@@ -1628,6 +1628,9 @@ configure_panel_tls() {
         # directory, so the panel keeps the acme mode.
         printf 'TES3MP_PANEL_TLS_MODE=acme\n'
         printf 'TES3MP_PANEL_PUBLIC_ADDRESS=%s\n' "$PUBLIC_ADDRESS"
+        # Read-only for the panel: the admin header shows the installed TES3MP
+        # release from .tes3mp-install-info, so a custom prefix keeps working.
+        printf 'TES3MP_PANEL_RUNTIME_ROOT=%s\n' "$TES3MP_RUNTIME_DIR"
         if [[ -n $directory ]]; then
             printf 'TES3MP_PANEL_ACME_DIRECTORY=%s\n' "$directory"
         fi
@@ -1692,6 +1695,7 @@ configure_panel_tls_files() {
         printf 'TES3MP_PANEL_TLS_MODE=files\n'
         printf 'TES3MP_PANEL_TLS_CERT=%s\n' "$PANEL_CERT_DEST"
         printf 'TES3MP_PANEL_TLS_KEY=%s\n' "$PANEL_KEY_DEST"
+        printf 'TES3MP_PANEL_RUNTIME_ROOT=%s\n' "$TES3MP_RUNTIME_DIR"
         if [[ -n $PUBLIC_ADDRESS ]]; then
             printf 'TES3MP_PANEL_PUBLIC_ADDRESS=%s\n' "$PUBLIC_ADDRESS"
         fi

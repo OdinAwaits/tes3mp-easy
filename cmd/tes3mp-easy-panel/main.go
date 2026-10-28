@@ -53,6 +53,10 @@ Flags:
                             env TES3MP_PANEL_LANGUAGE). The language selector in
                             the panel header overrides it and is stored in
                             <data-dir>/settings.json
+  --runtime-root <path>     installed TES3MP server (default
+                            /opt/tes3mp-easy/tes3mp; env
+                            TES3MP_PANEL_RUNTIME_ROOT). Read-only: the header
+                            shows the release from .tes3mp-install-info
   --version                 print version and exit
   --help                    print this help and exit
 
@@ -162,6 +166,7 @@ func parseConfig(args []string, getenv func(string) string) (panel.Config, bool,
 	fs.StringVar(&cfg.CertFile, "tls-cert", cfg.CertFile, "")
 	fs.StringVar(&cfg.KeyFile, "tls-key", cfg.KeyFile, "")
 	fs.StringVar(&cfg.Language, "language", cfg.Language, "")
+	fs.StringVar(&cfg.RuntimeRoot, "runtime-root", cfg.RuntimeRoot, "")
 	showVersion := fs.Bool("version", false, "")
 
 	if err := fs.Parse(args); err != nil {
@@ -190,6 +195,7 @@ func parseConfig(args []string, getenv func(string) string) (panel.Config, bool,
 		{name: "tls-cert", value: cfg.CertFile},
 		{name: "tls-key", value: cfg.KeyFile},
 		{name: "language", value: cfg.Language},
+		{name: "runtime-root", value: cfg.RuntimeRoot},
 	} {
 		if set[check.name] && check.value == "" {
 			return panel.Config{}, false,

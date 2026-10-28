@@ -89,7 +89,9 @@ ops дополнительно пропускает state backup, если иг�
 - `EnvironmentFile=-/etc/tes3mp-easy/panel.env` задаёт `TES3MP_PANEL_TLS_MODE`
   (`acme` или `files`), `TES3MP_PANEL_PUBLIC_ADDRESS` и, для режима `staging`,
   `TES3MP_PANEL_ACME_DIRECTORY` staging-CA. Собственного режима `staging` панель
-  не знает: bootstrap пишет `acme` и подменяет CA;
+  не знает: bootstrap пишет `acme` и подменяет CA. Там же
+  `TES3MP_PANEL_RUNTIME_ROOT` — каталог установленного сервера: панель читает
+  его `.tes3mp-install-info` и показывает версию TES3MP в шапке админки;
 - `ExecStart=/opt/tes3mp-easy/bin/tes3mp-easy-panel`;
 - `AmbientCapabilities=CAP_NET_BIND_SERVICE`, `CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID CAP_AUDIT_WRITE CAP_SYS_RESOURCE`;
   ambient capability нужна для `:443` и временного `:80` во время ACME HTTP-01;

@@ -6,6 +6,7 @@ import (
 
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/Saagilat/tes3mp-easy/internal/app"
 	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/fonts"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
@@ -574,5 +575,18 @@ func TestUIVideoFormParsesAndValidates(t *testing.T) {
 		if got := formatScaling(value); got != want {
 			t.Errorf("formatScaling(%v) = %q, want %q", value, got, want)
 		}
+	}
+}
+
+func TestFooterVersion(t *testing.T) {
+	got := footerVersion(i18n.New(i18n.English))
+	for _, want := range []string{app.Version, app.TES3MPVersion} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("footerVersion = %q, want it to contain %q", got, want)
+		}
+	}
+	russian := footerVersion(i18n.New(i18n.Russian))
+	if !strings.Contains(russian, app.Version) {
+		t.Fatalf("footerVersion(ru) = %q, want the client version", russian)
 	}
 }

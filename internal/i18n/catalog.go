@@ -319,6 +319,7 @@ const (
 	KeyAboutSystem                = "about.system"
 	KeyAboutLegal                 = "about.legal"
 	KeyFooterPath                 = "footer.config_path"
+	KeyFooterVersion              = "footer.version"
 
 	KeyLanguageRussian = "lang.russian"
 )
@@ -640,6 +641,7 @@ var catalogs = map[Language]map[string]string{
 		KeyAboutSystem:                "System",
 		KeyAboutLegal:                 "Morrowind and its data files belong to Bethesda Softworks. The client never modifies the game folder.",
 		KeyFooterPath:                 "Config: %s",
+		KeyFooterVersion:              "tes3mp-easy %s · TES3MP %s",
 
 		KeyLanguageRussian: "Russian",
 	},
@@ -959,6 +961,7 @@ var catalogs = map[Language]map[string]string{
 		KeyAboutSystem:                "Система",
 		KeyAboutLegal:                 "Morrowind и его файлы принадлежат Bethesda Softworks. Клиент не изменяет папку игры.",
 		KeyFooterPath:                 "Конфиг: %s",
+		KeyFooterVersion:              "tes3mp-easy %s · TES3MP %s",
 
 		KeyLanguageRussian: "Русский",
 	},

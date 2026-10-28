@@ -280,6 +280,17 @@ pre code {
   line-height: 1;
 }
 
+/* Versions of the installed server and of the panel itself. Both come from the
+   unit that is actually running, so the header answers "what is deployed?"
+   without opening doctor. */
+.brand-versions {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: .78rem;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
 .nav {
   display: flex;
   flex-wrap: wrap;

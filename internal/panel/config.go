@@ -17,17 +17,27 @@ import (
 	"strings"
 
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
+	"github.com/Saagilat/tes3mp-easy/internal/serverruntime"
 	"github.com/Saagilat/tes3mp-easy/internal/version"
 )
 
 var (
 	// Version is reported by the panel binary and the public API.
 	Version = version.Server
+
+	// ClientVersion is the desktop client release built from this source tree.
+	// The admin header shows it next to the server versions, so an operator can
+	// name the client release without opening the repository.
+	ClientVersion = version.Client
 )
 
 const (
 	// DefaultRoot is the production data root.
 	DefaultRoot = "/tes3mp-easy"
+
+	// DefaultRuntimeRoot is where bootstrap.sh installs the TES3MP server. The
+	// panel only reads it, to show the installed release in the header.
+	DefaultRuntimeRoot = serverruntime.DefaultRoot
 
 	// DefaultHTTPSAddr is the TLS listener. Port 80 is not kept open: the panel
 	// binds it only while an ACME HTTP-01 challenge is being solved.
@@ -68,6 +78,10 @@ const (
 	EnvACMEEmail     = "TES3MP_PANEL_ACME_EMAIL"
 	EnvACMEProfile   = "TES3MP_PANEL_ACME_PROFILE"
 
+	// EnvRuntimeRoot points at the installed TES3MP server. The panel reads the
+	// .tes3mp-install-info marker there and shows the release in the header.
+	EnvRuntimeRoot = "TES3MP_PANEL_RUNTIME_ROOT"
+
 	// EnvLanguage selects the default interface language. The admin header can
 	// switch it at runtime; the choice is then stored in panel-data and wins
 	// over this variable.
@@ -97,6 +111,10 @@ type Config struct {
 	// Language is the default interface language of the panel. The admin header
 	// can switch it; the stored choice in panel-data wins after the first switch.
 	Language string
+
+	// RuntimeRoot is the installed TES3MP directory. It is read-only for the
+	// panel: the header takes the server release from its install marker.
+	RuntimeRoot string
 }
 
 // DefaultConfig returns production defaults. DataDir and the TLS/ACME paths
@@ -127,6 +145,7 @@ func ConfigFromEnv(getenv func(string) string) Config {
 		ACMEEmail:     getenv(EnvACMEEmail),
 		ACMEProfile:   getenv(EnvACMEProfile),
 		Language:      getenv(EnvLanguage),
+		RuntimeRoot:   getenv(EnvRuntimeRoot),
 	}
 }
 
@@ -163,6 +182,9 @@ func (c Config) Normalize() Config {
 	if c.Language == "" {
 		c.Language = string(DefaultLanguage)
 	}
+	if c.RuntimeRoot == "" {
+		c.RuntimeRoot = DefaultRuntimeRoot
+	}
 	return c
 }
 
@@ -174,6 +196,8 @@ func (c Config) Validate() error {
 	switch {
 	case c.Root == "":
 		return errors.New("root is empty")
+	case !filepath.IsAbs(c.RuntimeRoot):
+		return fmt.Errorf("runtime root %q is not an absolute path", c.RuntimeRoot)
 	case c.DataDir == "":
 		return errors.New("data directory is empty")
 	case c.HTTPSAddr == "":

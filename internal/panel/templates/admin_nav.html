@@ -4,6 +4,7 @@
     <span class="brand-mark" aria-hidden="true">◆</span>
     <span>TES3MP <strong>Easy</strong></span>
   </a>
+  <span class="brand-versions">{{.THf "panel.nav.versions" .ServerVersion .PanelVersion .ClientVersion}}</span>
   <nav class="nav" aria-label="{{.T "panel.nav.admin_sections"}}">
     <a href="/admin"{{if eq .ActiveNav "dashboard"}} aria-current="page"{{end}}>{{.T "panel.nav.dashboard"}}</a>
     <a href="/admin/backups"{{if eq .ActiveNav "backups"}} aria-current="page"{{end}}>{{.T "panel.nav.backups"}}</a>

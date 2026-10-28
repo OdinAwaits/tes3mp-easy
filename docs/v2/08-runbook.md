@@ -224,7 +224,7 @@ Source bootstrap:
 
    ```bash
    sudo install -d -o root -g tes3mp-panel -m 0750 /etc/tes3mp-easy
-   printf 'TES3MP_PANEL_TLS_MODE=acme\nTES3MP_PANEL_PUBLIC_ADDRESS=%s\n' \
+   printf 'TES3MP_PANEL_TLS_MODE=acme\nTES3MP_PANEL_PUBLIC_ADDRESS=%s\nTES3MP_PANEL_RUNTIME_ROOT=/opt/tes3mp-easy/tes3mp\n' \
      '<IP>' | sudo tee /etc/tes3mp-easy/panel.env >/dev/null
    sudo chown root:tes3mp-panel /etc/tes3mp-easy/panel.env
    sudo chmod 0640 /etc/tes3mp-easy/panel.env

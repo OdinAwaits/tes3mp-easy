@@ -32,6 +32,9 @@ func TestDefaultConfigNormalize(t *testing.T) {
 		filepath.Join(DefaultRoot, "panel-data", "acme", "account.key") {
 		t.Fatalf("ACMEAccountKeyFile = %q", cfg.ACMEAccountKeyFile)
 	}
+	if cfg.RuntimeRoot != DefaultRuntimeRoot {
+		t.Fatalf("RuntimeRoot = %q, want %q", cfg.RuntimeRoot, DefaultRuntimeRoot)
+	}
 	if got := cfg.Normalize(); got != cfg {
 		t.Fatalf("Normalize is not idempotent: %#v then %#v", cfg, got)
 	}
@@ -82,6 +85,7 @@ func TestConfigFromEnv(t *testing.T) {
 		EnvACMEDirectory: "https://acme-staging-v02.api.letsencrypt.org/directory",
 		EnvACMEEmail:     "admin@example.test",
 		EnvACMEProfile:   "shortlived",
+		EnvRuntimeRoot:   "/srv/tes3mp-runtime",
 	}
 	cfg := ConfigFromEnv(func(key string) string { return env[key] }).Normalize()
 
@@ -92,7 +96,8 @@ func TestConfigFromEnv(t *testing.T) {
 		cfg.CertFile != "/srv/cert.pem" || cfg.KeyFile != "/srv/key.pem" ||
 		cfg.ACMEDirectory != env[EnvACMEDirectory] ||
 		cfg.ACMEEmail != "admin@example.test" ||
-		cfg.ACMEProfile != "shortlived" {
+		cfg.ACMEProfile != "shortlived" ||
+		cfg.RuntimeRoot != "/srv/tes3mp-runtime" {
 		t.Fatalf("ConfigFromEnv = %#v", cfg)
 	}
 }
@@ -114,6 +119,15 @@ func TestConfigValidate(t *testing.T) {
 	}{
 		{name: "files defaults", cfg: files},
 		{name: "acme public ip", cfg: acme},
+		{
+			name: "relative runtime root",
+			cfg: func() Config {
+				cfg := files
+				cfg.RuntimeRoot = "opt/tes3mp-easy/tes3mp"
+				return cfg
+			}(),
+			wantErr: "not an absolute path",
+		},
 		{
 			name: "acme requires public ip",
 			cfg: func() Config {

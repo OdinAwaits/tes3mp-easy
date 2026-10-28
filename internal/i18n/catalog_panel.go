@@ -22,6 +22,7 @@ const (
 	KeyPanelNavArchives      = "panel.nav.archives"
 	KeyPanelNavLogin         = "panel.nav.login"
 	KeyPanelNavLanguage      = "panel.nav.language"
+	KeyPanelNavVersions      = "panel.nav.versions"
 
 	KeyPanelBackupsAdminTitle   = "panel.backups.admin_title"
 	KeyPanelBackupsAdminEyebrow = "panel.backups.admin_eyebrow"
@@ -439,6 +440,7 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelNavArchives:      "Archives",
 		KeyPanelNavLogin:         "Panel sign-in",
 		KeyPanelNavLanguage:      "Language",
+		KeyPanelNavVersions:      "TES3MP %s · panel %s · client %s",
 
 		KeyPanelBackupsAdminTitle:   "Backups — tes3mp-easy",
 		KeyPanelBackupsAdminEyebrow: "Backups",
@@ -856,6 +858,7 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelNavArchives:      "Архивы",
 		KeyPanelNavLogin:         "Вход в панель",
 		KeyPanelNavLanguage:      "Язык",
+		KeyPanelNavVersions:      "TES3MP %s · панель %s · клиент %s",
 
 		KeyPanelBackupsAdminTitle:   "Бэкапы — tes3mp-easy",
 		KeyPanelBackupsAdminEyebrow: "Бэкапы",

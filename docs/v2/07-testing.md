@@ -78,7 +78,9 @@ OS-матрица: Debian 12 и Ubuntu 24.04, x86_64, systemd. Другие ОС
 - что `--tls-mode staging` пишет `TES3MP_PANEL_TLS_MODE=acme` с staging-CA в
   `TES3MP_PANEL_ACME_DIRECTORY` и по-прежнему требует свободный `80/tcp`, а
   `--tls-mode files` копирует пару в `/etc/tes3mp-easy/panel.{crt,key}` (`0640`
-  `root:tes3mp-panel`) без публичного IPv4 и без проверки `80/tcp`;
+  `root:tes3mp-panel`) без публичного IPv4 и без проверки `80/tcp`; оба режима
+  пишут `TES3MP_PANEL_RUNTIME_ROOT`, чтобы шапка панели показывала версию
+  TES3MP при нестандартном `INSTALL_ROOT`;
 - что неверный `--tls-mode`, `files` без пары и `--tls-cert` без `files`
   возвращают код 2, а URL вместо адреса в `files` отвергается;
 - что прогон `acme` удаляет пару, скопированную предыдущим `files`-прогоном.
@@ -198,6 +200,10 @@ HTTPS-порту с fixture-парой в режиме `files`. Проверяю
 - встроенный UI: `/static/panel.css` отдаётся с `text/css`, все полные шаблоны
   подключают общий `head`, в шаблонах нет inline `style=`, активный раздел
   админки помечен `aria-current="page"` (включая POST-пути);
+- шапка админки: строка `TES3MP <сервер> · panel <панель> · client <клиент>` на
+  всех страницах, версия сервера из `<runtime-root>/.tes3mp-install-info`, `—`
+  без маркера; маркер разбирает `internal/serverruntime` (размер, symlink,
+  отсутствующий `TES3MP_VERSION`);
 - ops-клиент: фиксированный argv через sudo, разбор ровно одного
   JSON-объекта, `OpsError`, маппинг exit code → HTTP, таймауты, лимиты
   stdout/stderr.
@@ -230,6 +236,8 @@ upload. Bind на 443 и временный 80 проверяются на VM с
   окружения.
 - `internal/clientlog` проверяет ротацию, уровни и `Tail`; пароль сервера в
   лог не пишется по построению.
+- `internal/ui` проверяет логику без окна: `footerVersion` собирает строку
+  версий клиента и TES3MP для подвала.
 
 GUI-тесты не гоняются в CI: Fyne требует дисплея. Логика живёт в `app` и
 тестируется без окна. Ручной smoke клиента — обязательная часть релиза.
