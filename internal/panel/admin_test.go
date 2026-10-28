@@ -718,13 +718,6 @@ func TestAdminStatePageGroupsAndValidatesInput(t *testing.T) {
 			got, body)
 	}
 
-	rec = env.request(t, http.MethodGet, "/admin/restore-points", nil)
-	if rec.Code != http.StatusMovedPermanently ||
-		rec.Header().Get("Location") != "/admin/state" {
-		t.Fatalf("GET /admin/restore-points = %d %q", rec.Code,
-			rec.Header().Get("Location"))
-	}
-
 	rec = env.request(t, http.MethodGet, "/admin/state?before=../bad.tar.gz", nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("unsafe before = %d, want 400", rec.Code)
@@ -829,27 +822,6 @@ func TestAdminConfigPageAndSave(t *testing.T) {
 			t.Fatalf("config page does not contain %q:\n%s", want, body)
 		}
 	}
-
-	rec = env.request(t, http.MethodPost, "/admin/config/config",
-		url.Values{"key": {"loginTime"}, "value": {"120"}})
-	if rec.Code != http.StatusOK || len(env.ops.configSets) != 1 {
-		t.Fatalf("config save = %d calls=%+v", rec.Code, env.ops.configSets)
-	}
-	call := env.ops.configSets[0]
-	if call.file != "config" || call.key != "loginTime" || call.value != "120" {
-		t.Fatalf("config set call = %+v", call)
-	}
-	if !strings.Contains(rec.Body.String(), "Настройка сохранена") ||
-		!strings.Contains(rec.Body.String(), "Нужен перезапуск сервера") {
-		t.Fatalf("config save page has no confirmation:\n%s", rec.Body.String())
-	}
-
-	rec = env.request(t, http.MethodPost, "/admin/config/server",
-		url.Values{"key": {"masterServerEnabled"}})
-	if rec.Code != http.StatusOK || len(env.ops.configSets) != 2 ||
-		env.ops.configSets[1].value != "false" {
-		t.Fatalf("unchecked bool save = %d calls=%+v", rec.Code, env.ops.configSets)
-	}
 }
 
 func TestAdminConfigSavesWholeFormDiff(t *testing.T) {
@@ -893,7 +865,7 @@ func TestAdminConfigSaveFailureHighlightsField(t *testing.T) {
 			"loginTime must be in 10..600", map[string]any{"key": "loginTime"}),
 	})
 	rec := env.request(t, http.MethodPost, "/admin/config/config",
-		url.Values{"key": {"loginTime"}, "value": {"1"}})
+		url.Values{"loginTime": {"1"}})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("invalid config = %d, want 422: %s", rec.Code, rec.Body.String())
 	}

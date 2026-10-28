@@ -184,7 +184,6 @@ State перед отдачей проверяется на текущий layou
 | POST | `/admin/state/restore` | Загрузить ZIP/state и восстановить |
 | POST | `/admin/state/deploy` | Восстановить state |
 | GET | `/admin/state/download/<name>` | Скачать state |
-| GET | `/admin/restore-points` | `301` на `/admin/state` |
 | GET | `/admin/config` | Формы настроек |
 | POST | `/admin/config/server\|config\|banlist` | Сохранить всю форму настроек |
 | GET | `/admin/staff` | Игроки и ранги |
@@ -283,10 +282,8 @@ GET /backups?limit=200&state_before=<name>&mods_before=<name>
 - `limit` по умолчанию 200, максимум 500, применяется к каждой колонке;
 - `state_before` и `mods_before` — независимые курсоры; каждая колонка
   показывает свою ссылку «более старые» и сохраняет курсор соседней колонки;
-- legacy `type=mods|state` и `before` принимаются для старых закладок;
-  неизвестный `type` возвращает `400`;
-- `before`, `state_before`, `mods_before` проверяются как безопасное имя
-  `.tar.gz` до вызова ops;
+- `state_before`, `mods_before` проверяются как безопасное имя `.tar.gz` до
+  вызова ops;
 - группировка только визуальная: контракт списка остаётся плоским;
 - текущий архив модов помечен, но скачивается как обычный;
 - у state показаны дата, размер и `mods_archive` из его `current.txt`; если
@@ -446,8 +443,7 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
 
 ## 10. Состояния
 
-Страница `/admin/state`; `GET /admin/restore-points` отвечает `301` на неё для
-старых закладок.
+Страница `/admin/state`.
 
 Каждая строка показывает:
 
@@ -714,8 +710,6 @@ ZIP-сценарий одной операцией:
 - При старте:
   - если пара есть и сертификат покрывает публичный IP и ещё не в окне
     продления, панель его использует;
-  - legacy self-signed пара заменяется, даже если покрывает IP: ACME-режим не
-    должен обслуживать локально сгенерированный сертификат;
   - если сертификат истекает, панель пытается продлить его сейчас; при ошибке
     продолжает работу со старым сертификатом и повторяет попытку в фоне;
   - если пары нет, сертификат просрочен или не покрывает IP, выпуск
@@ -789,14 +783,14 @@ panel-data/
 | Логин | верный/неверный пароль, rate limit, cookie-флаги, CSRF |
 | Argon2id | memory 32768, threads 1, time 3, verify |
 | Публичные скачивания | path traversal, не-`.tar.gz`, отсутствующий файл, `Content-Disposition`, state с cfg/banlist → `404`, ZIP state+mods |
-| Пагинация | независимые `state_before`/`mods_before`, legacy `before`, `next_before` |
+| Пагинация | независимые `state_before`/`mods_before`, `next_before` |
 | Загрузка модов | лимит 512 MiB, UUID-имя, `MultipartReader`, вызов fake ops, очистка upload |
 | Ошибки ops | каждый `error.code` → ожидаемый HTTP и текст |
 | Конфиги | валидация, повторное чтение, diff формы целиком, `config_invalid` |
 | Состояния | state с config.lua, кнопки deploy/restore, ссылка на моды только при `mods_available`, публичное скачивание |
 | Метрики | fixture `memory.current`/`cpu.stat`/`/proc/meminfo`/`/proc/stat`, CPU %, `null` без cgroup, окна и бакеты, `available=false`, SVG без `style=` |
 | Staff | список из `players/*.json`, вызов `ops staff set`, текущая кнопка disabled |
-| Lifecycle и TLS | конфиг env/flags, ACME fake-obtainer (IP SAN, shortlived profile, wrong IP, renewal window, отказ продления, замена legacy self-signed), `files` pair, TLS ≥ 1.2, `/healthz`, HSTS, bind rollback, `SIGTERM` |
+| Lifecycle и TLS | конфиг env/flags, ACME fake-obtainer (IP SAN, shortlived profile, wrong IP, renewal window, отказ продления), `files` pair, TLS ≥ 1.2, `/healthz`, HSTS, bind rollback, `SIGTERM` |
 | Интеграция | реальный ops на temp-root, fake systemd/journalctl |
 
 Панель не тестирует tar и CRC — это тесты ops. Панель тестирует, что она

@@ -116,7 +116,6 @@ func (s *Service) UpdateSettings(settings Settings) error {
 		cfg.MorrowindPath = strings.TrimSpace(settings.MorrowindPath)
 		cfg.WorkDir = strings.TrimSpace(settings.WorkDir)
 		cfg.ProtonPath = strings.TrimSpace(settings.ProtonPath)
-		cfg.SkipFonts = settings.SkipFonts
 
 		return nil
 	})

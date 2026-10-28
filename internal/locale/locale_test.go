@@ -63,7 +63,7 @@ func TestInstallRemoveLifecycle(t *testing.T) {
 		"Documentation/Readme.txt": "ignored",
 	})
 	voiceArchive := tarFile(t, map[string]string{
-		"Sound/Voice.mp3": "voice line",
+		"Data Files/Sound/Voice.mp3": "voice line",
 	})
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter,
 		request *http.Request,
@@ -108,17 +108,16 @@ func TestInstallRemoveLifecycle(t *testing.T) {
 	for _, path := range []string{
 		"Data Files/Morrowind.esm",
 		"Data Files/Book/Book.esp",
-		"Data Files/Sound/Step.wav",
-		"Data Files/Video/Intro.bik",
 	} {
 		full := filepath.Join(root, mainDir, filepath.FromSlash(path))
 		if _, err := os.Stat(full); err != nil {
 			t.Fatalf("main layer missing %s: %v", path, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, mainDir, "Data Files",
-		"Documentation")); !os.IsNotExist(err) {
-		t.Fatalf("top-level filtered directory leaked into the layer: %v", err)
+	for _, dir := range []string{"Sound", "Video", "Documentation"} {
+		if _, err := os.Stat(filepath.Join(root, mainDir, "Data Files", dir)); !os.IsNotExist(err) {
+			t.Fatalf("top-level %s leaked into the layer: %v", dir, err)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(root, voicesDir, "Data Files",
 		"Sound", "Voice.mp3")); err != nil {
@@ -252,7 +251,7 @@ func TestUpdateDataFiles(t *testing.T) {
 	}
 }
 
-func TestMapEntryKeepsTopLevelDataDirectories(t *testing.T) {
+func TestMapEntryKeepsDataFilesTree(t *testing.T) {
 	cases := []struct {
 		name   string
 		dir    bool
@@ -261,10 +260,10 @@ func TestMapEntryKeepsTopLevelDataDirectories(t *testing.T) {
 	}{
 		{"Data Files/", true, "", true},
 		{"Data Files/Book/Book.esp", false, "Book/Book.esp", true},
-		{"Sound/", true, "", true},
-		{"Sound/Voice.mp3", false, "Sound/Voice.mp3", true},
-		{"Video/Intro.bik", false, "Video/Intro.bik", true},
-		{"Music/Theme.mp3", false, "Music/Theme.mp3", true},
+		{"Sound/", true, "", false},
+		{"Sound/Voice.mp3", false, "", false},
+		{"Video/Intro.bik", false, "", false},
+		{"Music/Theme.mp3", false, "", false},
 		{"Documentation/Readme.txt", false, "", false},
 	}
 	for _, test := range cases {

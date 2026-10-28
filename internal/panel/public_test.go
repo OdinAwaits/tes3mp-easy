@@ -500,9 +500,9 @@ func TestPublicStateBackupsPageMarksMissingMods(t *testing.T) {
 	}
 
 	rec := panelRequest(t, env.handler, http.MethodGet,
-		"/backups?type=state", nil, nil, nil)
+		"/backups", nil, nil, nil)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /backups?type=state = %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("GET /backups = %d: %s", rec.Code, rec.Body.String())
 	}
 	if len(env.ops.backupsCalls) != 2 ||
 		env.ops.backupsCalls[0].typ != "state" ||
@@ -551,12 +551,9 @@ func TestPublicBackupsDefaultsAndValidation(t *testing.T) {
 	tests := []struct {
 		path string
 	}{
-		{path: "/backups?type=unknown"},
-		{path: "/backups?type=mods&limit=0"},
-		{path: "/backups?type=mods&limit=501"},
-		{path: "/backups?type=mods&limit=nope"},
-		{path: "/backups?type=mods&before=../secret.tar.gz"},
-		{path: "/backups?type=mods&before=notes.txt"},
+		{path: "/backups?limit=0"},
+		{path: "/backups?limit=501"},
+		{path: "/backups?limit=nope"},
 		{path: "/backups?state_before=../secret.tar.gz"},
 		{path: "/backups?mods_before=notes.txt"},
 	}
@@ -571,33 +568,13 @@ func TestPublicBackupsDefaultsAndValidation(t *testing.T) {
 	}
 }
 
-func TestPublicBackupsLegacyCursor(t *testing.T) {
-	env := newPublicTestEnv(t)
-	before := "state-2026-10-22_12-00-00.tar.gz"
-
-	rec := panelRequest(t, env.handler, http.MethodGet,
-		"/backups?type=state&before="+before, nil, nil, nil)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("legacy cursor page = %d: %s", rec.Code, rec.Body.String())
-	}
-	if len(env.ops.backupsCalls) != 2 {
-		t.Fatalf("BackupsList calls = %+v", env.ops.backupsCalls)
-	}
-	if call := env.ops.backupsCalls[0]; call.typ != "state" || call.before != before {
-		t.Fatalf("legacy state cursor = %+v", call)
-	}
-	if call := env.ops.backupsCalls[1]; call.typ != "mods" || call.before != "" {
-		t.Fatalf("legacy mods cursor = %+v", call)
-	}
-}
-
 func TestPublicBackupsOpsFailure(t *testing.T) {
 	env := newPublicTestEnv(t)
 	env.ops.backupsErr = &OpsError{
 		Exit: ops.ExitServiceUnavailable, Code: ops.CodeServiceUnavailable,
 		Message: "systemd is unavailable",
 	}
-	rec := panelRequest(t, env.handler, http.MethodGet, "/backups?type=mods", nil, nil, nil)
+	rec := panelRequest(t, env.handler, http.MethodGet, "/backups", nil, nil, nil)
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("backups ops failure = %d, want 503", rec.Code)
 	}

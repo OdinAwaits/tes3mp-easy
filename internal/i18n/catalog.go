@@ -51,7 +51,6 @@ const (
 	KeyInstallFontsReadyDetail = "install.fonts.ready_detail"
 	KeyInstallFontsPartial     = "install.fonts.partial"
 	KeyInstallFontsMissing     = "install.fonts.missing"
-	KeyInstallFontsSkipped     = "install.fonts.skipped"
 	KeyInstallFontsMissingSet  = "install.fonts.missing_set"
 	KeyInstallFontsInstall     = "install.fonts.install"
 	KeyFontsSet                = "fonts.set"
@@ -375,7 +374,6 @@ var catalogs = map[Language]map[string]string{
 		KeyInstallFontsReadyDetail:     "The %s font set is installed in %s.",
 		KeyInstallFontsPartial:         "The font set is incomplete, missing: %s",
 		KeyInstallFontsMissing:         "Fonts are not installed yet.",
-		KeyInstallFontsSkipped:         "Fonts are skipped for launch (legacy option).",
 		KeyInstallFontsMissingSet:      "The %s font set is not installed yet.",
 		KeyInstallFontsInstall:         "Install fonts and continue",
 		KeyFontsSet:                    "Font set",
@@ -695,7 +693,6 @@ var catalogs = map[Language]map[string]string{
 		KeyInstallFontsReadyDetail:     "Набор шрифтов %s установлен в %s.",
 		KeyInstallFontsPartial:         "Набор шрифтов неполный, не хватает: %s",
 		KeyInstallFontsMissing:         "Шрифты пока не установлены.",
-		KeyInstallFontsSkipped:         "Шрифты пропускаются при запуске (старая настройка).",
 		KeyInstallFontsMissingSet:      "Набор шрифтов %s пока не установлен.",
 		KeyInstallFontsInstall:         "Установить шрифты и продолжить",
 		KeyFontsSet:                    "Набор шрифтов",

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/Saagilat/tes3mp-easy/internal/fonts"
 	"github.com/Saagilat/tes3mp-easy/internal/launcher"
 	"github.com/Saagilat/tes3mp-easy/internal/locale"
 	"github.com/Saagilat/tes3mp-easy/internal/mods"
@@ -136,15 +135,11 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 		encoding = locale.EncodingFor(localization.Language)
 	}
 
-	fontResult := fonts.Result{}
-	if !cfg.SkipFonts || localization.Installed {
-		var fontErr error
-		fontResult, fontErr = s.InstallFonts(ctx)
-		warnings = append(warnings, fontResult.Warnings...)
-		if fontErr != nil {
-			warnings = append(warnings,
-				fmt.Sprintf("fonts were not installed: %v", fontErr))
-		}
+	fontResult, fontErr := s.InstallFonts(ctx)
+	warnings = append(warnings, fontResult.Warnings...)
+	if fontErr != nil {
+		warnings = append(warnings,
+			fmt.Sprintf("fonts were not installed: %v", fontErr))
 	}
 	options := launcher.LaunchOptions{
 		Options: launcher.Options{

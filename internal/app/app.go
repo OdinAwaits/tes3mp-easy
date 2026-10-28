@@ -50,7 +50,6 @@ type Settings struct {
 	MorrowindPath string
 	WorkDir       string
 	ProtonPath    string
-	SkipFonts     bool
 }
 
 // Service owns the configuration store used by the UI.
@@ -83,12 +82,7 @@ type Service struct {
 	launchGuard launchGuard
 }
 
-// Open loads the configuration at paths.ConfigFile.
-func Open(paths config.Paths) (*Service, error) {
-	return OpenWithEnv(paths, os.Getenv)
-}
-
-// OpenWithEnv is the testable form of Open.
+// OpenWithEnv loads the configuration at paths.ConfigFile.
 func OpenWithEnv(paths config.Paths, getenv func(string) string) (*Service, error) {
 	if strings.TrimSpace(paths.ConfigFile) == "" {
 		return nil, errors.New("config file path is empty")

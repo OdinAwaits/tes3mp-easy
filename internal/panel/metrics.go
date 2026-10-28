@@ -322,18 +322,6 @@ func (m *metricsStore) sample() {
 	m.mu.Unlock()
 }
 
-func (m *metricsStore) latest() (metricsSample, bool) {
-	if m == nil {
-		return metricsSample{}, false
-	}
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if len(m.samples) == 0 {
-		return metricsSample{}, false
-	}
-	return m.samples[len(m.samples)-1], true
-}
-
 func (m *metricsStore) snapshot(window string) (metricsWindowData, bool) {
 	spec, ok := metricsWindowSpecFor(window)
 	if !ok {

@@ -63,8 +63,7 @@ type Config struct {
 	WorkDir       string `json:"work_dir,omitempty"`
 	ProtonPath    string `json:"proton_path,omitempty"`
 	// FontSet selects one of the fixed font packs; empty means the default.
-	FontSet   string `json:"font_set,omitempty"`
-	SkipFonts bool   `json:"skip_fonts,omitempty"`
+	FontSet string `json:"font_set,omitempty"`
 	// Voiceover remembers whether the next localization install fetches the
 	// optional Russian voice archive. Nil means the client default (enabled);
 	// an explicit false is stored so the choice survives a restart.
@@ -112,8 +111,6 @@ func (c *Config) Normalize() {
 	c.FontSet = strings.ToLower(strings.TrimSpace(c.FontSet))
 	c.ActiveServer = strings.TrimSpace(c.ActiveServer)
 	for index := range c.Servers {
-		// Legacy game_language and localization fields are no longer part of
-		// the schema. They are ignored on load and disappear on the next save.
 		c.Servers[index].Normalize()
 	}
 	if c.ActiveServer != "" && !c.hasServer(c.ActiveServer) {

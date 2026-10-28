@@ -41,7 +41,7 @@ var (
 type EntryType uint8
 
 const (
-	// TypeFile is a regular file (tar TypeReg or the legacy TypeRegA).
+	// TypeFile is a regular file (tar TypeReg; the reader maps TypeRegA to it).
 	TypeFile EntryType = iota
 	// TypeDir is a directory entry.
 	TypeDir
@@ -258,19 +258,6 @@ func OpenTarWithLimits(name string, limits Limits) (*Reader, error) {
 	return r, nil
 }
 
-// NewTarReader returns a streaming Reader for an uncompressed tar stream.
-func NewTarReader(r io.Reader) (*Reader, error) {
-	return NewTarReaderWithLimits(r, DefaultLimits())
-}
-
-// NewTarReaderWithLimits is NewTarReader with explicit limits.
-func NewTarReaderWithLimits(r io.Reader, limits Limits) (*Reader, error) {
-	if r == nil {
-		return nil, errors.New("archive: nil reader")
-	}
-	return newStreamReader(r, limits, nil, false)
-}
-
 // Next advances to the next archive entry. It returns io.EOF after the tar end
 // marker and all trailing checks have passed.
 func (r *Reader) Next() (*Entry, error) {
@@ -407,7 +394,7 @@ func (r *Reader) Close() error {
 
 func entryType(hdr *tar.Header) (EntryType, bool) {
 	switch hdr.Typeflag {
-	case tar.TypeReg, tar.TypeRegA:
+	case tar.TypeReg:
 		return TypeFile, true
 	case tar.TypeDir:
 		return TypeDir, true

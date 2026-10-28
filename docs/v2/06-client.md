@@ -156,7 +156,6 @@ Morrowind остаётся read-only. Клиент читает `Morrowind/Data 
   "work_dir": "",
   "proton_path": "",
   "font_set": "noto",
-  "skip_fonts": false,
   "active_server": "203.0.113.10_25565",
   "servers": [
     {
@@ -413,8 +412,7 @@ content=<mod.esp>   # порядок из requiredDataFiles.json
 - Если скачать не удалось, клиент всё равно запускает игру со стандартным
   шрифтом и показывает предупреждение, а не блокирует запуск.
 - Пустой или неизвестный `font_set` (в том числе старый конфиг без поля)
-  означает `noto`; `skip_fonts` остаётся legacy-полем и не показывается в
-  интерфейсе. Кнопки Skip в мастере нет.
+  означает `noto`. Кнопки Skip в мастере нет.
 
 Реализация: `internal/fonts/sets.go` — каталог (`Sets`, `LookupSet`,
 `ResolveSet`, `ManagedAssetNames`); `internal/fonts/fonts.go` — `Options.Set`,
@@ -480,8 +478,8 @@ Change set**; выбор сохраняется в `config.json` сразу. П�
 
 `internal/locale` скачивает `russian.tar` и `voices_russian.tar` в `cache/`,
 проверяет SHA256 и собирает `localization/main` и `voices` через
-`internal/archive`. `mapEntry` берёт только `Data Files/` и legacy `Video/`,
-`Sound/`, `Music/`, отбрасывая launcher-файлы. `UpdateDataFiles` отвечает за
+`internal/archive`. `mapEntry` берёт только `Data Files/`, отбрасывая
+launcher-файлы. `UpdateDataFiles` отвечает за
 идемпотентную вставку/удаление managed-строки в активном конфиге.
 
 ## 11. Запуск

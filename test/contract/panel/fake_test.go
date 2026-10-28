@@ -2,7 +2,6 @@ package panel
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -179,8 +178,4 @@ func writeFakeMode(t *testing.T, path, mode string) {
 	if err := os.WriteFile(path, []byte(mode+"\n"), 0o600); err != nil {
 		t.Fatalf("write fake mode: %v", err)
 	}
-}
-
-func fakeBinPath(name string) string {
-	return filepath.Join(testFakeBin, name)
 }

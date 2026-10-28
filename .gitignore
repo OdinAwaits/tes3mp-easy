@@ -1,16 +1,6 @@
-# SSH keys (root only; do not hide internal/tes3mp)
-/tes3mp
-/tes3mp.pub
-html
-sys.json
-test-server/
-
 # Large files — stored in GitHub Releases, not in repo
 *.tar
 *.zip
-
-# Experimental server (not part of the instructions)
-example-server/
 
 # Local backup of GitHub Release assets (russifier, voices, etc.)
 releases/
@@ -18,19 +8,12 @@ releases/
 # Local todo (keep on disk, not in repo)
 todo-*.md
 
-# Local config overrides (copy from .example and modify)
-tes3mp-easy-export.conf
-tes3mp-easy-import.conf
-
 # Editor garbage
 *.swp
 *~
 .DS_Store
 
 example-client/
-
-# Migration planning (private until published)
-migration/
 
 # Go build and test artifacts
 /bin/

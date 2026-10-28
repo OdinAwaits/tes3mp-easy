@@ -169,9 +169,8 @@ predeploy-лимиты, защиту текущего mods-архива и за�
 HTTPS-порту с fixture-парой в режиме `files`. Проверяются:
 
 - lifecycle: env/flags и derived paths, ACME fake-obtainer (IP SAN без
-  Common Name, shortlived profile, wrong IP, renewal window, отказ продления,
-  замена legacy self-signed), `files` pair, TLS ≥ 1.2, `/healthz`, HSTS,
-  bind rollback, `SIGTERM`;
+  Common Name, shortlived profile, wrong IP, renewal window, отказ продления),
+  `files` pair, TLS ≥ 1.2, `/healthz`, HSTS, bind rollback, `SIGTERM`;
 - auth: создание/reuse/corrupt `auth.json`, режимы `0600`, `reset-password`,
   первый вход с временным паролем, смена пароля, cookie-флаги, CSRF,
   rate limit;
@@ -179,7 +178,6 @@ HTTPS-порту с fixture-парой в режиме `files`. Проверяю
   `state`, ZIP-сборка state+mods, пагинация, `/api/v1/server`,
   `/api/v1/mods/current`, `/api/v1/mods/current/archive`, path traversal,
   не-`.tar.gz`, отсутствующий файл, `Content-Disposition`;
-- `/admin/restore-points` отвечает `301` на `/admin/state`;
 - админские маршруты: дашборд, статус, логи, `doctor`, моды, состояния,
   конфиги, staff, upload, приватное скачивание state, restore из ZIP
   (`mods import --name` → `mods deploy` → `state import` → `state deploy`);

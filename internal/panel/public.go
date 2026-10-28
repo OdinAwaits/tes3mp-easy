@@ -344,13 +344,6 @@ func (h *panelHandler) readCurrentMods() (currentMods, error) {
 
 func (h *panelHandler) handleBackups(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	legacyType := query.Get("type")
-	if legacyType != "" && legacyType != "mods" && legacyType != "state" {
-		h.renderBackups(w, http.StatusBadRequest, backupsPageData{
-			Error: "Неизвестный тип бэкапа. Доступны mods и state.",
-		})
-		return
-	}
 
 	limit := defaultBackupLimit
 	if raw := query.Get("limit"); raw != "" {
@@ -366,16 +359,6 @@ func (h *panelHandler) handleBackups(w http.ResponseWriter, r *http.Request) {
 
 	stateBefore := query.Get("state_before")
 	modsBefore := query.Get("mods_before")
-	// Old bookmarks use a single type plus before. Keep them working while the
-	// page now shows both columns at once.
-	if legacyBefore := query.Get("before"); legacyBefore != "" {
-		switch {
-		case legacyType == "state" && stateBefore == "":
-			stateBefore = legacyBefore
-		case legacyType != "state" && modsBefore == "":
-			modsBefore = legacyBefore
-		}
-	}
 	for _, before := range []string{stateBefore, modsBefore} {
 		if before != "" && !safeArchiveName(before) {
 			h.renderBackups(w, http.StatusBadRequest, backupsPageData{

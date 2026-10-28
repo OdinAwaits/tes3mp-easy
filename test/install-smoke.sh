@@ -26,30 +26,6 @@ tar -czf "$fixture/$release.tar.gz" -C "$work/payload" "$release"
     sha256sum "$release.tar.gz" >"$release.tar.gz.sha256"
 )
 
-# Releases made before the channel split used the plain v<version> tag.
-legacy=tes3mp-easy-9.9.8-linux-amd64
-mkdir -p "$work/payload/$legacy"
-cat >"$work/payload/$legacy/bootstrap.sh" <<'BOOTSTRAP'
-#!/usr/bin/env bash
-printf '%s\n' "$@" >"$TES3MP_EASY_TEST_ARGS"
-BOOTSTRAP
-chmod +x "$work/payload/$legacy/bootstrap.sh"
-tar -czf "$fixture/$legacy.tar.gz" -C "$work/payload" "$legacy"
-(
-    cd "$fixture"
-    sha256sum "$legacy.tar.gz" >"$legacy.tar.gz.sha256"
-)
-
-cat >"$fixture/release-legacy.json" <<JSON
-{
-  "assets": [
-    {
-      "browser_download_url": "https://example.test/$legacy.tar.gz"
-    }
-  ]
-}
-JSON
-
 cat >"$fixture/release.json" <<JSON
 {
   "assets": [
@@ -132,10 +108,7 @@ case "$url" in
             cat "$TES3MP_EASY_TEST_FIXTURE/release.json"
         fi
         ;;
-    *releases/tags/v9.9.8)
-        cat "$TES3MP_EASY_TEST_FIXTURE/release-legacy.json"
-        ;;
-    *releases/tags/server-v9.9.9 | *releases/tags/v9.9.9)
+    *releases/tags/server-v9.9.9)
         cat "$TES3MP_EASY_TEST_FIXTURE/release.json"
         ;;
     https://example.test/*)
@@ -191,15 +164,5 @@ PATH="$work/bin:$PATH" \
 
 expected=$'--root\n/tmp/tes3mp-easy-test'
 check_args "$work/args-pinned"
-
-# Pinned versions published before the channel split fall back to the v<tag>.
-PATH="$work/bin:$PATH" \
-    TES3MP_EASY_TEST_FIXTURE="$fixture" \
-    TES3MP_EASY_VERSION=9.9.8 \
-    TES3MP_EASY_TEST_ARGS="$work/args-legacy" \
-    bash "$repo_root/install.sh" --root /tmp/tes3mp-easy-test
-
-expected=$'--root\n/tmp/tes3mp-easy-test'
-check_args "$work/args-legacy"
 
 printf 'install-smoke: PASS\n'

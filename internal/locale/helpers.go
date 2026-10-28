@@ -106,17 +106,15 @@ func (o Options) report(progress Progress) {
 }
 
 // mapEntry maps archive entries into a Data Files tree. The release archive
-// stores its payload below Data Files; a legacy top-level Video/Sound/Music
-// directory is accepted as well because those folders also belong to Data
-// Files. Everything else (launcher files, documentation) is skipped.
+// stores its payload below Data Files; everything else (launcher files,
+// documentation) is skipped.
 func mapEntry(name string, directory bool) (string, bool, error) {
 	match := name
 	if directory {
 		match = strings.TrimSuffix(match, "/")
 	}
 	lower := strings.ToLower(match)
-	switch lower {
-	case "data files", "video", "sound", "music":
+	if lower == "data files" {
 		if directory {
 			return "", true, nil
 		}
@@ -124,11 +122,6 @@ func mapEntry(name string, directory bool) (string, bool, error) {
 	}
 	if strings.HasPrefix(lower, "data files/") {
 		return name[len("Data Files/"):], true, nil
-	}
-	for _, top := range []string{"video/", "sound/", "music/"} {
-		if strings.HasPrefix(lower, top) {
-			return name, true, nil
-		}
 	}
 	return "", false, nil
 }

@@ -24,20 +24,6 @@ type doctorPayload struct {
 	} `json:"checks"`
 }
 
-func doctorRoot(t *testing.T) string {
-	t.Helper()
-
-	root := t.TempDir()
-	for _, name := range []string{
-		"configs", "players", "world", "mods", "backups", "panel-data",
-	} {
-		if err := os.Mkdir(filepath.Join(root, name), 0o755); err != nil {
-			t.Fatalf("create %s: %v", name, err)
-		}
-	}
-	return root
-}
-
 func doctorOSRelease(t *testing.T, content string) string {
 	t.Helper()
 

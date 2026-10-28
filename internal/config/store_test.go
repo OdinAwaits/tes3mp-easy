@@ -29,7 +29,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	cfg.MorrowindPath = "/games/Morrowind"
 	cfg.WorkDir = "/home/player/.local/share/tes3mp-easy"
 	cfg.ProtonPath = "/steam/Proton"
-	cfg.SkipFonts = true
 	cfg.Servers = []Server{server}
 	cfg.ActiveServer = server.ID
 
@@ -60,7 +59,6 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if loaded.Language != "ru" || loaded.ActiveServer != server.ID ||
 		loaded.ProtonPath != cfg.ProtonPath ||
-		loaded.SkipFonts != cfg.SkipFonts ||
 		loaded.MorrowindPath != cfg.MorrowindPath || loaded.WorkDir != cfg.WorkDir {
 		t.Fatalf("loaded config = %+v", loaded)
 	}

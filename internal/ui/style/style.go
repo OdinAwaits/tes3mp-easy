@@ -151,16 +151,6 @@ var lightPalette = palette{
 	theme.ColorNameInnerWindowBorderInactive: rgba(0xd8cab4ff),
 }
 
-// Muted returns the secondary text color of the current theme.
-func Muted() color.Color {
-	return theme.Color(theme.ColorNamePlaceHolder)
-}
-
-// Accent returns the amber accent of the current theme.
-func Accent() color.Color {
-	return theme.Color(theme.ColorNamePrimary)
-}
-
 // Card wraps content in a rounded surface with a subtle border. The optional
 // accent flag is used for the active server card.
 func Card(content fyne.CanvasObject, accent bool) fyne.CanvasObject {

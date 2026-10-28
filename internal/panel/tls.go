@@ -1,7 +1,6 @@
 package panel
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -230,8 +229,6 @@ func (m *certificateManager) Ensure(ctx context.Context) error {
 		leaf, err := certificateLeaf(*current)
 		if err == nil {
 			switch {
-			case certificateIsSelfSigned(leaf):
-				m.logger.Printf("tls: existing certificate is self-signed; requesting ACME certificate")
 			case leaf.VerifyHostname(m.cfg.PublicAddress) != nil:
 				m.logger.Printf("tls: existing certificate does not cover %s", m.cfg.PublicAddress)
 			case m.now().Before(leaf.NotBefore):
@@ -321,15 +318,6 @@ func certificateLeaf(certificate tls.Certificate) (*x509.Certificate, error) {
 		return nil, errors.New("certificate chain is empty")
 	}
 	return x509.ParseCertificate(certificate.Certificate[0])
-}
-
-// certificateIsSelfSigned detects the legacy deployment where an earlier panel
-// generated a self-signed pair. ACME mode must replace such a certificate even
-// if it covers the configured IP.
-func certificateIsSelfSigned(leaf *x509.Certificate) bool {
-	return bytes.Equal(leaf.RawIssuer, leaf.RawSubject) &&
-		leaf.CheckSignature(leaf.SignatureAlgorithm,
-			leaf.RawTBSCertificate, leaf.Signature) == nil
 }
 
 func writeCertificatePair(cfg Config, certPEM, keyPEM []byte) error {

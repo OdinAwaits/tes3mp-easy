@@ -236,13 +236,6 @@ func (s *shell) fontsStatus(tr *i18n.Translator) installStatus {
 		}
 	}
 	label := fontSetLabel(tr, state.Set)
-	if s.service.Config().SkipFonts {
-		return installStatus{
-			summary:    tr.T(i18n.KeyInstallFontsSkipped),
-			detail:     state.FontsDir,
-			importance: widget.WarningImportance,
-		}
-	}
 	switch {
 	case state.Installed:
 		return installStatus{

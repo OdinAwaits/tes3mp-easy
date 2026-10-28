@@ -61,14 +61,6 @@ func (s *shell) startFontDownload() {
 		s.fonts.mu.Unlock()
 		return
 	}
-	// Choosing a set in the wizard or the Installation row means the files are
-	// wanted again, so a legacy skip_fonts flag must not keep them disabled.
-	if settings := s.settings(); settings.SkipFonts {
-		settings.SkipFonts = false
-		if err := s.service.UpdateSettings(settings); err != nil {
-			s.service.LogError("enable fonts", err)
-		}
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.fonts.generation++
 	generation := s.fonts.generation

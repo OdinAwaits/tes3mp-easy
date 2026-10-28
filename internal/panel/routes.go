@@ -50,19 +50,6 @@ type passwordPageData struct {
 
 type authenticatedHandler func(http.ResponseWriter, *http.Request, sessionState)
 
-// newHandler builds all public and admin routes. A nil ops client is allowed for
-// tests that only exercise authentication; public routes then report
-// service_unavailable instead of pretending the server is running.
-func newHandler(cfg Config, auth *authStore, opsClient Ops, logger *log.Logger,
-	now func() time.Time,
-) (http.Handler, error) {
-	h, err := newPanelHandler(cfg, auth, opsClient, logger, now)
-	if err != nil {
-		return nil, err
-	}
-	return h.routes(), nil
-}
-
 func newPanelHandler(cfg Config, auth *authStore, opsClient Ops, logger *log.Logger,
 	now func() time.Time,
 ) (*panelHandler, error) {
@@ -154,7 +141,6 @@ func allPanelRoutes() []panelRoute {
 			{pattern: "POST /admin/mods/rollback", nav: "mods", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleModsRollback) }},
 			{pattern: "GET /admin/mods/download/{name}", nav: "mods", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleModsDownload) }},
 			{pattern: "GET /admin/state", nav: "state", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleState) }},
-			{pattern: "GET /admin/restore-points", nav: "state", handle: func(h *panelHandler) http.Handler { return http.HandlerFunc(h.redirectToState) }},
 			{pattern: "POST /admin/state/create", nav: "state", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleStateCreate) }},
 			{pattern: "POST /admin/state/restore", nav: "state", csrf: csrfStream, handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleStateRestore) }},
 			{pattern: "POST /admin/state/deploy", nav: "state", handle: func(h *panelHandler) http.Handler { return h.authenticated(false, h.handleStateDeploy) }},

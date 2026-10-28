@@ -244,7 +244,7 @@ func (s *shell) copyReport() {
 	tr := s.service.Translator()
 	lines, _ := s.service.ReadLogTail(app.TailLines)
 	report := s.service.DiagnosticReport(nil, lines)
-	s.window.Clipboard().SetContent(report)
+	fyne.CurrentApp().Clipboard().SetContent(report)
 	dialog.ShowInformation(tr.T(i18n.KeyDiagnosticsCopyReport),
 		tr.T(i18n.KeyDiagnosticsReportCopied), s.window)
 }
@@ -257,6 +257,5 @@ func (s *shell) settings() app.Settings {
 		MorrowindPath: cfg.MorrowindPath,
 		WorkDir:       cfg.WorkDir,
 		ProtonPath:    cfg.ProtonPath,
-		SkipFonts:     cfg.SkipFonts,
 	}
 }

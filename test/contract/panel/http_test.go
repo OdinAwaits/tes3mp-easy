@@ -35,18 +35,12 @@ func TestPanelHTTPContract(t *testing.T) {
 	requireContains(t, resp.Body, "Архивов модов пока нет")
 	requireSecurityHeaders(t, resp)
 
-	resp = doHTTP(t, client, http.MethodGet, p.httpsURL("/backups?type=mods"), "127.0.0.1")
-	requireStatus(t, resp, http.StatusOK, "HTTPS /backups?type=mods")
+	resp = doHTTP(t, client, http.MethodGet, p.httpsURL("/backups?limit=5"), "127.0.0.1")
+	requireStatus(t, resp, http.StatusOK, "HTTPS /backups?limit=5")
 	requireContains(t, resp.Body, "Архивы сервера")
 
-	resp = doHTTP(t, client, http.MethodGet, p.httpsURL("/backups?type=state"), "127.0.0.1")
-	requireStatus(t, resp, http.StatusOK, "HTTPS /backups?type=state")
-	requireContains(t, resp.Body, "Архивы сервера")
-	requireContains(t, resp.Body, "Состояний пока нет")
-
-	resp = doHTTP(t, client, http.MethodGet, p.httpsURL("/backups?type=bogus"), "127.0.0.1")
-	requireStatus(t, resp, http.StatusBadRequest, "HTTPS /backups?type=bogus")
-	requireContains(t, resp.Body, "Неизвестный тип бэкапа")
+	resp = doHTTP(t, client, http.MethodGet, p.httpsURL("/backups?limit=0"), "127.0.0.1")
+	requireStatus(t, resp, http.StatusBadRequest, "HTTPS /backups?limit=0")
 
 	resp = doHTTP(t, client, http.MethodGet, p.httpsURL("/api/v1/server"), "127.0.0.1")
 	if resp.Status != http.StatusOK {

@@ -25,10 +25,6 @@ type result struct {
 	stderr string
 }
 
-func (r result) combined() string {
-	return r.stdout + r.stderr
-}
-
 type fakeHost struct {
 	t              *testing.T
 	dir            string

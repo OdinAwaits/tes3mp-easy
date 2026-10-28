@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -20,12 +19,7 @@ type Paths struct {
 	LogsDir    string
 }
 
-// DefaultPaths returns the paths for the current operating system.
-func DefaultPaths() (Paths, error) {
-	return PathsFor(runtime.GOOS, os.Getenv)
-}
-
-// PathsFor is the testable form of DefaultPaths. On Windows it follows
+// PathsFor is the testable form of the platform defaults. On Windows it follows
 // %APPDATA% for config and %LOCALAPPDATA% for data. Linux and other Unix-like
 // systems follow XDG_CONFIG_HOME/XDG_DATA_HOME and the documented home
 // fallbacks.

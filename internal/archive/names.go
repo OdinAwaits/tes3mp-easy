@@ -185,13 +185,6 @@ func parseArchiveRest(name string, kind ArchiveKind, rest string) (ArchiveName, 
 	return ArchiveName{Kind: kind, Time: at, Collision: collision}, nil
 }
 
-// ValidateArchiveName accepts any of the five archive classes. Files with other
-// names are not archives for retention or deploy purposes.
-func ValidateArchiveName(name string) error {
-	_, err := ParseArchiveName(name)
-	return err
-}
-
 // ValidateModsArchiveName checks the mods archive naming rules from
 // docs/v2/03-contracts.md §6.7. Collision suffixes such as "-01" are accepted.
 func ValidateModsArchiveName(name string) error {

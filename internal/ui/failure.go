@@ -203,7 +203,7 @@ func (s *shell) showErrorWithRetry(err error, retry func()) {
 		widget.NewButton(tr.T(i18n.KeyErrorCopyReport), func() {
 			lines, _ := s.service.ReadLogTail(app.TailLines)
 			report := s.service.DiagnosticReport(err, lines)
-			s.window.Clipboard().SetContent(report)
+			fyne.CurrentApp().Clipboard().SetContent(report)
 			copyStatus.SetText(tr.T(i18n.KeyErrorReportCopied))
 			copyStatus.Show()
 		}),

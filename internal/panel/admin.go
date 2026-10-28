@@ -205,12 +205,10 @@ var adminNoticeMessages = map[string]string{
 	"state_deployed":   "Состояние восстановлено.",
 	"state_restored":   "Состояние и моды восстановлены из загруженного архива.",
 	"staff_saved":      "Ранг изменён. Перезапустите сервер, чтобы применить его.",
-	"config_saved":     "Настройка сохранена. Перезапустите сервер, чтобы применить её.",
 }
 
 var adminRestartNotices = map[string]bool{
-	"staff_saved":  true,
-	"config_saved": true,
+	"staff_saved": true,
 }
 
 func adminPageFor(r *http.Request, session sessionState) adminPage {
@@ -1000,14 +998,6 @@ func (h *panelHandler) statePageData(r *http.Request, session sessionState,
 	return data, nil
 }
 
-func (h *panelHandler) redirectToState(w http.ResponseWriter, r *http.Request) {
-	target := "/admin/state"
-	if r.URL.RawQuery != "" {
-		target += "?" + r.URL.RawQuery
-	}
-	http.Redirect(w, r, target, http.StatusMovedPermanently)
-}
-
 func (h *panelHandler) handleState(w http.ResponseWriter, r *http.Request,
 	session sessionState,
 ) {
@@ -1307,15 +1297,6 @@ func stringList(value any) []string {
 	}
 }
 
-func adminConfigKind(file, key string) string {
-	for _, def := range adminConfigFields[file] {
-		if def.Key == key {
-			return def.Kind
-		}
-	}
-	return ""
-}
-
 func (h *panelHandler) handleConfig(w http.ResponseWriter, r *http.Request,
 	session sessionState,
 ) {
@@ -1356,55 +1337,7 @@ func (h *panelHandler) handleConfigPost(w http.ResponseWriter, r *http.Request,
 			"Некорректная форма.", "")
 		return
 	}
-	if _, legacy := r.PostForm["key"]; !legacy {
-		h.handleConfigForm(w, r, session, file)
-		return
-	}
-	key := r.PostForm.Get("key")
-	if key == "" {
-		h.renderConfigFailure(w, r, session, http.StatusBadRequest,
-			"Не указан ключ настройки.", "")
-		return
-	}
-	values, hasValue := r.PostForm["value"]
-	raw := ""
-	if len(values) > 0 {
-		raw = values[0]
-	}
-	if !hasValue {
-		if adminConfigKind(file, key) == "bool" {
-			raw = "false"
-		} else {
-			h.renderConfigFailure(w, r, session, http.StatusBadRequest,
-				"Не указано значение настройки.", key)
-			return
-		}
-	}
-	if err := h.ops.ConfigSet(r.Context(), file, key, raw); err != nil {
-		status, message, field := adminFailure(err)
-		if field == "" {
-			field = key
-		}
-		h.logger.Printf("audit: action=config.set file=%s key=%s result=error code=%s",
-			file, key, adminErrorCode(err))
-		h.renderConfigFailure(w, r, session, status, message, field)
-		return
-	}
-	h.logger.Printf("audit: action=config.set file=%s key=%s result=ok", file, key)
-
-	data := adminConfigPageData{adminPage: adminPageFor(r, session)}
-	data.Notice = "Настройка сохранена."
-	data.RestartRequired = true
-	sections, err := h.configSections(r)
-	if err != nil {
-		status, message, _ := adminFailure(err)
-		data.Error = message
-		data.Sections = sections
-		h.render(w, status, "admin_config.html", data)
-		return
-	}
-	data.Sections = sections
-	h.render(w, http.StatusOK, "admin_config.html", data)
+	h.handleConfigForm(w, r, session, file)
 }
 
 func (h *panelHandler) handleConfigForm(w http.ResponseWriter, r *http.Request,

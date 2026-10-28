@@ -353,17 +353,6 @@ func NewOpsClient(cfg OpsClientConfig) (*OpsClient, error) {
 	}, nil
 }
 
-// NewDirectOpsClient is a convenience constructor for local use and tests. It
-// does not prepend sudo.
-func NewDirectOpsClient(binary, root string, runner OpsRunner) (*OpsClient, error) {
-	return NewOpsClient(OpsClientConfig{
-		Binary: binary,
-		Root:   root,
-		Direct: true,
-		Runner: runner,
-	})
-}
-
 type execOpsRunner struct{}
 
 func (execOpsRunner) Run(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error) {

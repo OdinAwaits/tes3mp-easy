@@ -54,12 +54,9 @@ elif [[ -n ${TES3MP_EASY_VERSION:-} ]]; then
         fail "TES3MP_EASY_VERSION must look like 0.3.0, got $TES3MP_EASY_VERSION"
     fi
     printf 'TES3MP Easy: looking up the server release %s...\n' "$version"
-    # Releases made before the channel split used the plain v<version> tag.
-    for tag in "server-v${version}" "v${version}"; do
-        release_json=$(fetch_json "$TAGS_API/${tag}" || true)
-        asset_url=$(server_asset "$release_json")
-        [[ -n $asset_url ]] && break
-    done
+    release_json=$(fetch_json "$TAGS_API/server-v${version}") ||
+        fail "cannot read release metadata for server-v${version}"
+    asset_url=$(server_asset "$release_json")
     if [[ -z $asset_url ]]; then
         fail "server release $version has no tes3mp-easy-${version}-linux-amd64.tar.gz asset"
     fi
