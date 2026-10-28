@@ -95,6 +95,9 @@ func (s *shell) serverCard(tr *i18n.Translator, activeID string,
 		func() { s.playServer(profile) },
 	)
 	play.Importance = widget.HighImportance
+	if _, running := s.service.GameRunning(); running {
+		play.Disable()
+	}
 	more := widget.NewButton(tr.T(i18n.KeyServerMore), func() {
 		s.showServerActions(profile)
 	})

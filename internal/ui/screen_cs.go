@@ -89,6 +89,10 @@ func (s *shell) launchEditor(serverID string) {
 		result, err := s.service.OpenMWCS(context.Background(), serverID)
 		fyne.Do(func() {
 			if err != nil {
+				if notice, refused := launchRefusal(tr, err); refused {
+					s.showNotice(tr.T(i18n.KeyCSHeading), notice, nil)
+					return
+				}
 				s.showErrorWithRetry(err, func() { s.launchEditor(serverID) })
 				return
 			}

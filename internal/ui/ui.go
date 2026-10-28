@@ -67,6 +67,11 @@ type shell struct {
 	statuses map[string]serverStatus
 	checking map[string]bool
 
+	// playMu guards playing: a profile can only download mods and launch once at
+	// a time, so a repeated click cannot start a duplicate TES3MP instance.
+	playMu  sync.Mutex
+	playing map[string]bool
+
 	// screen is the section shown in the body; the rail switches it.
 	screen screenID
 	// body holds the current screen; render replaces its only child.

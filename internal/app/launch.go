@@ -4,12 +4,89 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/Saagilat/tes3mp-easy/internal/fonts"
 	"github.com/Saagilat/tes3mp-easy/internal/launcher"
 	"github.com/Saagilat/tes3mp-easy/internal/locale"
 	"github.com/Saagilat/tes3mp-easy/internal/mods"
 )
+
+// launchGuard serializes launches so a repeated Play click cannot start a
+// second TES3MP instance. Both the game and OpenMW-CS share one work directory
+// and one OpenMW config, so only one of them may start at a time.
+type launchGuard struct {
+	mu       sync.Mutex
+	starting bool
+	running  bool
+	serverID string
+}
+
+// begin reserves the launch slot. It fails with ErrLaunchInFlight while another
+// launch prepares files and with ErrGameRunning while a game we started is
+// still running.
+func (g *launchGuard) begin(serverID string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	switch {
+	case g.starting:
+		return ErrLaunchInFlight
+	case g.running:
+		return ErrGameRunning
+	}
+	g.starting = true
+	g.serverID = serverID
+	return nil
+}
+
+// finish releases the slot. started reports whether a game process was spawned
+// and therefore keeps the running latch until stop is called.
+func (g *launchGuard) finish(started bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.starting = false
+	if started {
+		g.running = true
+		return
+	}
+	g.running = false
+	g.serverID = ""
+}
+
+// stop releases the running latch after the game process exited.
+func (g *launchGuard) stop() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.running = false
+	g.serverID = ""
+}
+
+// state returns the profile of the last accepted launch together with the
+// in-flight and running flags.
+func (g *launchGuard) state() (string, bool, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.serverID, g.starting, g.running
+}
+
+// GameRunning reports whether a game started by this service has not exited
+// yet. The UI disables Play while it runs because a second client would use the
+// same profile and the same OpenMW configuration.
+func (s *Service) GameRunning() (string, bool) {
+	if s == nil {
+		return "", false
+	}
+	serverID, _, running := s.launchGuard.state()
+	return serverID, running
+}
+
+// GameStopped releases the running latch after the game process exited.
+func (s *Service) GameStopped() {
+	if s == nil {
+		return
+	}
+	s.launchGuard.stop()
+}
 
 // Launch prepares fonts, the active OpenMW config and starts TES3MP. The
 // returned process is already running; the caller should wait in a goroutine.
@@ -21,6 +98,12 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 	if err != nil {
 		return launcher.Result{}, err
 	}
+	if err := s.launchGuard.begin(serverID); err != nil {
+		s.LogWarnf("launch %s rejected: %v", serverID, err)
+		return launcher.Result{}, err
+	}
+	started := false
+	defer func() { s.launchGuard.finish(started) }()
 	workDir, err := s.absoluteWorkDir()
 	if err != nil {
 		return launcher.Result{}, err
@@ -91,6 +174,7 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 		s.LogError("launch", err)
 		return result, err
 	}
+	started = result.Process != nil
 	s.LogInfof("launch %s started", serverID)
 	result.Warnings = append(warnings, result.Warnings...)
 	return result, nil
@@ -106,6 +190,11 @@ func (s *Service) OpenMWCS(ctx context.Context,
 	if _, err := s.serverProfile(serverID); err != nil {
 		return launcher.Result{}, err
 	}
+	if err := s.launchGuard.begin(serverID); err != nil {
+		s.LogWarnf("openmw-cs %s rejected: %v", serverID, err)
+		return launcher.Result{}, err
+	}
+	defer s.launchGuard.finish(false)
 	workDir, err := s.absoluteWorkDir()
 	if err != nil {
 		return launcher.Result{}, err

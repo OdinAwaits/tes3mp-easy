@@ -30,6 +30,10 @@ func TestExplainGameFailures(t *testing.T) {
 		{err: launcher.ErrConfig, kind: FailureGameConfig, code: CodeGameConfig},
 		{err: launcher.ErrStart, kind: FailureGameStart, code: CodeGameStart},
 		{err: ErrGameExited, kind: FailureGameExited, code: CodeGameExited},
+		{err: ErrLaunchInFlight, kind: FailureGameStarting, code: CodeGameStarting},
+		{err: ErrGameRunning, kind: FailureGameRunning, code: CodeGameRunning},
+		{err: fmt.Errorf("%w: duplicate", ErrGameRunning),
+			kind: FailureGameRunning, code: CodeGameRunning},
 	}
 	for _, test := range tests {
 		failure := Explain(test.err)

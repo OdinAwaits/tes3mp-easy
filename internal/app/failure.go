@@ -25,6 +25,8 @@ var (
 	ErrUnknownFontSet           = errors.New("unknown font set")
 	ErrWorkDir                  = errors.New("client work directory is invalid")
 	ErrGameExited               = errors.New("TES3MP exited unexpectedly")
+	ErrLaunchInFlight           = errors.New("TES3MP is already starting")
+	ErrGameRunning              = errors.New("TES3MP is already running")
 )
 
 // FailureKind is a stable reason code used to choose a localized explanation.
@@ -49,6 +51,8 @@ const (
 	FailureGameConfig             FailureKind = "game_config"
 	FailureGameStart              FailureKind = "game_start"
 	FailureGameExited             FailureKind = "game_exited"
+	FailureGameStarting           FailureKind = "game_starting"
+	FailureGameRunning            FailureKind = "game_running"
 )
 
 // FailureCode is the stable, untranslated identifier shown in dialogs and logs.
@@ -75,6 +79,8 @@ const (
 	CodeGameConfig          FailureCode = "T3E-GAME-03"
 	CodeGameStart           FailureCode = "T3E-GAME-04"
 	CodeGameExited          FailureCode = "T3E-GAME-05"
+	CodeGameStarting        FailureCode = "T3E-GAME-06"
+	CodeGameRunning         FailureCode = "T3E-GAME-07"
 )
 
 // Failure contains a stable reason, a support code and the original technical
@@ -100,6 +106,10 @@ func Explain(err error) Failure {
 	switch {
 	case errors.Is(err, ErrGameExited):
 		failure.Kind, failure.Code = FailureGameExited, CodeGameExited
+	case errors.Is(err, ErrLaunchInFlight):
+		failure.Kind, failure.Code = FailureGameStarting, CodeGameStarting
+	case errors.Is(err, ErrGameRunning):
+		failure.Kind, failure.Code = FailureGameRunning, CodeGameRunning
 	case errors.Is(err, launcher.ErrTES3MPMissing):
 		failure.Kind, failure.Code = FailureGameMissing, CodeGameMissing
 	case errors.Is(err, launcher.ErrProton):

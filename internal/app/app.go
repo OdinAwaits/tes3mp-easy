@@ -78,6 +78,9 @@ type Service struct {
 	httpClient *http.Client
 	// logFile receives diagnostics and user-facing error details.
 	logFile *clientlog.Logger
+	// launchGuard keeps a single TES3MP instance: a repeated Play click must not
+	// start a second client that would share the same profile and config.
+	launchGuard launchGuard
 }
 
 // Open loads the configuration at paths.ConfigFile.

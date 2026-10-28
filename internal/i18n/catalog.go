@@ -150,6 +150,9 @@ const (
 	KeyServerLaunching   = "server.launching"
 	KeyServerLaunched    = "server.launched"
 
+	KeyServerAlreadyStarting = "server.already_starting"
+	KeyServerAlreadyRunning  = "server.already_running"
+
 	KeyServerMore            = "server.more"
 	KeyServerActionsTitle    = "server.actions.title"
 	KeyServerOpenPanel       = "server.open_panel"
@@ -249,6 +252,10 @@ const (
 	KeyErrorGameStartAct           = "error.game_start_action"
 	KeyErrorGameExited             = "error.game_exited"
 	KeyErrorGameExitedAct          = "error.game_exited_action"
+	KeyErrorGameStarting           = "error.game_starting"
+	KeyErrorGameStartingAct        = "error.game_starting_action"
+	KeyErrorGameRunning            = "error.game_running"
+	KeyErrorGameRunningAct         = "error.game_running_action"
 
 	KeyLogsTitle      = "logs.title"
 	KeyLogsEmpty      = "logs.empty"
@@ -465,6 +472,9 @@ var catalogs = map[Language]map[string]string{
 		KeyServerLaunching:   "Preparing the launch...",
 		KeyServerLaunched:    "The game is running.",
 
+		KeyServerAlreadyStarting: "TES3MP is already starting. Wait until the game window appears.",
+		KeyServerAlreadyRunning:  "TES3MP is already running. Close the game before starting it again.",
+
 		KeyServerMore:            "More",
 		KeyServerActionsTitle:    "Server actions",
 		KeyServerOpenPanel:       "Open panel",
@@ -564,6 +574,10 @@ var catalogs = map[Language]map[string]string{
 		KeyErrorGameStartAct:           "Check that TES3MP is installed correctly, close other instances and retry.",
 		KeyErrorGameExited:             "TES3MP exited unexpectedly.",
 		KeyErrorGameExitedAct:          "Open the client log for the game's error and retry after fixing it.",
+		KeyErrorGameStarting:           "TES3MP is still starting.",
+		KeyErrorGameStartingAct:        "Wait until the game window appears instead of launching again.",
+		KeyErrorGameRunning:            "TES3MP is still running.",
+		KeyErrorGameRunningAct:         "Close the game window and retry to start a fresh instance.",
 
 		KeyLogsTitle:      "Client log",
 		KeyLogsEmpty:      "The log is empty yet.",
@@ -778,6 +792,9 @@ var catalogs = map[Language]map[string]string{
 		KeyServerLaunching:   "Подготовка к запуску...",
 		KeyServerLaunched:    "Игра запущена.",
 
+		KeyServerAlreadyStarting: "TES3MP уже запускается. Дождитесь появления окна игры.",
+		KeyServerAlreadyRunning:  "TES3MP уже запущен. Закройте игру, чтобы запустить её снова.",
+
 		KeyServerMore:            "Ещё",
 		KeyServerActionsTitle:    "Действия с сервером",
 		KeyServerOpenPanel:       "Открыть панель",
@@ -877,6 +894,10 @@ var catalogs = map[Language]map[string]string{
 		KeyErrorGameStartAct:           "Проверьте установку TES3MP, закройте другие копии игры и повторите.",
 		KeyErrorGameExited:             "TES3MP неожиданно завершился.",
 		KeyErrorGameExitedAct:          "Откройте лог клиента, найдите ошибку игры и повторите после исправления.",
+		KeyErrorGameStarting:           "TES3MP ещё запускается.",
+		KeyErrorGameStartingAct:        "Дождитесь появления окна игры, а не запускайте её повторно.",
+		KeyErrorGameRunning:            "TES3MP уже запущен.",
+		KeyErrorGameRunningAct:         "Закройте окно игры и повторите запуск, чтобы создать новый экземпляр.",
 
 		KeyLogsTitle:      "Лог клиента",
 		KeyLogsEmpty:      "Лог пока пуст.",

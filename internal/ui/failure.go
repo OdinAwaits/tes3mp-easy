@@ -87,6 +87,14 @@ var failureCopies = map[app.FailureKind]failureCopy{
 		what:   i18n.KeyErrorGameExited,
 		action: i18n.KeyErrorGameExitedAct,
 	},
+	app.FailureGameStarting: {
+		what:   i18n.KeyErrorGameStarting,
+		action: i18n.KeyErrorGameStartingAct,
+	},
+	app.FailureGameRunning: {
+		what:   i18n.KeyErrorGameRunning,
+		action: i18n.KeyErrorGameRunningAct,
+	},
 	app.FailureUnknown: {
 		what:   i18n.KeyErrorUnknown,
 		action: i18n.KeyErrorUnknownAct,

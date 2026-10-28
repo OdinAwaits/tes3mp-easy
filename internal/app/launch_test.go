@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,11 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/launcher"
 	"github.com/Saagilat/tes3mp-easy/internal/locale"
 )
+
+// fakeProcess is a launched TES3MP stand-in; Wait returns immediately.
+type fakeProcess struct{}
+
+func (p *fakeProcess) Wait() error { return nil }
 
 func installedService(t *testing.T) (*Service, string, string) {
 	t.Helper()
@@ -228,4 +234,83 @@ func TestLaunchAllowsInstalledLocalization(t *testing.T) {
 		captured.LocalizationRoot != locale.Dir(workDir) {
 		t.Fatalf("launch options = %+v", captured)
 	}
+}
+
+func TestLaunchRejectsSecondInstance(t *testing.T) {
+	service, workDir, id := installedService(t)
+	installFakeMods(t, workDir, id)
+	service.installFonts = func(_ context.Context, _ fonts.Options,
+	) (fonts.Result, error) {
+		return fonts.Result{State: fonts.State{Installed: true}}, nil
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	service.launchClient = func(_ context.Context, _ launcher.LaunchOptions,
+	) (launcher.Result, error) {
+		close(entered)
+		<-release
+		return launcher.Result{Process: &fakeProcess{}}, nil
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := service.Launch(context.Background(), id)
+		firstDone <- err
+	}()
+	<-entered
+	if _, err := service.Launch(context.Background(), id); !errors.Is(err, ErrLaunchInFlight) {
+		t.Fatalf("second launch while starting = %v, want ErrLaunchInFlight", err)
+	}
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first launch: %v", err)
+	}
+
+	serverID, running := service.GameRunning()
+	if !running || serverID != id {
+		t.Fatalf("GameRunning() = %q, %v; want %q, true", serverID, running, id)
+	}
+	if _, err := service.Launch(context.Background(), id); !errors.Is(err, ErrGameRunning) {
+		t.Fatalf("launch while running = %v, want ErrGameRunning", err)
+	}
+
+	service.GameStopped()
+	if _, running := service.GameRunning(); running {
+		t.Fatal("GameRunning() is true after GameStopped")
+	}
+	service.launchClient = func(_ context.Context, _ launcher.LaunchOptions,
+	) (launcher.Result, error) {
+		return launcher.Result{Process: &fakeProcess{}}, nil
+	}
+	if _, err := service.Launch(context.Background(), id); err != nil {
+		t.Fatalf("launch after exit: %v", err)
+	}
+	service.GameStopped()
+}
+
+func TestLaunchFailureReleasesTheSlot(t *testing.T) {
+	service, workDir, id := installedService(t)
+	installFakeMods(t, workDir, id)
+	service.installFonts = func(_ context.Context, _ fonts.Options,
+	) (fonts.Result, error) {
+		return fonts.Result{}, errors.New("font catalog is broken")
+	}
+	service.launchClient = func(_ context.Context, _ launcher.LaunchOptions,
+	) (launcher.Result, error) {
+		return launcher.Result{}, launcher.ErrStart
+	}
+	if _, err := service.Launch(context.Background(), id); !errors.Is(err, launcher.ErrStart) {
+		t.Fatalf("Launch = %v, want ErrStart", err)
+	}
+	if _, running := service.GameRunning(); running {
+		t.Fatal("a failed launch must not latch the running state")
+	}
+	service.launchClient = func(_ context.Context, _ launcher.LaunchOptions,
+	) (launcher.Result, error) {
+		return launcher.Result{Process: &fakeProcess{}}, nil
+	}
+	if _, err := service.Launch(context.Background(), id); err != nil {
+		t.Fatalf("retry after failure: %v", err)
+	}
+	service.GameStopped()
 }
