@@ -13,16 +13,15 @@ var templateFS embed.FS
 type pageTemplates map[string]*template.Template
 
 var templatePageNames = []string{
+	"admin_backups.html",
 	"admin_config.html",
 	"admin_logs.html",
-	"admin_mods.html",
-	"admin_staff.html",
+	"admin_players.html",
 	"backups.html",
 	"dashboard.html",
 	"home.html",
 	"login.html",
 	"password.html",
-	"state.html",
 }
 
 var templateSharedFiles = []string{

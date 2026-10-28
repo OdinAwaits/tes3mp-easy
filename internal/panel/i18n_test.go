@@ -191,8 +191,8 @@ func TestAdminPagesAreTranslatedInBothLanguages(t *testing.T) {
 		backups:         map[string]Backups{"state": stateBackupsFixture(), "mods": modsBackupsFixture()},
 		configSnapshots: adminConfigSnapshots(),
 	})
-	pages := []string{"/admin", "/admin/logs", "/admin/mods", "/admin/state",
-		"/admin/config", "/admin/staff", "/admin/password", "/", "/backups"}
+	pages := []string{"/admin", "/admin/logs", "/admin/backups",
+		"/admin/config", "/admin/players", "/admin/password", "/", "/backups"}
 
 	for _, path := range pages {
 		rec := env.request(t, http.MethodGet, path, nil)

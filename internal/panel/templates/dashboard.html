@@ -147,8 +147,8 @@
             {{template "csrf" .}}
             <button class="button button--primary" type="submit">{{.T "panel.dashboard.create_state"}}</button>
           </form>
-          <a class="button button--ghost" href="/admin/mods">{{.T "panel.dashboard.upload_mods"}}</a>
-          <a class="button button--ghost" href="/admin/state">{{.T "panel.dashboard.restore"}}</a>
+          <a class="button button--ghost" href="/admin/backups#mods">{{.T "panel.dashboard.upload_mods"}}</a>
+          <a class="button button--ghost" href="/admin/backups#state">{{.T "panel.dashboard.restore"}}</a>
         </div>
         <p class="muted">{{.TH "panel.dashboard.doctor_hint"}}</p>
       </section>

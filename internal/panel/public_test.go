@@ -449,6 +449,10 @@ func TestPublicBackupsPage(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
 		t.Fatalf("Content-Type = %q", got)
 	}
+	// Public archives stay downloadable but must not be indexed.
+	if got := rec.Header().Get("X-Robots-Tag"); got != "noindex, nofollow" {
+		t.Fatalf("X-Robots-Tag = %q", got)
+	}
 	if len(env.ops.backupsCalls) != 2 {
 		t.Fatalf("backups calls = %+v", env.ops.backupsCalls)
 	}

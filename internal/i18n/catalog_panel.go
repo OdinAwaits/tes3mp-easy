@@ -11,6 +11,8 @@ const (
 	KeyPanelNavState         = "panel.nav.state"
 	KeyPanelNavConfig        = "panel.nav.config"
 	KeyPanelNavStaff         = "panel.nav.staff"
+	KeyPanelNavBackups       = "panel.nav.backups"
+	KeyPanelNavPlayers       = "panel.nav.players"
 	KeyPanelNavPublicArchive = "panel.nav.public_archives"
 	KeyPanelNavAccount       = "panel.nav.account"
 	KeyPanelNavPassword      = "panel.nav.change_password"
@@ -20,6 +22,31 @@ const (
 	KeyPanelNavArchives      = "panel.nav.archives"
 	KeyPanelNavLogin         = "panel.nav.login"
 	KeyPanelNavLanguage      = "panel.nav.language"
+
+	KeyPanelBackupsAdminTitle   = "panel.backups.admin_title"
+	KeyPanelBackupsAdminEyebrow = "panel.backups.admin_eyebrow"
+	KeyPanelBackupsAdminHeading = "panel.backups.admin_heading"
+	KeyPanelBackupsAdminLead    = "panel.backups.admin_lead"
+
+	KeyPanelPlayersTitle        = "panel.players.title"
+	KeyPanelPlayersEyebrow      = "panel.players.eyebrow"
+	KeyPanelPlayersHeading      = "panel.players.heading"
+	KeyPanelPlayersLead         = "panel.players.lead"
+	KeyPanelPlayersPlayers      = "panel.players.players"
+	KeyPanelPlayersPlayer       = "panel.players.player"
+	KeyPanelPlayersRank         = "panel.players.rank"
+	KeyPanelPlayersAccess       = "panel.players.access"
+	KeyPanelPlayersBan          = "panel.players.ban"
+	KeyPanelPlayersBanAction    = "panel.players.ban_action"
+	KeyPanelPlayersUnban        = "panel.players.unban"
+	KeyPanelPlayersBannedTag    = "panel.players.banned_tag"
+	KeyPanelPlayersAllowedTag   = "panel.players.allowed_tag"
+	KeyPanelPlayersEmpty        = "panel.players.empty"
+	KeyPanelPlayersBanlistHead  = "panel.players.banlist_heading"
+	KeyPanelPlayersBanlistHint  = "panel.players.banlist_hint"
+	KeyPanelPlayersSaveBans     = "panel.players.save_bans"
+	KeyPanelPlayersBanConfirm   = "panel.players.ban_confirm"
+	KeyPanelPlayersUnbanConfirm = "panel.players.unban_confirm"
 
 	KeyPanelNoticeRestartRequired = "panel.notice.restart_required"
 
@@ -156,6 +183,7 @@ const (
 	KeyPanelStateModsActive     = "panel.state.mods_active"
 	KeyPanelStateModsInactive   = "panel.state.mods_inactive"
 	KeyPanelStateDownloadState  = "panel.state.download_state"
+	KeyPanelStateDownloadBundle = "panel.state.download_bundle"
 	KeyPanelStateDownloadMods   = "panel.state.download_mods"
 	KeyPanelStateDeployMods     = "panel.state.deploy_mods"
 	KeyPanelStateDeployConfirm  = "panel.state.deploy_confirm"
@@ -185,6 +213,8 @@ const (
 	KeyPanelModsArchivesHeading = "panel.mods.archives_heading"
 	KeyPanelModsEmpty           = "panel.mods.empty"
 	KeyPanelModsCurrentTag      = "panel.mods.current_tag"
+	KeyPanelModsIsCurrent       = "panel.mods.is_current"
+	KeyPanelModsDownload        = "panel.mods.download"
 	KeyPanelModsDeploy          = "panel.mods.deploy"
 	KeyPanelModsRollbackHeading = "panel.mods.rollback_heading"
 	KeyPanelModsRollbackText    = "panel.mods.rollback_text"
@@ -248,6 +278,7 @@ const (
 	KeyPanelNoticeStateDeployed  = "panel.notice.state_deployed"
 	KeyPanelNoticeStateRestored  = "panel.notice.state_restored"
 	KeyPanelNoticeStaffSaved     = "panel.notice.staff_saved"
+	KeyPanelNoticeBanSaved       = "panel.notice.ban_saved"
 
 	KeyPanelErrorDoctorBlocked        = "panel.error.doctor_blocked"
 	KeyPanelErrorDoctorBlockedDetails = "panel.error.doctor_blocked_details"
@@ -397,6 +428,8 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelNavState:         "Snapshots",
 		KeyPanelNavConfig:        "Settings",
 		KeyPanelNavStaff:         "Staff",
+		KeyPanelNavBackups:       "Backups",
+		KeyPanelNavPlayers:       "Players",
 		KeyPanelNavPublicArchive: "Public archives",
 		KeyPanelNavAccount:       "Account",
 		KeyPanelNavPassword:      "Change password",
@@ -406,6 +439,31 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelNavArchives:      "Archives",
 		KeyPanelNavLogin:         "Panel sign-in",
 		KeyPanelNavLanguage:      "Language",
+
+		KeyPanelBackupsAdminTitle:   "Backups — tes3mp-easy",
+		KeyPanelBackupsAdminEyebrow: "Backups",
+		KeyPanelBackupsAdminHeading: "Snapshots and mod packs",
+		KeyPanelBackupsAdminLead:    "A snapshot restores the world, players and config.lua. The mod pack it was made with is enabled automatically, so restoring takes one click. Mod packs themselves are immutable archives.",
+
+		KeyPanelPlayersTitle:        "Players — tes3mp-easy",
+		KeyPanelPlayersEyebrow:      "Players",
+		KeyPanelPlayersHeading:      "Players",
+		KeyPanelPlayersLead:         "Ranks apply after a server restart. A ban is written to banlist.json and also needs a restart.",
+		KeyPanelPlayersPlayers:      "Players with a character file",
+		KeyPanelPlayersPlayer:       "Player",
+		KeyPanelPlayersRank:         "Rank",
+		KeyPanelPlayersAccess:       "Access",
+		KeyPanelPlayersBan:          "Ban",
+		KeyPanelPlayersBanAction:    "Ban",
+		KeyPanelPlayersUnban:        "Unban",
+		KeyPanelPlayersBannedTag:    "banned",
+		KeyPanelPlayersAllowedTag:   "allowed",
+		KeyPanelPlayersEmpty:        "No players yet: the list appears after the first character is created on the server.",
+		KeyPanelPlayersBanlistHead:  "Banlist",
+		KeyPanelPlayersBanlistHint:  "One name or IP per line. The lists are saved together with the rest of banlist.json.",
+		KeyPanelPlayersSaveBans:     "Save banlist",
+		KeyPanelPlayersBanConfirm:   "Ban %s? The name is added to banlist.json.",
+		KeyPanelPlayersUnbanConfirm: "Unban %s? The name is removed from banlist.json.",
 
 		KeyPanelNoticeRestartRequired: "Restart the server to apply the changes.",
 
@@ -444,7 +502,7 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelBackupsTitle:           "Archives — tes3mp-easy",
 		KeyPanelBackupsEyebrow:         "Public archive",
 		KeyPanelBackupsHeading:         "Server archives",
-		KeyPanelBackupsLead:            "World snapshots and mod archives are available without signing in. Every snapshot lists the mod pack it was created with.",
+		KeyPanelBackupsLead:            "World snapshots and mod archives are downloadable without signing in: only downloading is public, restoring and uploading happen in the panel. A snapshot can be started as your own server, so the world survives even if this server disappears.",
 		KeyPanelBackupsStateHeading:    "Snapshots",
 		KeyPanelBackupsStateHint:       "World, players and config.lua",
 		KeyPanelBackupsModsHeading:     "Mods",
@@ -521,11 +579,11 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelStateTitle:          "Snapshots — tes3mp-easy",
 		KeyPanelStateEyebrow:        "Backups",
 		KeyPanelStateHeading:        "Snapshots",
-		KeyPanelStateLead:           "A snapshot keeps players, the world and config.lua. The server password and banlist.json stay in the live configs and never enter a snapshot. Mods are separate immutable archives referenced by the snapshot.",
-		KeyPanelStateMissingMods:    "The current mod archive is missing. Restoring is unavailable until mods are deployed.",
-		KeyPanelStateCurrentMods:    "Current mods: <code>%s</code>",
+		KeyPanelStateLead:           "A snapshot keeps players, the world and config.lua; the server password and banlist.json stay in the live configs and never enter a snapshot. Mods live in separate immutable archives that the snapshot points to.",
+		KeyPanelStateMissingMods:    "No mod pack is active yet. Restoring is still possible for snapshots whose pack is on disk: the pack is enabled automatically.",
+		KeyPanelStateCurrentMods:    "Active mod pack: <code>%s</code>",
 		KeyPanelStateRestoreHeading: "Restore from a downloaded archive",
-		KeyPanelStateRestoreHint:    "A ZIP with a snapshot and its mods imports the mods and restores the snapshot; a standalone state <code>.tar.gz</code> works only on the active mod pack.",
+		KeyPanelStateRestoreHint:    "A ZIP with a snapshot and its mods imports both; a standalone state <code>.tar.gz</code> is restored on top of the pack it references, and the panel enables that pack first.",
 		KeyPanelStateRestoreConfirm: "Restore the snapshot from the archive? players/, world/ and config.lua will be replaced.",
 		KeyPanelStateFileLabel:      "Archive .zip or state .tar.gz, up to 1 GiB",
 		KeyPanelStateUploadRestore:  "Upload and restore",
@@ -534,27 +592,28 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelStateCreate:         "Create snapshot",
 		KeyPanelStateManageMods:     "Manage mods",
 		KeyPanelStateLimit:          "Rows per page",
-		KeyPanelStateEmpty:          "No snapshots yet.",
-		KeyPanelStateMods:           "Mods",
-		KeyPanelStateModsMissing:    "Mods missing",
+		KeyPanelStateEmpty:          "No snapshots yet. Create the first one with “Create snapshot”.",
+		KeyPanelStateMods:           "Mod pack",
+		KeyPanelStateModsMissing:    "Pack missing",
 		KeyPanelStateModsActive:     "active",
-		KeyPanelStateModsInactive:   "not active",
+		KeyPanelStateModsInactive:   "enabled on restore",
 		KeyPanelStateDownloadState:  "Download snapshot",
+		KeyPanelStateDownloadBundle: "Snapshot + mods (.zip)",
 		KeyPanelStateDownloadMods:   "Download mods",
-		KeyPanelStateDeployMods:     "Deploy mods",
-		KeyPanelStateDeployConfirm:  "Deploy mods %s? The server will be restarted.",
+		KeyPanelStateDeployMods:     "Enable mods",
+		KeyPanelStateDeployConfirm:  "Enable mods %s? The server will be restarted.",
 		KeyPanelStateRestoreButton:  "Restore",
-		KeyPanelStateDeployFirst:    "Deploy the referenced mod archive first",
+		KeyPanelStateDeployFirst:    "The referenced mod archive is missing: restore is unavailable",
 		KeyPanelStateOlder:          "Show older",
 
 		KeyPanelModsTitle:           "Mods — tes3mp-easy",
 		KeyPanelModsEyebrow:         "Content",
 		KeyPanelModsHeading:         "Mods",
-		KeyPanelModsLead:            "Upload a mod archive, review it and deploy it to the server.",
-		KeyPanelModsCurrentHeading:  "Current archive",
-		KeyPanelModsNotDeployed:     "No mods deployed yet.",
+		KeyPanelModsLead:            "Upload a mod archive, then enable it — or restore a snapshot and the panel enables its pack for you.",
+		KeyPanelModsCurrentHeading:  "Active archive",
+		KeyPanelModsNotDeployed:     "No mod pack is enabled yet.",
 		KeyPanelModsUploadHeading:   "Upload archive",
-		KeyPanelModsUploadHint:      "Archive up to 512 MiB. After the import it still has to be deployed separately.",
+		KeyPanelModsUploadHint:      "Archive up to 512 MiB. An uploaded pack stays inactive until you enable it or restore a snapshot that uses it.",
 		KeyPanelModsFormat:          "Archive layout",
 		KeyPanelModsFormatRoot:      "The root holds only <code>plugins/</code> and <code>scripts/</code>; <code>requiredDataFiles.json</code> lives inside <code>plugins/</code>, never at the root.",
 		KeyPanelModsFormatPlugins:   "Plugins: <code>.esp</code>, <code>.esm</code>, <code>.omwaddon</code>, <code>.omwscripts</code>, <code>.omwgame</code>. Every mod plugin listed in the JSON must be in <code>plugins/</code> and vice versa (except the three base ESMs).",
@@ -565,12 +624,14 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelModsFileLabel:       "Archive .tar.gz",
 		KeyPanelModsUpload:          "Upload",
 		KeyPanelModsArchivesHeading: "Mod archives",
-		KeyPanelModsEmpty:           "No mod archives yet.",
+		KeyPanelModsEmpty:           "No mod archives yet. Upload the first one above.",
 		KeyPanelModsCurrentTag:      "(current)",
-		KeyPanelModsDeploy:          "Deploy",
-		KeyPanelModsRollbackHeading: "Rollback",
-		KeyPanelModsRollbackText:    "The rollback deploys the previous archive <code>%s</code>. A running server is restarted.",
-		KeyPanelModsRollback:        "Rollback",
+		KeyPanelModsIsCurrent:       "already active",
+		KeyPanelModsDownload:        "Download",
+		KeyPanelModsDeploy:          "Enable",
+		KeyPanelModsRollbackHeading: "Restore the previous pack",
+		KeyPanelModsRollbackText:    "This enables the previous archive <code>%s</code>. A running server is restarted.",
+		KeyPanelModsRollback:        "Restore previous",
 
 		KeyPanelConfigTitle:      "Settings — tes3mp-easy",
 		KeyPanelConfigEyebrow:    "Configuration",
@@ -628,6 +689,7 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelNoticeStateDeployed:  "Snapshot restored.",
 		KeyPanelNoticeStateRestored:  "Snapshot and mods restored from the uploaded archive.",
 		KeyPanelNoticeStaffSaved:     "Rank changed. Restart the server to apply it.",
+		KeyPanelNoticeBanSaved:       "Banlist saved. Restart the server to apply it.",
 
 		KeyPanelErrorDoctorBlocked:        "doctor reported an error; the mutation is blocked.",
 		KeyPanelErrorDoctorBlockedDetails: "doctor reported an error, the mutation is blocked: %s",
@@ -780,9 +842,11 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelNavDashboard:     "Обзор",
 		KeyPanelNavLogs:          "Логи",
 		KeyPanelNavMods:          "Моды",
-		KeyPanelNavState:         "Состояния",
+		KeyPanelNavState:         "Сохранения",
 		KeyPanelNavConfig:        "Настройки",
-		KeyPanelNavStaff:         "Staff",
+		KeyPanelNavStaff:         "Игроки",
+		KeyPanelNavBackups:       "Бэкапы",
+		KeyPanelNavPlayers:       "Игроки",
 		KeyPanelNavPublicArchive: "Публичные архивы",
 		KeyPanelNavAccount:       "Аккаунт",
 		KeyPanelNavPassword:      "Сменить пароль",
@@ -792,6 +856,31 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelNavArchives:      "Архивы",
 		KeyPanelNavLogin:         "Вход в панель",
 		KeyPanelNavLanguage:      "Язык",
+
+		KeyPanelBackupsAdminTitle:   "Бэкапы — tes3mp-easy",
+		KeyPanelBackupsAdminEyebrow: "Бэкапы",
+		KeyPanelBackupsAdminHeading: "Сохранения и моды",
+		KeyPanelBackupsAdminLead:    "Сохранение возвращает мир, игроков и config.lua. Пакет модов, с которым оно сделано, включается автоматически — восстановление в один клик. Сами пакеты модов — неизменяемые архивы.",
+
+		KeyPanelPlayersTitle:        "Игроки — tes3mp-easy",
+		KeyPanelPlayersEyebrow:      "Игроки",
+		KeyPanelPlayersHeading:      "Игроки",
+		KeyPanelPlayersLead:         "Ранги применяются после перезапуска сервера. Бан записывается в banlist.json и тоже ждёт перезапуска.",
+		KeyPanelPlayersPlayers:      "Игроки с файлом персонажа",
+		KeyPanelPlayersPlayer:       "Игрок",
+		KeyPanelPlayersRank:         "Ранг",
+		KeyPanelPlayersAccess:       "Доступ",
+		KeyPanelPlayersBan:          "Бан",
+		KeyPanelPlayersBanAction:    "Забанить",
+		KeyPanelPlayersUnban:        "Разбанить",
+		KeyPanelPlayersBannedTag:    "забанен",
+		KeyPanelPlayersAllowedTag:   "доступ открыт",
+		KeyPanelPlayersEmpty:        "Игроков пока нет — список появится после создания первого персонажа на сервере.",
+		KeyPanelPlayersBanlistHead:  "Банлист",
+		KeyPanelPlayersBanlistHint:  "По одному имени или IP в строке. Списки сохраняются вместе с остальным banlist.json.",
+		KeyPanelPlayersSaveBans:     "Сохранить банлист",
+		KeyPanelPlayersBanConfirm:   "Забанить %s? Имя будет добавлено в banlist.json.",
+		KeyPanelPlayersUnbanConfirm: "Разбанить %s? Имя будет удалено из banlist.json.",
 
 		KeyPanelNoticeRestartRequired: "Нужен перезапуск сервера, чтобы применить изменения.",
 
@@ -830,7 +919,7 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelBackupsTitle:           "Архивы — tes3mp-easy",
 		KeyPanelBackupsEyebrow:         "Публичный архив",
 		KeyPanelBackupsHeading:         "Архивы сервера",
-		KeyPanelBackupsLead:            "Состояния мира и архивы модов доступны без входа. У каждого состояния указан пакет модов, с которым оно создано.",
+		KeyPanelBackupsLead:            "Сохранения мира и архивы модов скачиваются без входа: публично только скачивание, восстановление и загрузка — в панели. Из сохранения можно поднять свой сервер, поэтому мир не пропадёт, даже если этот сервер исчезнет.",
 		KeyPanelBackupsStateHeading:    "Состояния",
 		KeyPanelBackupsStateHint:       "Мир, игроки и config.lua",
 		KeyPanelBackupsModsHeading:     "Моды",
@@ -904,43 +993,44 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelDashboardUploadMods:     "Загрузить моды",
 		KeyPanelDashboardRestore:        "Восстановить",
 
-		KeyPanelStateTitle:          "Состояния — tes3mp-easy",
-		KeyPanelStateEyebrow:        "Резервные копии",
-		KeyPanelStateHeading:        "Состояния",
-		KeyPanelStateLead:           "Состояние хранит игроков, мир и config.lua. Пароль сервера и banlist.json остаются в живых конфигах и в state не попадают. Моды — отдельные неизменяемые архивы, на которые ссылается состояние.",
-		KeyPanelStateMissingMods:    "Текущий архив модов не найден. Восстановление недоступно, пока моды не задеплоены.",
-		KeyPanelStateCurrentMods:    "Текущие моды: <code>%s</code>",
+		KeyPanelStateTitle:          "Сохранения — tes3mp-easy",
+		KeyPanelStateEyebrow:        "Бэкапы",
+		KeyPanelStateHeading:        "Сохранения",
+		KeyPanelStateLead:           "Сохранение хранит игроков, мир и config.lua; пароль сервера и banlist.json остаются в живых конфигах и в сохранение не попадают. Моды лежат в отдельных неизменяемых архивах, на которые сохранение ссылается.",
+		KeyPanelStateMissingMods:    "Активного пакета модов пока нет. Восстановление всё равно доступно для сохранений, чей пакет есть на диске: панель включит его сама.",
+		KeyPanelStateCurrentMods:    "Активный пакет модов: <code>%s</code>",
 		KeyPanelStateRestoreHeading: "Восстановить из скачанного архива",
-		KeyPanelStateRestoreHint:    "ZIP «состояние + моды» импортирует моды и восстановит состояние; отдельный state <code>.tar.gz</code> — только на активном пакете модов.",
-		KeyPanelStateRestoreConfirm: "Восстановить состояние из архива? players/, world/ и config.lua будут заменены.",
+		KeyPanelStateRestoreHint:    "ZIP «сохранение + моды» импортирует и то и другое; отдельный state <code>.tar.gz</code> восстанавливается поверх пакета, на который ссылается, — панель сначала включит этот пакет.",
+		KeyPanelStateRestoreConfirm: "Восстановить сохранение из архива? players/, world/ и config.lua будут заменены.",
 		KeyPanelStateFileLabel:      "Архив .zip или state .tar.gz, до 1 ГиБ",
 		KeyPanelStateUploadRestore:  "Загрузить и восстановить",
 		KeyPanelStateWhatChanges:    "Что именно заменяется",
 		KeyPanelStateWhatChangesTxt: "players/, world/ и config.lua заменяются; пароль в tes3mp-server-default.cfg и banlist.json не меняются. Моды подменяются только из ZIP. Если сервер работает, он будет перезапущен. Перед восстановлением ops создаст state-predeploy-*.",
-		KeyPanelStateCreate:         "Создать состояние",
+		KeyPanelStateCreate:         "Создать сохранение",
 		KeyPanelStateManageMods:     "Управление модами",
 		KeyPanelStateLimit:          "Записей на страницу",
-		KeyPanelStateEmpty:          "Состояний пока нет.",
-		KeyPanelStateMods:           "Моды",
-		KeyPanelStateModsMissing:    "Моды отсутствуют",
-		KeyPanelStateModsActive:     "активны",
-		KeyPanelStateModsInactive:   "не активны",
-		KeyPanelStateDownloadState:  "Скачать состояние",
+		KeyPanelStateEmpty:          "Сохранений пока нет. Создайте первое кнопкой «Создать сохранение».",
+		KeyPanelStateMods:           "Пакет модов",
+		KeyPanelStateModsMissing:    "Пакет не найден",
+		KeyPanelStateModsActive:     "активен",
+		KeyPanelStateModsInactive:   "включится при восстановлении",
+		KeyPanelStateDownloadState:  "Скачать сохранение",
+		KeyPanelStateDownloadBundle: "Сохранение и моды (.zip)",
 		KeyPanelStateDownloadMods:   "Скачать моды",
-		KeyPanelStateDeployMods:     "Задеплоить моды",
-		KeyPanelStateDeployConfirm:  "Задеплоить моды %s? Сервер будет перезапущен.",
+		KeyPanelStateDeployMods:     "Включить моды",
+		KeyPanelStateDeployConfirm:  "Включить моды %s? Сервер будет перезапущен.",
 		KeyPanelStateRestoreButton:  "Восстановить",
-		KeyPanelStateDeployFirst:    "Сначала задеплойте указанный архив модов",
+		KeyPanelStateDeployFirst:    "Архив модов не найден — восстановить нельзя",
 		KeyPanelStateOlder:          "Показать более старые",
 
 		KeyPanelModsTitle:           "Моды — tes3mp-easy",
 		KeyPanelModsEyebrow:         "Контент",
 		KeyPanelModsHeading:         "Моды",
-		KeyPanelModsLead:            "Загрузите архив модов, проверьте его и задеплойте на сервер.",
-		KeyPanelModsCurrentHeading:  "Текущий архив",
-		KeyPanelModsNotDeployed:     "Моды ещё не задеплоены.",
+		KeyPanelModsLead:            "Загрузите архив модов и включите его — или восстановите сохранение, и панель включит нужный пакет сама.",
+		KeyPanelModsCurrentHeading:  "Активный архив",
+		KeyPanelModsNotDeployed:     "Пакет модов ещё не включён.",
 		KeyPanelModsUploadHeading:   "Загрузить архив",
-		KeyPanelModsUploadHint:      "Архив до 512 MiB. После импорта его нужно задеплоить отдельно.",
+		KeyPanelModsUploadHint:      "Архив до 512 MiB. Загруженный пакет остаётся неактивным, пока вы его не включите или не восстановите сохранение с ним.",
 		KeyPanelModsFormat:          "Формат архива",
 		KeyPanelModsFormatRoot:      "В корне только <code>plugins/</code> и <code>scripts/</code>; <code>requiredDataFiles.json</code> лежит внутри <code>plugins/</code>, не в корне.",
 		KeyPanelModsFormatPlugins:   "Плагины: <code>.esp</code>, <code>.esm</code>, <code>.omwaddon</code>, <code>.omwscripts</code>, <code>.omwgame</code>. Каждый модовый плагин из JSON должен быть в <code>plugins/</code>, и наоборот (кроме трёх базовых ESM).",
@@ -951,12 +1041,14 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelModsFileLabel:       "Архив .tar.gz",
 		KeyPanelModsUpload:          "Загрузить",
 		KeyPanelModsArchivesHeading: "Архивы модов",
-		KeyPanelModsEmpty:           "Архивов модов пока нет.",
+		KeyPanelModsEmpty:           "Архивов модов пока нет. Загрузите первый архив выше.",
 		KeyPanelModsCurrentTag:      "(текущий)",
-		KeyPanelModsDeploy:          "Deploy",
-		KeyPanelModsRollbackHeading: "Откат",
-		KeyPanelModsRollbackText:    "Откат задеплоит предыдущий архив <code>%s</code>. Если сервер запущен, он будет перезапущен.",
-		KeyPanelModsRollback:        "Rollback",
+		KeyPanelModsIsCurrent:       "уже включён",
+		KeyPanelModsDownload:        "Скачать",
+		KeyPanelModsDeploy:          "Включить",
+		KeyPanelModsRollbackHeading: "Вернуть предыдущий пакет",
+		KeyPanelModsRollbackText:    "Будет включён предыдущий архив <code>%s</code>. Если сервер запущен, он будет перезапущен.",
+		KeyPanelModsRollback:        "Вернуть предыдущие",
 
 		KeyPanelConfigTitle:      "Настройки — tes3mp-easy",
 		KeyPanelConfigEyebrow:    "Конфигурация",
@@ -1014,6 +1106,7 @@ var panelCatalogs = map[Language]map[string]string{
 		KeyPanelNoticeStateDeployed:  "Состояние восстановлено.",
 		KeyPanelNoticeStateRestored:  "Состояние и моды восстановлены из загруженного архива.",
 		KeyPanelNoticeStaffSaved:     "Ранг изменён. Перезапустите сервер, чтобы применить его.",
+		KeyPanelNoticeBanSaved:       "Банлист сохранён. Перезапустите сервер, чтобы применить изменения.",
 
 		KeyPanelErrorDoctorBlocked:        "doctor нашёл ошибку; мутация заблокирована.",
 		KeyPanelErrorDoctorBlockedDetails: "doctor нашёл ошибку, мутация заблокирована: %s",

@@ -1,0 +1,228 @@
+{{define "title"}}{{.T "panel.backups.admin_title"}}{{end}}
+{{define "content"}}
+<main class="page">
+    <div class="page-head">
+      <p class="eyebrow">{{.T "panel.backups.admin_eyebrow"}}</p>
+      <h1>{{.T "panel.backups.admin_heading"}}</h1>
+      <p class="lead">{{.T "panel.backups.admin_lead"}}</p>
+    </div>
+
+    {{template "notices" .}}
+
+    <p class="toolbar">
+      <a class="button button--secondary button--small" href="#state">{{.T "panel.state.heading"}}</a>
+      <a class="button button--secondary button--small" href="#mods">{{.T "panel.mods.heading"}}</a>
+    </p>
+
+    {{with .State}}
+      <section class="card" id="state">
+        <h2>{{.T "panel.state.heading"}}</h2>
+        <p class="muted">{{.T "panel.state.lead"}}</p>
+
+        {{if .MissingMods}}
+          <p class="notice" role="status">{{.T "panel.state.missing_mods"}}</p>
+        {{else}}
+          <p class="muted">{{.THf "panel.state.current_mods" .CurrentMods}}</p>
+        {{end}}
+
+        <div class="toolbar">
+          <div class="actions">
+            <form method="post" action="/admin/state/create">
+              {{template "csrf" $}}
+              <button class="button button--primary" type="submit">{{.T "panel.state.create"}}</button>
+            </form>
+          </div>
+          <form class="field" method="get" action="/admin/backups">
+            <label for="limit">{{.T "panel.state.limit"}}</label>
+            <input id="limit" type="number" name="limit" min="1" max="500" value="{{.Limit}}">
+            <button class="button button--secondary button--small" type="submit">{{.T "panel.common.show"}}</button>
+          </form>
+        </div>
+
+        {{if .Empty}}<p class="empty-state">{{.T "panel.state.empty"}}</p>{{end}}
+
+        <div class="stack">
+          {{range .Groups}}
+            <div>
+              <h3>{{.Label}}</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{{$.T "panel.common.archive"}}</th>
+                      <th>{{$.T "panel.state.mods"}}</th>
+                      <th>{{$.T "panel.common.size"}}</th>
+                      <th>{{$.T "panel.common.date_utc"}}</th>
+                      <th>{{$.T "panel.common.actions"}}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {{range .Items}}
+                      <tr>
+                        <td>
+                          <code>{{.Name}}</code>
+                          {{if .Current}} <span class="badge" data-status="ok">{{$.T "panel.common.current"}}</span>{{end}}
+                          {{if not .ModsAvailable}} <span class="badge" data-status="warn">{{$.T "panel.state.mods_missing"}}</span>{{end}}
+                        </td>
+                        <td>
+                          {{if .ModsArchive}}
+                            <code>{{.ModsArchive}}</code>
+                            {{if .ModsCurrent}}<div class="muted">{{$.T "panel.state.mods_active"}}</div>{{else}}<div class="muted">{{$.T "panel.state.mods_inactive"}}</div>{{end}}
+                          {{else}}
+                            <span class="muted">{{$.T "panel.backups.link_unreadable"}}</span>
+                          {{end}}
+                        </td>
+                        <td>{{.SizeLabel}}</td>
+                        <td><time datetime="{{.Mtime}}">{{.MtimeLabel}}</time></td>
+                        <td>
+                          <div class="row-actions">
+                            <a class="button button--secondary button--small" href="{{.DownloadURL}}">{{$.T "panel.state.download_state"}}</a>
+                            {{if and .ModsArchive .ModsAvailable}}
+                              <a class="button button--secondary button--small" href="/backups/state/{{.Name}}/bundle">{{$.T "panel.state.download_bundle"}}</a>
+                            {{end}}
+                            <form method="post" action="/admin/state/deploy" data-confirm="{{$.Tf "panel.state.restore_row_confirm" .Name}}">
+                              {{template "csrf" $}}
+                              <input type="hidden" name="archive" value="{{.Name}}">
+                              {{if .ModsArchive}}<input type="hidden" name="mods" value="{{.ModsArchive}}">{{end}}
+                              <button class="button button--danger button--small" type="submit"{{if not .CanRestore}} disabled title="{{$.T "panel.state.deploy_first"}}"{{end}}>{{$.T "panel.state.restore_button"}}</button>
+                            </form>
+                          </div>
+                        </td>
+                      </tr>
+                    {{end}}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          {{end}}
+        </div>
+
+        {{if .NextURL}}<p class="pagination"><a class="button button--secondary" href="{{.NextURL}}">{{.T "panel.state.older"}}</a></p>{{end}}
+
+        <details class="format-hint">
+          <summary>{{.T "panel.state.restore_heading"}}</summary>
+          <p>{{.TH "panel.state.restore_hint"}}</p>
+          <form method="post" action="/admin/state/restore" enctype="multipart/form-data" data-confirm="{{.T "panel.state.restore_confirm"}}">
+            {{template "csrf" $}}
+            <div class="field">
+              <label for="restore-file">{{.T "panel.state.file_label"}}</label>
+              <input id="restore-file" type="file" name="file" accept=".zip,.tar.gz,application/zip,application/gzip" required>
+            </div>
+            <button class="button button--danger" type="submit">{{.T "panel.state.upload_restore"}}</button>
+          </form>
+          <p class="muted">{{.T "panel.state.what_changes_text"}}</p>
+        </details>
+      </section>
+    {{end}}
+
+    {{with .Mods}}
+      <section class="card" id="mods">
+        <h2>{{.T "panel.mods.heading"}}</h2>
+        <p class="muted">{{.T "panel.mods.lead"}}</p>
+
+        <div class="grid">
+          <div>
+            <h3>{{.T "panel.mods.current_heading"}}</h3>
+            {{if .Current}}
+              <dl class="meta-list">
+                <dt>{{.T "panel.common.archive"}}</dt>
+                <dd><code>{{.Current}}</code></dd>
+              </dl>
+            {{else}}
+              <p class="muted">{{.T "panel.mods.not_deployed"}}</p>
+            {{end}}
+          </div>
+
+          <div>
+            <h3>{{.T "panel.mods.upload_heading"}}</h3>
+            <p class="muted">{{.T "panel.mods.upload_hint"}}</p>
+            <form method="post" action="/admin/mods/upload" enctype="multipart/form-data">
+              {{template "csrf" $}}
+              <div class="field">
+                <label for="mods-file">{{.T "panel.mods.file_label"}}</label>
+                <input id="mods-file" type="file" name="file" accept=".tar.gz,application/gzip" required>
+              </div>
+              <button type="submit">{{.T "panel.mods.upload"}}</button>
+            </form>
+            <details class="format-hint">
+              <summary>{{.T "panel.mods.format"}}</summary>
+              <pre><code>mods.tar.gz
+├── plugins/
+│   ├── mod.esp
+│   ├── another.omwaddon
+│   └── requiredDataFiles.json
+└── scripts/
+    └── test.lua</code></pre>
+              <ul>
+                <li>{{.TH "panel.mods.format_root"}}</li>
+                <li>{{.TH "panel.mods.format_plugins"}}</li>
+                <li>{{.TH "panel.mods.format_crc"}}</li>
+                <li>{{.TH "panel.mods.format_base_esm"}}</li>
+                <li>{{.TH "panel.mods.format_scripts"}}</li>
+              </ul>
+              <p class="muted">{{.TH "panel.mods.example"}}</p>
+              <pre><code>[
+  {"Morrowind.esm": []},
+  {"Tribunal.esm": []},
+  {"Bloodmoon.esm": []},
+  {"mod.esp": ["0x1A2B3C4D"]}
+]</code></pre>
+            </details>
+          </div>
+        </div>
+
+        <h3>{{.T "panel.mods.archives_heading"}}</h3>
+        {{if .Empty}}<p class="empty-state">{{.T "panel.mods.empty"}}</p>{{end}}
+        {{if .Items}}
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>{{.T "panel.common.archive"}}</th>
+                  <th>{{.T "panel.common.size"}}</th>
+                  <th>{{.T "panel.common.date_utc"}}</th>
+                  <th>{{.T "panel.common.action"}}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .Items}}
+                  <tr>
+                    <td>
+                      <code>{{.Name}}</code>
+                      {{if .Current}}<span class="tag">{{$.T "panel.mods.current_tag"}}</span>{{end}}
+                    </td>
+                    <td>{{.SizeLabel}}</td>
+                    <td><time datetime="{{.Mtime}}">{{.MtimeLabel}}</time></td>
+                    <td>
+                      <div class="row-actions">
+                        <a class="button button--secondary button--small" href="{{.DownloadURL}}">{{$.T "panel.mods.download"}}</a>
+                        {{if .Current}}
+                          <span class="muted">{{$.T "panel.mods.is_current"}}</span>
+                        {{else}}
+                          <form method="post" action="/admin/mods/deploy">
+                            {{template "csrf" $}}
+                            <input type="hidden" name="archive" value="{{.Name}}">
+                            <button class="button button--small" type="submit">{{$.T "panel.mods.deploy"}}</button>
+                          </form>
+                        {{end}}
+                      </div>
+                    </td>
+                  </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+        {{end}}
+
+        {{if .Previous}}
+          <h3>{{.T "panel.mods.rollback_heading"}}</h3>
+          <p>{{.THf "panel.mods.rollback_text" .Previous}}</p>
+          <form method="post" action="/admin/mods/rollback">
+            {{template "csrf" $}}
+            <button class="button button--danger" type="submit">{{.T "panel.mods.rollback"}}</button>
+          </form>
+        {{end}}
+      </section>
+    {{end}}
+  </main>
+{{end}}

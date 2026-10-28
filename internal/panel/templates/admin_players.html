@@ -1,0 +1,90 @@
+{{define "title"}}{{.T "panel.players.title"}}{{end}}
+{{define "content"}}
+<main class="page">
+    <div class="page-head">
+      <p class="eyebrow">{{.T "panel.players.eyebrow"}}</p>
+      <h1>{{.T "panel.players.heading"}}</h1>
+      <p class="lead">{{.T "panel.players.lead"}}</p>
+    </div>
+
+    {{template "notices" .}}
+
+    <section class="card">
+      <h2>{{.T "panel.players.players"}}</h2>
+      {{if .Empty}}<p class="empty-state">{{.T "panel.players.empty"}}</p>{{end}}
+      {{if .Players}}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>{{.T "panel.players.player"}}</th>
+                <th>{{.T "panel.players.rank"}}</th>
+                <th>{{.T "panel.players.access"}}</th>
+                <th>{{.T "panel.players.ban"}}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{range .Players}}
+                <tr>
+                  <td>{{.Name}}{{if .Error}} <span class="tag tag--danger">{{.Error}}</span>{{end}}</td>
+                  <td>
+                    <form class="rank-actions" method="post" action="{{.RankURL}}">
+                      {{template "csrf" $}}
+                      <button type="submit" name="rank" value="0"{{if eq .Rank 0}} disabled{{end}}>0</button>
+                      <button type="submit" name="rank" value="1"{{if eq .Rank 1}} disabled{{end}}>1</button>
+                      <button type="submit" name="rank" value="2"{{if eq .Rank 2}} disabled{{end}}>2</button>
+                      <button type="submit" name="rank" value="3"{{if eq .Rank 3}} disabled{{end}}>3</button>
+                    </form>
+                  </td>
+                  <td>
+                    {{if .Banned}}
+                      <span class="badge" data-status="failed">{{$.T "panel.players.banned_tag"}}</span>
+                    {{else}}
+                      <span class="badge" data-status="ok">{{$.T "panel.players.allowed_tag"}}</span>
+                    {{end}}
+                  </td>
+                  <td>
+                    <form method="post" action="{{.BanURL}}" data-confirm="{{if .Banned}}{{$.Tf "panel.players.unban_confirm" .Name}}{{else}}{{$.Tf "panel.players.ban_confirm" .Name}}{{end}}">
+                      {{template "csrf" $}}
+                      {{if .Banned}}
+                        <input type="hidden" name="banned" value="0">
+                        <button class="button button--secondary button--small" type="submit">{{$.T "panel.players.unban"}}</button>
+                      {{else}}
+                        <input type="hidden" name="banned" value="1">
+                        <button class="button button--danger button--small" type="submit">{{$.T "panel.players.ban_action"}}</button>
+                      {{end}}
+                    </form>
+                  </td>
+                </tr>
+              {{end}}
+            </tbody>
+          </table>
+        </div>
+      {{end}}
+    </section>
+
+    <section class="card">
+      <h2>{{.T "panel.players.banlist_heading"}}</h2>
+      <p class="muted">{{.T "panel.players.banlist_hint"}}</p>
+      {{if .BanError}}<p role="alert">{{.BanError}}</p>{{end}}
+      {{if .BanListOK}}
+        <form method="post" action="/admin/players/bans">
+          {{template "csrf" .}}
+          <div class="grid">
+            <div class="config-row config-row--stack">
+              <label for="playerNames">{{.T "panel.config.banlist_names"}}</label>
+              <textarea id="playerNames" name="playerNames" rows="6">{{.BanNames}}</textarea>
+            </div>
+            <div class="config-row config-row--stack">
+              <label for="ipAddresses">{{.T "panel.config.banlist_ips"}}</label>
+              <textarea id="ipAddresses" name="ipAddresses" rows="6">{{.BanIPs}}</textarea>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="button button--primary" type="submit">{{.T "panel.players.save_bans"}}</button>
+          </div>
+        </form>
+      {{end}}
+    </section>
+  </main>
+{{end}}

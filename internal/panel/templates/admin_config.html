@@ -37,12 +37,6 @@
                   {{end}}
                 </div>
               {{end}}
-              {{range .Banlist}}
-                <div class="config-row config-row--stack">
-                  <label for="{{.Key}}">{{.Label}}</label>
-                  <textarea id="{{.Key}}" name="{{.Key}}" rows="6">{{.Value}}</textarea>
-                </div>
-              {{end}}
             </div>
             <div class="actions">
               <button class="button button--primary" type="submit" data-config-submit>{{$.T "panel.config.save"}}</button>

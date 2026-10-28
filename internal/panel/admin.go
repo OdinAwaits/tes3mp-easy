@@ -146,7 +146,6 @@ type adminModsPageData struct {
 	Current  string
 	Previous string
 	Empty    bool
-	ModsURL  string
 }
 
 type adminStatePageData struct {
@@ -155,9 +154,16 @@ type adminStatePageData struct {
 	NextURL     string
 	Empty       bool
 	Limit       int
-	ModsURL     string
 	CurrentMods string
 	MissingMods bool
+}
+
+// adminBackupsPageData renders snapshots and mod packs on one page: the two
+// used to live behind separate nav items and unclear ordering rules.
+type adminBackupsPageData struct {
+	adminPage
+	State adminStatePageData
+	Mods  adminModsPageData
 }
 
 type adminConfigPageData struct {
@@ -166,12 +172,11 @@ type adminConfigPageData struct {
 }
 
 type adminConfigSection struct {
-	File    string
-	Title   string
-	Fields  []adminConfigField
-	Banlist []adminConfigList
-	Note    string
-	Error   string
+	File   string
+	Title  string
+	Fields []adminConfigField
+	Note   string
+	Error  string
 }
 
 type adminConfigField struct {
@@ -182,23 +187,27 @@ type adminConfigField struct {
 	Checked bool
 }
 
-type adminConfigList struct {
-	Key   string
-	Label string
-	Value string
-}
-
-type adminStaffPageData struct {
+// adminPlayersPageData merges two former pages: staff ranks and the banlist.
+// Both answer the same question, "who may play on this server", so they now
+// live next to each other.
+type adminPlayersPageData struct {
 	adminPage
-	Players []adminStaffPlayer
-	Empty   bool
+	Players   []adminPlayer
+	Empty     bool
+	BanNames  string
+	BanIPs    string
+	BanError  string
+	BanListOK bool
 }
 
-type adminStaffPlayer struct {
-	Name   string
-	Rank   int
-	SetURL string
-	Error  string
+type adminPlayer struct {
+	Name    string
+	File    string
+	Rank    int
+	Banned  bool
+	RankURL string
+	BanURL  string
+	Error   string
 }
 
 var adminNoticeMessages = map[string]string{
@@ -212,10 +221,12 @@ var adminNoticeMessages = map[string]string{
 	"state_deployed":   i18n.KeyPanelNoticeStateDeployed,
 	"state_restored":   i18n.KeyPanelNoticeStateRestored,
 	"staff_saved":      i18n.KeyPanelNoticeStaffSaved,
+	"ban_saved":        i18n.KeyPanelNoticeBanSaved,
 }
 
 var adminRestartNotices = map[string]bool{
 	"staff_saved": true,
+	"ban_saved":   true,
 }
 
 func (h *panelHandler) adminPageFor(r *http.Request, session sessionState) adminPage {
@@ -626,10 +637,7 @@ func (h *panelHandler) handleLogsAPI(w http.ResponseWriter, r *http.Request, _ s
 func (h *panelHandler) modsPageData(r *http.Request,
 	session sessionState,
 ) (adminModsPageData, error) {
-	data := adminModsPageData{
-		adminPage: h.adminPageFor(r, session),
-		ModsURL:   "/admin/mods",
-	}
+	data := adminModsPageData{adminPage: h.adminPageFor(r, session)}
 	if h.ops == nil {
 		return data, errOpsUnavailable
 	}
@@ -680,16 +688,19 @@ func previousModsArchive(backups Backups) string {
 }
 
 func (h *panelHandler) handleMods(w http.ResponseWriter, r *http.Request,
-	session sessionState,
+	_ sessionState,
 ) {
-	data, err := h.modsPageData(r, session)
-	if err != nil {
-		status, message, _ := h.adminFailure(err)
-		data.Error = message
-		h.render(w, status, "admin_mods.html", data)
-		return
+	redirectPreservingQuery(w, r, "/admin/backups")
+}
+
+// redirectPreservingQuery keeps notices (ok=, restart=) and pagination on the
+// way to a merged page, so an old bookmark or a POST redirect still lands on
+// the right state of the new page.
+func redirectPreservingQuery(w http.ResponseWriter, r *http.Request, target string) {
+	if query := r.URL.RawQuery; query != "" {
+		target += "?" + query
 	}
-	h.render(w, http.StatusOK, "admin_mods.html", data)
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 func (h *panelHandler) handleModsDeploy(w http.ResponseWriter, r *http.Request,
@@ -773,10 +784,7 @@ func (h *panelHandler) renderModsFailure(w http.ResponseWriter, r *http.Request,
 	session sessionState,
 	status int, message, field string,
 ) {
-	data, _ := h.modsPageData(r, session)
-	data.Error = message
-	data.ErrorField = field
-	h.render(w, status, "admin_mods.html", data)
+	h.renderBackupsFailure(w, r, session, status, message, field)
 }
 
 func (h *panelHandler) handleModsUpload(w http.ResponseWriter, r *http.Request,
@@ -1007,7 +1015,6 @@ func (h *panelHandler) statePageData(r *http.Request, session sessionState,
 	data := adminStatePageData{
 		adminPage: h.adminPageFor(r, session),
 		Limit:     limit,
-		ModsURL:   "/admin/mods",
 	}
 	if h.ops == nil {
 		return data, errOpsUnavailable
@@ -1035,48 +1042,70 @@ func (h *panelHandler) statePageData(r *http.Request, session sessionState,
 		values := url.Values{}
 		values.Set("before", *backups.NextBefore)
 		values.Set("limit", strconv.Itoa(limit))
-		data.NextURL = "/admin/state?" + values.Encode()
+		data.NextURL = "/admin/backups?" + values.Encode()
 	}
 	return data, nil
 }
 
-func (h *panelHandler) handleState(w http.ResponseWriter, r *http.Request,
+// backupsPageData loads both halves of the merged page. A failure in one half
+// still renders the other, so a broken mods list never hides snapshots.
+func (h *panelHandler) backupsPageData(r *http.Request, session sessionState,
+	before string, limit int,
+) (adminBackupsPageData, error) {
+	state, stateErr := h.statePageData(r, session, before, limit)
+	mods, modsErr := h.modsPageData(r, session)
+	data := adminBackupsPageData{adminPage: state.adminPage, State: state, Mods: mods}
+	if stateErr != nil {
+		return data, stateErr
+	}
+	return data, modsErr
+}
+
+func (h *panelHandler) handleAdminBackups(w http.ResponseWriter, r *http.Request,
 	session sessionState,
 ) {
 	limit := adminBackupPageSize
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 || parsed > maxBackupLimit {
-			page := h.adminPageFor(r, session)
-			page.Error = h.tr().T(i18n.KeyPanelAdminLimitInvalid)
-			data := adminStatePageData{
-				adminPage: page, Limit: adminBackupPageSize,
-				ModsURL: "/admin/mods",
-			}
-			h.render(w, http.StatusBadRequest, "state.html", data)
+			data, _ := h.backupsPageData(r, session, "", adminBackupPageSize)
+			data.Error = h.tr().T(i18n.KeyPanelAdminLimitInvalid)
+			h.render(w, http.StatusBadRequest, "admin_backups.html", data)
 			return
 		}
 		limit = parsed
 	}
 	before := r.URL.Query().Get("before")
 	if before != "" && !safeArchiveName(before) {
-		page := h.adminPageFor(r, session)
-		page.Error = h.tr().T(i18n.KeyPanelAdminBeforeInvalid)
-		data := adminStatePageData{
-			adminPage: page, Limit: limit,
-			ModsURL: "/admin/mods",
-		}
-		h.render(w, http.StatusBadRequest, "state.html", data)
+		data, _ := h.backupsPageData(r, session, "", limit)
+		data.Error = h.tr().T(i18n.KeyPanelAdminBeforeInvalid)
+		h.render(w, http.StatusBadRequest, "admin_backups.html", data)
 		return
 	}
-	data, err := h.statePageData(r, session, before, limit)
+	data, err := h.backupsPageData(r, session, before, limit)
 	if err != nil {
 		status, message, _ := h.adminFailure(err)
 		data.Error = message
-		h.render(w, status, "state.html", data)
+		h.render(w, status, "admin_backups.html", data)
 		return
 	}
-	h.render(w, http.StatusOK, "state.html", data)
+	h.render(w, http.StatusOK, "admin_backups.html", data)
+}
+
+func (h *panelHandler) handleState(w http.ResponseWriter, r *http.Request,
+	_ sessionState,
+) {
+	redirectPreservingQuery(w, r, "/admin/backups")
+}
+
+func (h *panelHandler) renderBackupsFailure(w http.ResponseWriter, r *http.Request,
+	session sessionState,
+	status int, message, field string,
+) {
+	data, _ := h.backupsPageData(r, session, "", adminBackupPageSize)
+	data.Error = message
+	data.ErrorField = field
+	h.render(w, status, "admin_backups.html", data)
 }
 
 func (h *panelHandler) handleStateCreate(w http.ResponseWriter, r *http.Request,
@@ -1126,6 +1155,39 @@ func (h *panelHandler) handleStateDeploy(w http.ResponseWriter, r *http.Request,
 			h.tr().T(i18n.KeyPanelAdminStateNameInvalid), "archive")
 		return
 	}
+	// The state row sends the mod pack the snapshot was created with. If that
+	// pack is not active yet the panel deploys it first, so restoring stays a
+	// single click instead of "deploy mods, then restore".
+	mods := r.PostForm.Get("mods")
+	if mods != "" && (!safeArchiveName(mods) || archive.ValidateModsArchiveName(mods) != nil) {
+		h.renderStateFailure(w, r, session, http.StatusBadRequest,
+			h.tr().T(i18n.KeyPanelAdminModsNameInvalid), "mods")
+		return
+	}
+	if mods != "" {
+		current, listErr := h.ops.BackupsList(r.Context(), "mods", 1, "")
+		if listErr != nil {
+			status, message, field := h.adminFailure(listErr)
+			h.renderStateFailure(w, r, session, status, message, field)
+			return
+		}
+		active := ""
+		if current.Current != nil {
+			active = *current.Current
+		}
+		if active != mods {
+			deployed, deployErr := h.ops.ModsDeploy(r.Context(), mods)
+			if deployErr != nil {
+				h.logger.Printf("audit: action=mods.deploy archive=%s reason=restore result=error code=%s",
+					mods, adminErrorCode(deployErr))
+				status, message, field := h.adminFailure(deployErr)
+				h.renderStateFailure(w, r, session, status, message, field)
+				return
+			}
+			h.logger.Printf("audit: action=mods.deploy archive=%s reason=restore result=ok restarted=%t",
+				deployed.Archive, deployed.Restarted)
+		}
+	}
 	result, err := h.ops.StateDeploy(r.Context(), name)
 	if err != nil {
 		h.logger.Printf("audit: action=state.deploy archive=%s result=error code=%s",
@@ -1134,8 +1196,8 @@ func (h *panelHandler) handleStateDeploy(w http.ResponseWriter, r *http.Request,
 		h.renderStateFailure(w, r, session, status, message, field)
 		return
 	}
-	h.logger.Printf("audit: action=state.deploy archive=%s result=ok restarted=%t",
-		result.Archive, result.Restarted)
+	h.logger.Printf("audit: action=state.deploy archive=%s mods=%s result=ok restarted=%t",
+		result.Archive, mods, result.Restarted)
 	http.Redirect(w, r, "/admin/state?ok=state_deployed", http.StatusSeeOther)
 }
 
@@ -1143,10 +1205,7 @@ func (h *panelHandler) renderStateFailure(w http.ResponseWriter, r *http.Request
 	session sessionState,
 	status int, message, field string,
 ) {
-	data, _ := h.statePageData(r, session, "", adminBackupPageSize)
-	data.Error = message
-	data.ErrorField = field
-	h.render(w, status, "state.html", data)
+	h.renderBackupsFailure(w, r, session, status, message, field)
 }
 
 func (h *panelHandler) handleStateDownload(w http.ResponseWriter, r *http.Request,
@@ -1278,7 +1337,7 @@ func configFieldLabel(tr *i18n.Translator, def adminConfigFieldDef) string {
 }
 
 func (h *panelHandler) configSections(r *http.Request) ([]adminConfigSection, error) {
-	sections := make([]adminConfigSection, 0, 3)
+	sections := make([]adminConfigSection, 0, 2)
 	for _, item := range []struct {
 		file     string
 		titleKey string
@@ -1287,7 +1346,6 @@ func (h *panelHandler) configSections(r *http.Request) ([]adminConfigSection, er
 		{file: "server", titleKey: i18n.KeyPanelConfigSectionServer},
 		{file: "config", titleKey: i18n.KeyPanelConfigSectionGame,
 			noteKey: i18n.KeyPanelConfigGameNote},
-		{file: "banlist", titleKey: i18n.KeyPanelConfigSectionBanlist},
 	} {
 		snapshot, err := h.configSnapshot(r.Context(), item.file)
 		if err != nil {
@@ -1298,37 +1356,21 @@ func (h *panelHandler) configSections(r *http.Request) ([]adminConfigSection, er
 			Title: h.tr().T(item.titleKey),
 			Note:  h.tr().T(item.noteKey),
 		}
-		if item.file == "banlist" {
-			for _, list := range []struct {
-				key      string
-				labelKey string
-			}{
-				{key: "playerNames", labelKey: i18n.KeyPanelConfigBanNames},
-				{key: "ipAddresses", labelKey: i18n.KeyPanelConfigBanIPs},
-			} {
-				section.Banlist = append(section.Banlist, adminConfigList{
-					Key:   list.key,
-					Label: h.tr().T(list.labelKey),
-					Value: strings.Join(stringList(snapshot.Values[list.key]), "\n"),
-				})
+		for _, def := range adminConfigFields[item.file] {
+			value, exists := snapshot.Values[def.Key]
+			if !exists {
+				continue
 			}
-		} else {
-			for _, def := range adminConfigFields[item.file] {
-				value, exists := snapshot.Values[def.Key]
-				if !exists {
-					continue
-				}
-				field := adminConfigField{
-					Key:   def.Key,
-					Label: configFieldLabel(h.tr(), def),
-					Kind:  def.Kind,
-					Value: fmt.Sprint(value),
-				}
-				if def.Kind == "bool" {
-					field.Checked, _ = value.(bool)
-				}
-				section.Fields = append(section.Fields, field)
+			field := adminConfigField{
+				Key:   def.Key,
+				Label: configFieldLabel(h.tr(), def),
+				Kind:  def.Kind,
+				Value: fmt.Sprint(value),
 			}
+			if def.Kind == "bool" {
+				field.Checked, _ = value.(bool)
+			}
+			section.Fields = append(section.Fields, field)
 		}
 		sections = append(sections, section)
 	}
@@ -1369,7 +1411,7 @@ func (h *panelHandler) handleConfigPost(w http.ResponseWriter, r *http.Request,
 	session sessionState,
 ) {
 	file := r.PathValue("file")
-	if _, ok := adminConfigFields[file]; !ok && file != "banlist" {
+	if _, ok := adminConfigFields[file]; !ok {
 		http.NotFound(w, r)
 		return
 	}
@@ -1404,37 +1446,24 @@ func (h *panelHandler) handleConfigForm(w http.ResponseWriter, r *http.Request,
 	}
 
 	changed := make(map[string]any)
-	if file == "banlist" {
-		for _, key := range []string{"playerNames", "ipAddresses"} {
-			raw, ok := r.PostForm[key]
-			if !ok {
+	for _, def := range adminConfigFields[file] {
+		raw, ok := r.PostForm[def.Key]
+		if !ok {
+			if def.Kind == "bool" {
+				raw = []string{"false"}
+			} else {
 				continue
 			}
-			value := normalizeListValue(raw[0])
-			if strings.Join(stringList(snapshot.Values[key]), "\n") != value {
-				changed[key] = value
-			}
 		}
-	} else {
-		for _, def := range adminConfigFields[file] {
-			raw, ok := r.PostForm[def.Key]
-			if !ok {
-				if def.Kind == "bool" {
-					raw = []string{"false"}
-				} else {
-					continue
-				}
-			}
-			value, changedField, parseErr := configFormValue(def.Kind, raw[0],
-				snapshot.Values[def.Key])
-			if parseErr != nil {
-				h.renderConfigFailure(w, r, session, http.StatusBadRequest,
-					h.tr().Tf(i18n.KeyPanelAdminFieldInvalid, def.Label), def.Key)
-				return
-			}
-			if changedField {
-				changed[def.Key] = value
-			}
+		value, changedField, parseErr := configFormValue(def.Kind, raw[0],
+			snapshot.Values[def.Key])
+		if parseErr != nil {
+			h.renderConfigFailure(w, r, session, http.StatusBadRequest,
+				h.tr().Tf(i18n.KeyPanelAdminFieldInvalid, def.Label), def.Key)
+			return
+		}
+		if changedField {
+			changed[def.Key] = value
 		}
 	}
 
@@ -1529,28 +1558,221 @@ func (h *panelHandler) renderConfigFailure(w http.ResponseWriter, r *http.Reques
 				data.Sections[index].Error = item.Label
 			}
 		}
-		for _, item := range data.Sections[index].Banlist {
-			if item.Key == field {
-				data.Sections[index].Error = item.Label
-			}
-		}
 	}
 	h.render(w, status, "admin_config.html", data)
 }
 
 func (h *panelHandler) handleStaff(w http.ResponseWriter, r *http.Request,
+	_ sessionState,
+) {
+	// Kept as a redirect: staff ranks are part of the players page now.
+	redirectPreservingQuery(w, r, "/admin/players")
+}
+
+func (h *panelHandler) handlePlayers(w http.ResponseWriter, r *http.Request,
 	session sessionState,
 ) {
-	players, err := readStaffPlayers(h.tr(), h.cfg.Root)
-	data := adminStaffPageData{adminPage: h.adminPageFor(r, session), Players: players}
+	data := h.playersPageData(r, session)
+	status := http.StatusOK
+	if data.Error != "" {
+		status = http.StatusInternalServerError
+	}
+	h.render(w, status, "admin_players.html", data)
+}
+
+func (h *panelHandler) playersPageData(r *http.Request,
+	session sessionState,
+) adminPlayersPageData {
+	data := adminPlayersPageData{adminPage: h.adminPageFor(r, session)}
+	players, err := readPlayers(h.tr(), h.cfg.Root)
 	if err != nil {
-		h.logger.Printf("panel: read staff players: %v", err)
+		h.logger.Printf("panel: read players: %v", err)
 		data.Error = h.tr().T(i18n.KeyPanelAdminPlayersUnreadable)
-		h.render(w, http.StatusInternalServerError, "admin_staff.html", data)
+		return data
+	}
+	data.Players = players
+	data.Empty = len(players) == 0
+
+	if h.ops == nil {
+		data.BanError = h.tr().T(i18n.KeyPanelErrorOpsUnavailable)
+		return data
+	}
+	snapshot, err := h.configSnapshot(r.Context(), "banlist")
+	if err != nil {
+		_, message, _ := h.adminFailure(err)
+		h.logger.Printf("panel: read banlist: %v", err)
+		data.BanError = message
+		return data
+	}
+	names := stringList(snapshot.Values["playerNames"])
+	data.BanNames = strings.Join(names, "\n")
+	data.BanIPs = strings.Join(stringList(snapshot.Values["ipAddresses"]), "\n")
+	data.BanListOK = true
+	for index := range data.Players {
+		player := &data.Players[index]
+		player.Banned = containsFold(names, player.Name) || containsFold(names, player.File)
+	}
+	return data
+}
+
+func (h *panelHandler) renderPlayersFailure(w http.ResponseWriter, r *http.Request,
+	session sessionState,
+	status int, message, field string,
+) {
+	data := h.playersPageData(r, session)
+	data.Error = message
+	data.ErrorField = field
+	h.render(w, status, "admin_players.html", data)
+}
+
+// handlePlayersBans saves the banlist form as a whole, exactly like the
+// settings page: only changed keys are written.
+func (h *panelHandler) handlePlayersBans(w http.ResponseWriter, r *http.Request,
+	session sessionState,
+) {
+	if h.ops == nil {
+		status, message, _ := h.adminFailure(errOpsUnavailable)
+		h.renderPlayersFailure(w, r, session, status, message, "")
 		return
 	}
-	data.Empty = len(players) == 0
-	h.render(w, http.StatusOK, "admin_staff.html", data)
+	if blocked, message := h.doctorMutationError(r.Context()); blocked {
+		h.renderPlayersFailure(w, r, session, http.StatusServiceUnavailable, message, "")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxConfigFormBytes)
+	if err := r.ParseForm(); err != nil {
+		h.renderPlayersFailure(w, r, session, http.StatusBadRequest,
+			h.tr().T(i18n.KeyPanelErrorBadForm), "")
+		return
+	}
+	snapshot, err := h.configSnapshot(r.Context(), "banlist")
+	if err != nil {
+		status, message, _ := h.adminFailure(err)
+		h.renderPlayersFailure(w, r, session, status, message, "")
+		return
+	}
+	keys, err := h.saveBanlist(w, r, session, snapshot,
+		[]string{"playerNames", "ipAddresses"})
+	if err != nil {
+		return
+	}
+	if len(keys) == 0 {
+		data := h.playersPageData(r, session)
+		data.Notice = h.tr().T(i18n.KeyPanelCommonNoChanges)
+		h.render(w, http.StatusOK, "admin_players.html", data)
+		return
+	}
+	http.Redirect(w, r, "/admin/players?ok=ban_saved&restart=1", http.StatusSeeOther)
+}
+
+// handlePlayerBan toggles one name in the banlist. It writes the whole
+// playerNames list because `config set` replaces the value of a key.
+func (h *panelHandler) handlePlayerBan(w http.ResponseWriter, r *http.Request,
+	session sessionState,
+) {
+	player := r.PathValue("player")
+	if !validPlayerName(player) {
+		h.renderPlayersFailure(w, r, session, http.StatusBadRequest,
+			h.tr().T(i18n.KeyPanelAdminPlayerInvalid), "player")
+		return
+	}
+	if h.ops == nil {
+		status, message, _ := h.adminFailure(errOpsUnavailable)
+		h.renderPlayersFailure(w, r, session, status, message, "")
+		return
+	}
+	if blocked, message := h.doctorMutationError(r.Context()); blocked {
+		h.renderPlayersFailure(w, r, session, http.StatusServiceUnavailable, message, "")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		h.renderPlayersFailure(w, r, session, http.StatusBadRequest,
+			h.tr().T(i18n.KeyPanelErrorBadForm), "")
+		return
+	}
+	banned := r.PostForm.Get("banned") == "1"
+	snapshot, err := h.configSnapshot(r.Context(), "banlist")
+	if err != nil {
+		status, message, _ := h.adminFailure(err)
+		h.renderPlayersFailure(w, r, session, status, message, "")
+		return
+	}
+	names := stringList(snapshot.Values["playerNames"])
+	next := make([]string, 0, len(names)+1)
+	for _, name := range names {
+		if !strings.EqualFold(name, player) {
+			next = append(next, name)
+		}
+	}
+	if banned {
+		next = append(next, player)
+	}
+	if strings.Join(next, "\n") == strings.Join(names, "\n") {
+		redirectPreservingQuery(w, r, "/admin/players")
+		return
+	}
+	if err := h.ops.ConfigSet(r.Context(), "banlist", "playerNames",
+		strings.Join(next, "\n")); err != nil {
+		status, message, field := h.adminFailure(err)
+		if field == "" {
+			field = "playerNames"
+		}
+		h.logger.Printf("audit: action=player.ban player=%s banned=%t result=error code=%s",
+			player, banned, adminErrorCode(err))
+		h.renderPlayersFailure(w, r, session, status, message, field)
+		return
+	}
+	h.logger.Printf("audit: action=player.ban player=%s banned=%t result=ok", player, banned)
+	http.Redirect(w, r, "/admin/players?ok=ban_saved&restart=1", http.StatusSeeOther)
+}
+
+// saveBanlist writes the posted banlist keys that actually changed. It renders
+// the failure page itself, so callers only have to stop on a non-nil error.
+func (h *panelHandler) saveBanlist(w http.ResponseWriter, r *http.Request,
+	session sessionState, snapshot ConfigSnapshot, keys []string,
+) ([]string, error) {
+	changed := make(map[string]string)
+	for _, key := range keys {
+		raw, ok := r.PostForm[key]
+		if !ok {
+			continue
+		}
+		value := normalizeListValue(raw[0])
+		if strings.Join(stringList(snapshot.Values[key]), "\n") != value {
+			changed[key] = value
+		}
+	}
+	names := make([]string, 0, len(changed))
+	for key := range changed {
+		names = append(names, key)
+	}
+	sort.Strings(names)
+	for _, key := range names {
+		if err := h.ops.ConfigSet(r.Context(), "banlist", key, changed[key]); err != nil {
+			status, message, field := h.adminFailure(err)
+			if field == "" {
+				field = key
+			}
+			h.logger.Printf("audit: action=config.set file=banlist key=%s result=error code=%s",
+				key, adminErrorCode(err))
+			h.renderPlayersFailure(w, r, session, status, message, field)
+			return nil, err
+		}
+		h.logger.Printf("audit: action=config.set file=banlist key=%s result=ok", key)
+	}
+	return names, nil
+}
+
+func containsFold(list []string, value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, item := range list {
+		if strings.EqualFold(item, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *panelHandler) handleStaffSet(w http.ResponseWriter, r *http.Request,
@@ -1590,22 +1812,14 @@ func (h *panelHandler) handleStaffSet(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	h.logger.Printf("audit: action=staff.set player=%s rank=%d result=ok", player, rank)
-	http.Redirect(w, r, "/admin/staff?ok=staff_saved&restart=1", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/players?ok=staff_saved&restart=1", http.StatusSeeOther)
 }
 
 func (h *panelHandler) renderStaffFailure(w http.ResponseWriter, r *http.Request,
 	session sessionState,
 	status int, message, field string,
 ) {
-	players, _ := readStaffPlayers(h.tr(), h.cfg.Root)
-	data := adminStaffPageData{
-		adminPage: h.adminPageFor(r, session),
-		Players:   players,
-		Empty:     len(players) == 0,
-	}
-	data.Error = message
-	data.ErrorField = field
-	h.render(w, status, "admin_staff.html", data)
+	h.renderPlayersFailure(w, r, session, status, message, field)
 }
 
 func validPlayerName(name string) bool {
@@ -1618,16 +1832,16 @@ func validPlayerName(name string) bool {
 	return true
 }
 
-func readStaffPlayers(tr *i18n.Translator, root string) ([]adminStaffPlayer, error) {
+func readPlayers(tr *i18n.Translator, root string) ([]adminPlayer, error) {
 	dir := filepath.Join(root, "players")
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
-		return []adminStaffPlayer{}, nil
+		return []adminPlayer{}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	players := make([]adminStaffPlayer, 0, len(entries))
+	players := make([]adminPlayer, 0, len(entries))
 	for _, entry := range entries {
 		if len(players) >= maxStaffPlayers {
 			break
@@ -1653,10 +1867,12 @@ func readStaffPlayers(tr *i18n.Translator, root string) ([]adminStaffPlayer, err
 			} `json:"settings"`
 		}
 		fileBase := strings.TrimSuffix(name, ".json")
-		player := adminStaffPlayer{
-			Name:   fileBase,
-			Rank:   -1,
-			SetURL: "/admin/staff/" + url.PathEscape(fileBase),
+		player := adminPlayer{
+			Name:    fileBase,
+			File:    fileBase,
+			Rank:    -1,
+			RankURL: "/admin/staff/" + url.PathEscape(fileBase),
+			BanURL:  "/admin/players/" + url.PathEscape(fileBase) + "/ban",
 		}
 		if err := json.Unmarshal(data, &raw); err != nil {
 			player.Error = tr.T(i18n.KeyPanelStaffBadJSON)

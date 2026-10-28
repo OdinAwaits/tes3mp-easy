@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -55,6 +56,7 @@ type fakeAdminOps struct {
 	backups    map[string]Backups
 	backupsErr error
 	lastBefore string
+	befores    []string
 
 	backup    Backup
 	backupErr error
@@ -136,6 +138,7 @@ func (f *fakeAdminOps) BackupsList(_ context.Context, typ string, _ int,
 	before string,
 ) (Backups, error) {
 	f.lastBefore = before
+	f.befores = append(f.befores, before)
 	return f.backups[typ], f.backupsErr
 }
 
@@ -588,22 +591,23 @@ func TestAdminModsPageDeployAndRollback(t *testing.T) {
 	env := newAdminTestEnv(t, opsClient)
 	writeTestCurrentMods(t, env.cfg.Root, []byte("current"))
 
-	rec := env.request(t, http.MethodGet, "/admin/mods", nil)
+	rec := env.request(t, http.MethodGet, "/admin/backups", nil)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /admin/mods = %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("GET /admin/backups = %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
 		"mods-2026-10-23_12-00-00.tar.gz", "mods-2026-10-22_12-00-00.tar.gz",
-		"Rollback", "multipart/form-data", "Archive layout",
+		"Restore previous", "multipart/form-data", "Archive layout",
 		"requiredDataFiles.json", "Morrowind.esm", "scripts/",
+		"/admin/mods/download/mods-2026-10-22_12-00-00.tar.gz",
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("mods page does not contain %q:\n%s", want, body)
+			t.Fatalf("backups page does not contain %q:\n%s", want, body)
 		}
 	}
 	if strings.Contains(body, "sha256") {
-		t.Fatalf("mods page still shows sha256:\n%s", body)
+		t.Fatalf("backups page still shows sha256:\n%s", body)
 	}
 
 	rec = env.request(t, http.MethodPost, "/admin/mods/deploy",
@@ -767,9 +771,9 @@ func TestAdminStatePageGroupsAndValidatesInput(t *testing.T) {
 			"mods":  modsBackupsFixture(),
 		},
 	})
-	rec := env.request(t, http.MethodGet, "/admin/state", nil)
+	rec := env.request(t, http.MethodGet, "/admin/backups", nil)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /admin/state = %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("GET /admin/backups = %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
@@ -778,30 +782,33 @@ func TestAdminStatePageGroupsAndValidatesInput(t *testing.T) {
 		"Show older", "state-2026-10-20_12-00-00.tar.gz",
 		"Restore from a downloaded archive", "/admin/state/restore",
 		"enctype=\"multipart/form-data\"",
+		"/backups/state/state-manual-2026-10-23_12-00-00.tar.gz/bundle",
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("state page does not contain %q:\n%s", want, body)
+			t.Fatalf("backups page does not contain %q:\n%s", want, body)
 		}
 	}
-	if got := strings.Count(body, "Download mods"); got != 2 {
-		t.Fatalf("mods download links = %d, want 2 (missing archive hidden):\n%s",
-			got, body)
+	if got := strings.Count(body, "/bundle"); got != 2 {
+		t.Fatalf("bundle links = %d, want 2 (missing pack hidden):\n%s", got, body)
+	}
+	if strings.Contains(body, "/admin/mods/deploy\" data-confirm") {
+		t.Fatalf("state rows still carry a separate mods deploy button:\n%s", body)
 	}
 
-	rec = env.request(t, http.MethodGet, "/admin/state?before=../bad.tar.gz", nil)
+	rec = env.request(t, http.MethodGet, "/admin/backups?before=../bad.tar.gz", nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("unsafe before = %d, want 400", rec.Code)
 	}
-	rec = env.request(t, http.MethodGet, "/admin/state?limit=999", nil)
+	rec = env.request(t, http.MethodGet, "/admin/backups?limit=999", nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("invalid limit = %d, want 400", rec.Code)
 	}
 
 	rec = env.request(t, http.MethodGet,
-		"/admin/state?before=state-2026-10-20_12-00-00.tar.gz", nil)
+		"/admin/backups?before=state-2026-10-20_12-00-00.tar.gz", nil)
 	if rec.Code != http.StatusOK ||
-		env.ops.lastBefore != "state-2026-10-20_12-00-00.tar.gz" {
-		t.Fatalf("before was not forwarded: %d %q", rec.Code, env.ops.lastBefore)
+		!slices.Contains(env.ops.befores, "state-2026-10-20_12-00-00.tar.gz") {
+		t.Fatalf("before was not forwarded: %d %v", rec.Code, env.ops.befores)
 	}
 }
 
@@ -831,6 +838,43 @@ func TestAdminStateCreateAndDeploy(t *testing.T) {
 		url.Values{"archive": {"mods-2026-10-23_12-00-00.tar.gz"}})
 	if rec.Code != http.StatusBadRequest || len(env.ops.deploys) != 0 {
 		t.Fatalf("foreign archive = %d calls=%+v", rec.Code, env.ops.deploys)
+	}
+
+	// The snapshot row also sends its mod pack: another active pack is replaced
+	// before the state is deployed, so one click is enough.
+	otherPack := "mods-2026-10-22_12-00-00.tar.gz"
+	env.ops.backups["mods"] = Backups{Type: "mods", Current: &otherPack}
+	env.ops.deploys = nil
+	rec = env.request(t, http.MethodPost, "/admin/state/deploy", url.Values{
+		"archive": {"state-manual-2026-10-23_12-00-00.tar.gz"},
+		"mods":    {"mods-2026-10-23_12-00-00.tar.gz"},
+	})
+	if rec.Code != http.StatusSeeOther || len(env.ops.deploys) != 2 ||
+		env.ops.deploys[0].kind != "mods" || env.ops.deploys[1].kind != "state" {
+		t.Fatalf("restore with mods = %d calls=%+v", rec.Code, env.ops.deploys)
+	}
+
+	// A failed pack deploy must stop before the state is touched.
+	env.ops.deploys = nil
+	env.ops.deployErr = adminError(ops.CodeNoSpace, ops.ExitNoSpace,
+		"not enough space for mods", nil)
+	rec = env.request(t, http.MethodPost, "/admin/state/deploy", url.Values{
+		"archive": {"state-manual-2026-10-23_12-00-00.tar.gz"},
+		"mods":    {"mods-2026-10-23_12-00-00.tar.gz"},
+	})
+	if rec.Code != http.StatusInsufficientStorage || len(env.ops.deploys) != 1 {
+		t.Fatalf("mods failure = %d calls=%+v", rec.Code, env.ops.deploys)
+	}
+	env.ops.deployErr = nil
+
+	// An unsafe hidden field is rejected before any mutation.
+	env.ops.deploys = nil
+	rec = env.request(t, http.MethodPost, "/admin/state/deploy", url.Values{
+		"archive": {"state-manual-2026-10-23_12-00-00.tar.gz"},
+		"mods":    {"../mods-2026-10-23_12-00-00.tar.gz"},
+	})
+	if rec.Code != http.StatusBadRequest || len(env.ops.deploys) != 0 {
+		t.Fatalf("unsafe mods field = %d calls=%+v", rec.Code, env.ops.deploys)
 	}
 }
 
@@ -885,11 +929,17 @@ func TestAdminConfigPageAndSave(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"Morrowind with friends", "loginTime", "playerNames", "Trouble Maker",
-		`action="/admin/config/config"`, `action="/admin/config/banlist"`,
+		"Morrowind with friends", "loginTime",
+		`action="/admin/config/config"`, `action="/admin/config/server"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("config page does not contain %q:\n%s", want, body)
+		}
+	}
+	// The banlist moved to the players page; settings no longer show it.
+	for _, unwanted := range []string{"playerNames", `action="/admin/config/banlist"`} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("config page still contains %q:\n%s", unwanted, body)
 		}
 	}
 }
@@ -975,25 +1025,32 @@ func TestAdminStaffListsPlayersAndSetsRank(t *testing.T) {
 	writePlayerFile(t, env.cfg.Root, "Broken", `{not json`)
 
 	rec := env.request(t, http.MethodGet, "/admin/staff", nil)
+	if rec.Code != http.StatusSeeOther ||
+		rec.Header().Get("Location") != "/admin/players" {
+		t.Fatalf("GET /admin/staff = %d %q, want a redirect to /admin/players",
+			rec.Code, rec.Header().Get("Location"))
+	}
+
+	rec = env.request(t, http.MethodGet, "/admin/players", nil)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /admin/staff = %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("GET /admin/players = %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
 	for _, want := range []string{"John Doe", "Jane", "broken JSON"} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("staff page does not contain %q:\n%s", want, body)
+			t.Fatalf("players page does not contain %q:\n%s", want, body)
 		}
 	}
 	for _, unwanted := range []string{"<th>Ранг</th>", "0 — игрок", "2 — админ"} {
 		if strings.Contains(body, unwanted) {
-			t.Fatalf("staff page still contains %q:\n%s", unwanted, body)
+			t.Fatalf("players page still contains %q:\n%s", unwanted, body)
 		}
 	}
 
 	rec = env.request(t, http.MethodPost, "/admin/staff/John%20Doe",
 		url.Values{"rank": {"3"}})
 	if rec.Code != http.StatusSeeOther ||
-		rec.Header().Get("Location") != "/admin/staff?ok=staff_saved&restart=1" {
+		rec.Header().Get("Location") != "/admin/players?ok=staff_saved&restart=1" {
 		t.Fatalf("staff set = %d %q: %s", rec.Code,
 			rec.Header().Get("Location"), rec.Body.String())
 	}
@@ -1009,7 +1066,7 @@ func TestAdminStaffListsPlayersAndSetsRank(t *testing.T) {
 	}
 
 	rec = env.request(t, http.MethodGet,
-		"/admin/staff?ok=staff_saved&restart=1", nil)
+		"/admin/players?ok=staff_saved&restart=1", nil)
 	if rec.Code != http.StatusOK ||
 		!strings.Contains(rec.Body.String(), "Restart the server to apply the changes.") {
 		t.Fatalf("staff restart banner = %d: %s", rec.Code, rec.Body.String())
@@ -1041,5 +1098,37 @@ func TestAdminMutatingPageRequiresLogin(t *testing.T) {
 	}
 	if env.ops.created {
 		t.Fatal("anonymous mutation reached ops")
+	}
+}
+
+func TestMergedAdminPagesRedirectOldBookmarks(t *testing.T) {
+	env := newAdminTestEnv(t, &fakeAdminOps{
+		backups: map[string]Backups{
+			"state": stateBackupsFixture(),
+			"mods":  modsBackupsFixture(),
+		},
+	})
+	tests := []struct {
+		path string
+		want string
+	}{
+		{path: "/admin/state", want: "/admin/backups"},
+		{path: "/admin/state?ok=backup_created", want: "/admin/backups?ok=backup_created"},
+		{path: "/admin/state?before=x.tar.gz&limit=10",
+			want: "/admin/backups?before=x.tar.gz&limit=10"},
+		{path: "/admin/mods?ok=mods_uploaded", want: "/admin/backups?ok=mods_uploaded"},
+		{path: "/admin/staff", want: "/admin/players"},
+		{path: "/admin/staff?ok=staff_saved&restart=1",
+			want: "/admin/players?ok=staff_saved&restart=1"},
+	}
+	for _, tt := range tests {
+		rec := env.request(t, http.MethodGet, tt.path, nil)
+		if rec.Code != http.StatusSeeOther {
+			t.Errorf("GET %s = %d, want 303", tt.path, rec.Code)
+			continue
+		}
+		if got := rec.Header().Get("Location"); got != tt.want {
+			t.Errorf("GET %s -> %q, want %q", tt.path, got, tt.want)
+		}
 	}
 }

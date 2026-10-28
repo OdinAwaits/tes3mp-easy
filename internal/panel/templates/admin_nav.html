@@ -6,12 +6,11 @@
   </a>
   <nav class="nav" aria-label="{{.T "panel.nav.admin_sections"}}">
     <a href="/admin"{{if eq .ActiveNav "dashboard"}} aria-current="page"{{end}}>{{.T "panel.nav.dashboard"}}</a>
+    <a href="/admin/backups"{{if eq .ActiveNav "backups"}} aria-current="page"{{end}}>{{.T "panel.nav.backups"}}</a>
     <a href="/admin/logs"{{if eq .ActiveNav "logs"}} aria-current="page"{{end}}>{{.T "panel.nav.logs"}}</a>
-    <a href="/admin/mods"{{if eq .ActiveNav "mods"}} aria-current="page"{{end}}>{{.T "panel.nav.mods"}}</a>
-    <a href="/admin/state"{{if eq .ActiveNav "state"}} aria-current="page"{{end}}>{{.T "panel.nav.state"}}</a>
     <a href="/admin/config"{{if eq .ActiveNav "config"}} aria-current="page"{{end}}>{{.T "panel.nav.config"}}</a>
-    <a href="/admin/staff"{{if eq .ActiveNav "staff"}} aria-current="page"{{end}}>{{.T "panel.nav.staff"}}</a>
-    <a href="/backups" target="_blank" rel="noopener">{{.T "panel.nav.public_archives"}}</a>
+    <a href="/admin/players"{{if eq .ActiveNav "players"}} aria-current="page"{{end}}>{{.T "panel.nav.players"}}</a>
+    <a href="/backups" target="_blank" rel="noopener">{{.T "panel.nav.public_archives"}} ↗</a>
   </nav>
   <details class="account">
     <summary class="button button--ghost button--small">{{.T "panel.nav.language"}}</summary>

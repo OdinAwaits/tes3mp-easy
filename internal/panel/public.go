@@ -143,7 +143,10 @@ func archiveItems(tr *i18n.Translator, items []BackupItem, typ string, opt archi
 				}
 			}
 		}
-		view.CanRestore = opt.Admin && typ == "state" && view.ModsAvailable && view.ModsCurrent
+		// Restoring a state is always possible when its mod pack is still on
+		// disk: the panel enables the pack first (see handleStateDeploy), so the
+		// operator no longer has to deploy mods manually before restoring.
+		view.CanRestore = opt.Admin && typ == "state" && view.ModsAvailable
 		views = append(views, view)
 	}
 	return views
@@ -443,6 +446,9 @@ func (h *panelHandler) renderBackups(w http.ResponseWriter, status int, data bac
 	if data.Limit == 0 {
 		data.Limit = defaultBackupLimit
 	}
+	// Public archives are meant to be downloadable, not indexed: a search
+	// engine must not keep copies of a world that changes every day.
+	w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 	h.render(w, status, "backups.html", data)
 }
 
