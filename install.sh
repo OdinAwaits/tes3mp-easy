@@ -23,7 +23,7 @@ fail() {
     exit 1
 }
 
-for tool in curl tar sha256sum mktemp grep; do
+for tool in curl tar sha256sum mktemp grep sed sort; do
     command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
 done
 
@@ -32,7 +32,15 @@ fetch_json() {
 }
 
 server_asset() {
-    printf '%s\n' "$1" | grep -oE "$SERVER_ASSET" | head -n 1 || true
+    local urls
+    urls=$(printf '%s\n' "$1" | grep -oE "$SERVER_ASSET" | sed 's/"$//' || true)
+    [[ -n $urls ]] || return 0
+    # The release list order is not guaranteed, so pick the highest version.
+    printf '%s\n' "$urls" |
+        sed -E 's#.*/tes3mp-easy-(.*)-linux-amd64\.tar\.gz#\1 &#' |
+        sort -V -k1,1 |
+        tail -n 1 |
+        cut -d' ' -f2-
 }
 
 asset_url=""
@@ -64,7 +72,6 @@ else
         fail "no server release found in $RELEASES_API; set TES3MP_EASY_VERSION to a server release"
     fi
 fi
-asset_url=${asset_url%\"}
 
 archive_name=${asset_url##*/}
 release_name=${archive_name%.tar.gz}

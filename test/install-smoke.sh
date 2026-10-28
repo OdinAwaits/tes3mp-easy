@@ -60,8 +60,9 @@ cat >"$fixture/release.json" <<JSON
 }
 JSON
 
-# A client release is newer than the server one: the installer must skip it and
-# pick the newest server archive from the list.
+# A client release is newer than the server one and an older server release is
+# listed first: the installer must pick the highest server version and skip the
+# client archives.
 cat >"$fixture/releases.json" <<JSON
 [
   {
@@ -74,6 +75,15 @@ cat >"$fixture/releases.json" <<JSON
       {
         "name": "tes3mp-easy-client-9.9.10-windows-amd64.zip",
         "browser_download_url": "https://example.test/tes3mp-easy-client-9.9.10-windows-amd64.zip"
+      }
+    ]
+  },
+  {
+    "tag_name": "server-v9.9.7",
+    "assets": [
+      {
+        "name": "tes3mp-easy-9.9.7-linux-amd64.tar.gz",
+        "browser_download_url": "https://example.test/tes3mp-easy-9.9.7-linux-amd64.tar.gz"
       }
     ]
   },
