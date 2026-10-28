@@ -1064,8 +1064,8 @@ git tag -a server-v0.3.1 -m "tes3mp-easy server 0.3.1"
 git push origin server-v0.3.1
 
 # клиентский релиз
-git tag -a client-v0.2.7 -m "tes3mp-easy client 0.2.7"
-git push origin client-v0.2.7
+git tag -a client-v0.2.8 -m "tes3mp-easy client 0.2.8"
+git push origin client-v0.2.8
 ```
 
 - Версию подставляет workflow через `-ldflags -X
