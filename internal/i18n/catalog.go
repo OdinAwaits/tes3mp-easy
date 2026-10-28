@@ -152,6 +152,8 @@ const (
 	KeyServerAlreadyStarting = "server.already_starting"
 	KeyServerAlreadyRunning  = "server.already_running"
 
+	KeyServerMorrowindRequired = "server.morrowind_required"
+
 	KeyServerMore            = "server.more"
 	KeyServerActionsTitle    = "server.actions.title"
 	KeyServerOpenPanel       = "server.open_panel"
@@ -283,8 +285,11 @@ const (
 	KeySetupFind                = "setup.find"
 	KeySetupChoose              = "setup.choose"
 	KeySetupCheck               = "setup.check"
+	KeySetupSearching           = "setup.searching"
+	KeySetupChecking            = "setup.checking"
 	KeySetupMorrowindReady      = "setup.morrowind.ready"
 	KeySetupMorrowindIncomplete = "setup.morrowind.incomplete"
+	KeySetupMorrowindNotFound   = "setup.morrowind.not_found"
 	KeySetupTES3MP              = "setup.tes3mp"
 	KeySetupTES3MPReady         = "setup.tes3mp.ready"
 	KeySetupTES3MPOutdated      = "setup.tes3mp.outdated"
@@ -473,6 +478,8 @@ var catalogs = map[Language]map[string]string{
 		KeyServerAlreadyStarting: "TES3MP is already starting. Wait until the game window appears.",
 		KeyServerAlreadyRunning:  "TES3MP is already running. Close the game before starting it again.",
 
+		KeyServerMorrowindRequired: "Choose the Morrowind folder on the Installation screen to play.",
+
 		KeyServerMore:            "More",
 		KeyServerActionsTitle:    "Server actions",
 		KeyServerOpenPanel:       "Open panel",
@@ -604,8 +611,11 @@ var catalogs = map[Language]map[string]string{
 		KeySetupFind:                "Find automatically",
 		KeySetupChoose:              "Choose folder",
 		KeySetupCheck:               "Check files",
+		KeySetupSearching:           "Looking for Morrowind...",
+		KeySetupChecking:            "Checking the folder...",
 		KeySetupMorrowindReady:      "Morrowind is ready: %s",
 		KeySetupMorrowindIncomplete: "Cannot use this folder: %s",
+		KeySetupMorrowindNotFound:   "Morrowind was not found. Choose the game folder, or continue without it.",
 		KeySetupTES3MP:              "TES3MP %s",
 		KeySetupTES3MPReady:         "TES3MP %s is installed.",
 		KeySetupTES3MPOutdated:      "TES3MP %s is installed, but %s is required.",
@@ -792,6 +802,8 @@ var catalogs = map[Language]map[string]string{
 		KeyServerAlreadyStarting: "TES3MP уже запускается. Дождитесь появления окна игры.",
 		KeyServerAlreadyRunning:  "TES3MP уже запущен. Закройте игру, чтобы запустить её снова.",
 
+		KeyServerMorrowindRequired: "Укажите папку Morrowind на экране «Установка», чтобы играть.",
+
 		KeyServerMore:            "Ещё",
 		KeyServerActionsTitle:    "Действия с сервером",
 		KeyServerOpenPanel:       "Открыть панель",
@@ -923,8 +935,11 @@ var catalogs = map[Language]map[string]string{
 		KeySetupFind:                "Найти автоматически",
 		KeySetupChoose:              "Выбрать папку",
 		KeySetupCheck:               "Проверить файлы",
+		KeySetupSearching:           "Ищу Morrowind...",
+		KeySetupChecking:            "Проверяю папку...",
 		KeySetupMorrowindReady:      "Morrowind готов: %s",
 		KeySetupMorrowindIncomplete: "Нельзя использовать эту папку: %s",
+		KeySetupMorrowindNotFound:   "Morrowind не найден. Выберите папку с игрой или продолжите без неё.",
 		KeySetupTES3MP:              "TES3MP %s",
 		KeySetupTES3MPReady:         "TES3MP %s установлен.",
 		KeySetupTES3MPOutdated:      "Установлен TES3MP %s, нужен %s.",

@@ -1,7 +1,20 @@
 # BL-004. Morrowind: отсутствие, поиск и проверка без «ошибки»
 
-**Статус:** новое (28.10.2026), не начато. Включает BL-014 («Найти
-автоматически» и «Проверить файлы»: нет обратной связи).
+**Статус:** сделано (28.10.2026). Пустой автопоиск — предупреждение, а не ошибка:
+`morrowindFailure` (`internal/ui/wizard.go`) различает `morrowind.ErrNotFound` /
+`app.ErrMorrowindNotConfigured` (короткая строка «Morrowind не найден…»,
+проверенные пути в `problem` без кода и без «Повторить») и остальные случаи
+(`ErrIncomplete`, ошибки записи — прежний `T3E-…` с Retry). `canAdvance()` шага
+Morrowind — `true`, путь, набранный вручную, сохраняется при переходе дальше
+(`keepMorrowindPath`). Обратная связь: статусы «Ищу Morrowind…» / «Проверяю
+папку…», `widget.ProgressBarInfinite` в подвале мастера (`beginBusy`/`endBusy`),
+три кнопки шага блокируются на время работы (`morrowindActions`). «Играть» без
+игры ведёт в «Установку» с уведомлением (`showInstallFix`,
+`KeyServerMorrowindRequired`) до скачивания модов; `app.Launch` проверяет
+Morrowind раньше модов; на «Установке» появилась «Найти автоматически»
+(`findMorrowind`) и `ErrNotFound` показывается как «папка не выбрана». Тесты:
+`internal/ui/wizard_test.go` (пять случаев), `TestPlayWithoutMorrowindSendsToInstallation`,
+`TestInstallationMorrowindRowOffersFind`.
 
 **Симптом.**
 

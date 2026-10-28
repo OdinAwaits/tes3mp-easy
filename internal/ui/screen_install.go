@@ -16,6 +16,7 @@ import (
 
 	"github.com/Saagilat/tes3mp-easy/internal/app"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
+	"github.com/Saagilat/tes3mp-easy/internal/morrowind"
 	"github.com/Saagilat/tes3mp-easy/internal/tes3mp"
 	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
 )
@@ -61,6 +62,7 @@ func (s *shell) installScreen(tr *i18n.Translator) fyne.CanvasObject {
 
 	rows := container.NewVBox(
 		installRow(tr.T(i18n.KeyInstallMorrowind), morrowindState,
+			widget.NewButton(tr.T(i18n.KeySetupFind), s.findMorrowind),
 			widget.NewButton(tr.T(i18n.KeyInstallChangeFolder), func() {
 				s.openWizard(wizardMorrowind)
 			}),
@@ -180,7 +182,9 @@ func (s *shell) morrowindStatus(tr *i18n.Translator) installStatus {
 			summary:    tr.Tf(i18n.KeySetupMorrowindReady, installation.Root),
 			importance: widget.SuccessImportance,
 		}
-	case errors.Is(err, app.ErrMorrowindNotConfigured):
+	case errors.Is(err, app.ErrMorrowindNotConfigured),
+		errors.Is(err, morrowind.ErrNotFound):
+		// Nothing is broken: the row only waits for a folder.
 		return installStatus{
 			summary:    tr.T(i18n.KeyInstallMorrowindMissing),
 			importance: widget.WarningImportance,
@@ -396,6 +400,35 @@ func (s *shell) saveSettings(settings app.Settings) {
 		return
 	}
 	s.showScreen(screenInstall)
+}
+
+// findMorrowind runs the same search as the wizard, but from the checklist:
+// the row stays visible, so the result is reported in place.
+func (s *shell) findMorrowind() {
+	tr := s.service.Translator()
+	status := widget.NewLabel(tr.T(i18n.KeySetupSearching))
+	status.Wrapping = fyne.TextWrapWord
+	spinner := widget.NewProgressBarInfinite()
+	popup := dialog.NewCustom(tr.T(i18n.KeySetupFind),
+		tr.T(i18n.KeyCommonClose), container.NewVBox(status, spinner), s.window)
+	popup.Resize(fyne.NewSize(520, 160))
+	popup.Show()
+
+	go func() {
+		installation, err := s.service.DetectMorrowind()
+		fyne.Do(func() {
+			popup.Hide()
+			s.showScreen(screenInstall)
+			if err != nil {
+				s.service.LogError("detect Morrowind", err)
+				s.showNotice(tr.T(i18n.KeySetupFind),
+					tr.T(i18n.KeySetupMorrowindNotFound), nil)
+				return
+			}
+			s.showNotice(tr.T(i18n.KeySetupFind),
+				tr.Tf(i18n.KeySetupMorrowindReady, installation.Root), nil)
+		})
+	}()
 }
 
 func (s *shell) tes3mpInstalled() bool {

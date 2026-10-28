@@ -14,6 +14,7 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 	"github.com/Saagilat/tes3mp-easy/internal/mods"
+	"github.com/Saagilat/tes3mp-easy/internal/morrowind"
 )
 
 // playServer is the single primary action of a server card. It downloads or
@@ -26,6 +27,13 @@ func (s *shell) playServer(profile config.Server) {
 	if _, running := s.service.GameRunning(); running {
 		s.showNotice(tr.T(i18n.KeyCommonPlay),
 			tr.T(i18n.KeyServerAlreadyRunning), nil)
+		return
+	}
+	// The game folder is checked before mods are downloaded: a machine without
+	// Morrowind must not spend a gigabyte of traffic to learn that it cannot
+	// start, and the fix lives on the Installation screen.
+	if _, err := s.service.CheckMorrowind(""); err != nil {
+		s.showInstallFix(err)
 		return
 	}
 	if err := s.service.SetActiveServer(profile.ID); err != nil {
@@ -85,6 +93,9 @@ func (s *shell) playServer(profile config.Server) {
 		if err != nil {
 			fyne.Do(func() {
 				popup.Hide()
+				if s.showInstallFix(err) {
+					return
+				}
 				if notice, refused := launchRefusal(tr, err); refused {
 					s.showNotice(tr.T(i18n.KeyCommonPlay), notice, nil)
 					s.render()
@@ -127,6 +138,22 @@ func launchRefusal(tr *i18n.Translator, err error) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// showInstallFix sends a launch that lacks the game folder to the screen where
+// it is fixed. It reports true when the error was this case, so the caller can
+// skip an error dialog that would only repeat the same launch.
+func (s *shell) showInstallFix(err error) bool {
+	if !errors.Is(err, app.ErrMorrowindNotConfigured) &&
+		!errors.Is(err, morrowind.ErrNotFound) &&
+		!errors.Is(err, morrowind.ErrIncomplete) {
+		return false
+	}
+	tr := s.service.Translator()
+	s.showScreen(screenInstall)
+	s.showNotice(tr.T(i18n.KeyInstallTitle),
+		tr.T(i18n.KeyServerMorrowindRequired), nil)
+	return true
 }
 
 // beginPlay marks a profile as launching. It reports false when the profile is

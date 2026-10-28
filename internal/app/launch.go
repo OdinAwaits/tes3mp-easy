@@ -107,6 +107,12 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 	if err != nil {
 		return launcher.Result{}, err
 	}
+	// The game folder is checked before the mod state: a broken configuration
+	// must not be reported as "mods are not installed".
+	cfg := s.Config()
+	if cfg.MorrowindPath == "" {
+		return launcher.Result{}, ErrMorrowindNotConfigured
+	}
 	modsState, err := mods.Inspect(workDir, serverID)
 	if err != nil {
 		return launcher.Result{}, err
@@ -114,10 +120,6 @@ func (s *Service) Launch(ctx context.Context, serverID string) (launcher.Result,
 	if !modsState.Installed {
 		return launcher.Result{}, fmt.Errorf(
 			"%w; update mods before launching", ErrModsNotInstalled)
-	}
-	cfg := s.Config()
-	if cfg.MorrowindPath == "" {
-		return launcher.Result{}, ErrMorrowindNotConfigured
 	}
 	warnings := []string{}
 	localization, inspectErr := locale.Inspect(workDir)

@@ -458,6 +458,51 @@ func TestMissingLanguagePackIsNeutral(t *testing.T) {
 	}
 }
 
+// TestInstallationMorrowindRowOffersFind keeps the search where the user looks
+// for a problem: the row that says "no folder" owns the action that finds one.
+func TestInstallationMorrowindRowOffersFind(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	tr := s.service.Translator()
+
+	buttons := []string{}
+	walkObjects(s.installScreen(tr), func(item fyne.CanvasObject) {
+		if button, ok := item.(*widget.Button); ok {
+			buttons = append(buttons, button.Text)
+		}
+	})
+	for _, want := range []string{tr.T(i18n.KeySetupFind),
+		tr.T(i18n.KeyInstallChangeFolder)} {
+		found := false
+		for _, text := range buttons {
+			if text == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("the Morrowind row has no %q button (has %v)", want, buttons)
+		}
+	}
+}
+
+// TestPlayWithoutMorrowindSendsToInstallation replaces the old error dialog:
+// Play without the game opens the checklist and starts nothing.
+func TestPlayWithoutMorrowindSendsToInstallation(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+
+	s.playServer(config.Server{ID: "example.com_25565", Address: "example.com",
+		Port: 25565})
+
+	if s.screen != screenInstall {
+		t.Fatalf("Play without Morrowind opened %q, want %q", s.screen, screenInstall)
+	}
+	if len(s.playing) != 0 {
+		t.Fatalf("Play without Morrowind started work for %v", s.playing)
+	}
+}
+
 func TestShowScreenFallsBackToPlay(t *testing.T) {
 	s := testShell(t)
 	defer s.window.Close()

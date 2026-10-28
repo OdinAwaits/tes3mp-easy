@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"fyne.io/fyne/v2"
@@ -9,7 +10,9 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/Saagilat/tes3mp-easy/internal/app"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
+	"github.com/Saagilat/tes3mp-easy/internal/morrowind"
 	"github.com/Saagilat/tes3mp-easy/internal/openmwcfg"
 	"github.com/Saagilat/tes3mp-easy/internal/tes3mp"
 	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
@@ -41,9 +44,17 @@ type setupWizard struct {
 	locked      bool
 	retryAction func()
 
+	// spinner runs while a check or a download is in flight: the disk scans
+	// take seconds and the screen used to look frozen.
+	spinner *widget.ProgressBarInfinite
+	// morrowindActions are the three folder buttons of the first step. They are
+	// disabled while a search runs, so a second click cannot queue another scan.
+	morrowindActions []fyne.Disableable
+
 	morrowind          *widget.Entry
 	morrowindStatus    *widget.Label
 	morrowindReady     bool
+	morrowindMissing   bool
 	morrowindAttempted bool
 
 	tes3mpStatus   *widget.Label
@@ -104,9 +115,11 @@ func (s *shell) openWizard(step wizardStep) {
 
 	problemRow := container.NewBorder(nil, nil, nil, w.retry, w.problem)
 	footer := container.NewBorder(nil, nil, w.back, w.next)
+	w.spinner = widget.NewProgressBarInfinite()
+	w.spinner.Hide()
 	content := container.NewBorder(
 		container.NewVBox(w.title, w.stepNo),
-		container.NewVBox(problemRow, footer),
+		container.NewVBox(w.spinner, problemRow, footer),
 		nil, nil,
 		container.NewVScroll(w.body),
 	)
@@ -168,15 +181,20 @@ func wizardHint(tr *i18n.Translator, key string) *widget.Label {
 func (w *setupWizard) morrowindObjects(tr *i18n.Translator) []fyne.CanvasObject {
 	w.morrowindStatus = widget.NewLabel("")
 	w.morrowindStatus.Wrapping = fyne.TextWrapWord
-	if w.morrowindReady {
+	switch {
+	case w.morrowindReady:
 		w.morrowindStatus.SetText(tr.Tf(i18n.KeySetupMorrowindReady,
 			w.morrowind.Text))
+	case w.morrowindMissing:
+		w.morrowindStatus.Importance = widget.WarningImportance
+		w.morrowindStatus.SetText(tr.T(i18n.KeySetupMorrowindNotFound))
 	}
 	find := widget.NewButton(tr.T(i18n.KeySetupFind), w.detectMorrowind)
 	choose := widget.NewButton(tr.T(i18n.KeySetupChoose), w.chooseMorrowind)
 	check := widget.NewButton(tr.T(i18n.KeySetupCheck), func() {
 		w.checkMorrowind(w.morrowind.Text)
 	})
+	w.morrowindActions = []fyne.Disableable{find, choose, check}
 	return []fyne.CanvasObject{
 		wizardHint(tr, i18n.KeyWizardMorrowindHint),
 		w.morrowind,
@@ -315,7 +333,9 @@ func (w *setupWizard) updateButtons() {
 func (w *setupWizard) canAdvance() bool {
 	switch w.step {
 	case wizardMorrowind:
-		return w.morrowindReady
+		// Not blocking: a machine without the game still gets a working client,
+		// and the missing folder is reported as a warning on Installation.
+		return true
 	case wizardTES3MP:
 		return w.tes3mpReady
 	case wizardUIVideo:
@@ -343,6 +363,7 @@ func (w *setupWizard) advance() {
 	}
 	switch w.step {
 	case wizardMorrowind:
+		w.keepMorrowindPath()
 		w.gotoStep(wizardTES3MP)
 	case wizardTES3MP:
 		w.gotoStep(wizardFonts)
@@ -395,13 +416,75 @@ func (w *setupWizard) beginBusy() bool {
 		return false
 	}
 	w.busy = true
+	w.setActionsEnabled(false)
+	if w.spinner != nil {
+		w.spinner.Show()
+	}
 	w.updateButtons()
 	return true
 }
 
 func (w *setupWizard) endBusy() {
 	w.busy = false
+	w.setActionsEnabled(true)
+	if w.spinner != nil {
+		w.spinner.Hide()
+	}
 	w.updateButtons()
+}
+
+// setActionsEnabled moves the step buttons with the busy flag. Without it a
+// second click on "Find" was dropped silently, which looked like a dead button.
+func (w *setupWizard) setActionsEnabled(enabled bool) {
+	for _, action := range w.morrowindActions {
+		if enabled {
+			action.Enable()
+			continue
+		}
+		action.Disable()
+	}
+}
+
+// setMorrowindStatus writes the one-line progress or verdict of the step and
+// drops the warning colour, so a retried search does not look like a failure.
+func (w *setupWizard) setMorrowindStatus(text string, importance widget.Importance) {
+	if w.morrowindStatus == nil {
+		return
+	}
+	w.morrowindStatus.Importance = importance
+	w.morrowindStatus.SetText(text)
+}
+
+// morrowindFailure splits an empty search from a real problem. A machine
+// without the game is not broken: the status asks for the folder and the
+// details (which paths were checked) stay below without a code or a Retry.
+// A folder the user pointed at deserves the full T3E-ENV-01 block.
+func (w *setupWizard) morrowindFailure(err error, retry func()) {
+	w.morrowindReady = false
+	w.morrowindMissing = errors.Is(err, morrowind.ErrNotFound) ||
+		errors.Is(err, app.ErrMorrowindNotConfigured)
+	if w.morrowindMissing {
+		w.setMorrowindStatus(w.shell.service.Translator().T(
+			i18n.KeySetupMorrowindNotFound), widget.WarningImportance)
+		w.setProblemDetail(err)
+		return
+	}
+	w.setProblem(err, retry)
+}
+
+// keepMorrowindPath stores what the user typed before leaving the step: the
+// field is only saved after a successful check, and the first step must not
+// silently drop a path just because it was not checked.
+func (w *setupWizard) keepMorrowindPath() {
+	value := strings.TrimSpace(w.morrowind.Text)
+	if value == "" || value == strings.TrimSpace(w.shell.service.Config().MorrowindPath) {
+		return
+	}
+	settings := w.shell.settings()
+	settings.MorrowindPath = value
+	if err := w.shell.service.UpdateSettings(settings); err != nil {
+		w.shell.service.LogError("save Morrowind folder", err)
+	}
 }
 
 func (w *setupWizard) setProblem(err error, retry func()) {
@@ -414,6 +497,22 @@ func (w *setupWizard) setProblem(err error, retry func()) {
 	if retry != nil {
 		w.retry.Show()
 	} else {
+		w.retry.Hide()
+	}
+	w.updateButtons()
+}
+
+// setProblemDetail shows only the checked paths. The status line already says
+// what to do, an empty search has nothing to retry, and a T3E code would claim
+// a failure where the user only has to pick a folder.
+func (w *setupWizard) setProblemDetail(err error) {
+	if w.problem == nil {
+		return
+	}
+	w.retryAction = nil
+	w.problem.SetText(err.Error())
+	w.problem.Show()
+	if w.retry != nil {
 		w.retry.Hide()
 	}
 	w.updateButtons()
@@ -460,23 +559,24 @@ func (w *setupWizard) detectMorrowind() {
 	}
 	tr := w.shell.service.Translator()
 	status := w.morrowindStatus
+	if status != nil {
+		status.SetText(tr.T(i18n.KeySetupSearching))
+	}
 	go func() {
 		installation, err := w.shell.service.DetectMorrowind()
 		fyne.Do(func() {
 			w.endBusy()
 			if err != nil {
-				w.morrowindReady = false
 				w.shell.service.LogError("detect Morrowind", err)
-				w.setProblem(err, w.detectMorrowind)
+				w.morrowindFailure(err, w.detectMorrowind)
 				return
 			}
 			w.morrowind.SetText(installation.Root)
 			w.morrowindReady = true
+			w.morrowindMissing = false
 			w.clearProblem()
-			if status != nil {
-				status.SetText(tr.Tf(i18n.KeySetupMorrowindReady,
-					installation.Root))
-			}
+			w.setMorrowindStatus(tr.Tf(i18n.KeySetupMorrowindReady,
+				installation.Root), widget.MediumImportance)
 			w.updateButtons()
 		})
 	}()
@@ -497,14 +597,16 @@ func (w *setupWizard) checkMorrowind(path string) {
 	tr := w.shell.service.Translator()
 	status := w.morrowindStatus
 	value := strings.TrimSpace(path)
+	if status != nil {
+		status.SetText(tr.T(i18n.KeySetupChecking))
+	}
 	go func() {
 		installation, err := w.shell.service.CheckMorrowind(value)
 		fyne.Do(func() {
 			w.endBusy()
 			if err != nil {
-				w.morrowindReady = false
 				w.shell.service.LogError("check Morrowind", err)
-				w.setProblem(err, func() { w.checkMorrowind(value) })
+				w.morrowindFailure(err, func() { w.checkMorrowind(value) })
 				return
 			}
 			settings := w.shell.settings()
@@ -516,8 +618,10 @@ func (w *setupWizard) checkMorrowind(path string) {
 			}
 			w.morrowind.SetText(installation.Root)
 			w.morrowindReady = true
+			w.morrowindMissing = false
 			w.clearProblem()
 			if status != nil {
+				status.Importance = widget.MediumImportance
 				status.SetText(tr.Tf(i18n.KeySetupMorrowindReady,
 					installation.Root))
 			}
