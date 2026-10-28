@@ -8,7 +8,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -26,20 +25,22 @@ func (s *shell) playScreen(tr *i18n.Translator) fyne.CanvasObject {
 	if len(s.service.Config().Servers) == 0 {
 		return container.NewVBox(header, s.serverList(tr, s.service.Config()))
 	}
-	add := s.addServerButton(tr)
+	add := s.addServerButton(tr, false)
 	headerRow := container.NewBorder(nil, nil, nil,
 		container.NewCenter(add), header)
 	return container.NewVBox(headerRow,
 		s.serverList(tr, s.service.Config()))
 }
 
-func (s *shell) addServerButton(tr *i18n.Translator) *widget.Button {
-	add := widget.NewButtonWithIcon(tr.T(i18n.KeyCommonAdd),
-		theme.ContentAddIcon(), func() {
-			s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
-		})
-	add.Importance = widget.HighImportance
-	return add
+func (s *shell) addServerButton(tr *i18n.Translator, primary bool) *widget.Button {
+	tapped := func() {
+		s.showServerDialog("", config.Server{Port: config.DefaultServerPort})
+	}
+	text := tr.T(i18n.KeyCommonAdd)
+	if primary {
+		return style.PrimaryIconButton(text, theme.ContentAddIcon(), tapped)
+	}
+	return style.SecondaryIconButton(text, theme.ContentAddIcon(), tapped)
 }
 
 func (s *shell) serverList(tr *i18n.Translator, cfg config.Config) fyne.CanvasObject {
@@ -49,7 +50,7 @@ func (s *shell) serverList(tr *i18n.Translator, cfg config.Config) fyne.CanvasOb
 		content := container.NewVBox(
 			title,
 			hint,
-			container.NewCenter(s.addServerButton(tr)),
+			container.NewCenter(s.addServerButton(tr, true)),
 		)
 		return container.NewCenter(style.Card(content, true))
 	}
@@ -89,29 +90,34 @@ func (s *shell) serverCard(tr *i18n.Translator, activeID string,
 	if state, err := s.service.ModsState(profile.ID); err == nil {
 		modsInstalled = state.Installed
 	}
-	play := widget.NewButtonWithIcon(
+	play := style.PrimaryIconButton(
 		playButtonLabel(tr, modsInstalled, s.statusFor(profile.ID).NeedsUpdate),
 		theme.MediaPlayIcon(),
 		func() { s.playServer(profile) },
 	)
-	play.Importance = widget.HighImportance
 	if _, running := s.service.GameRunning(); running {
 		play.Disable()
 	}
-	more := widget.NewButton(tr.T(i18n.KeyServerMore), func() {
-		s.showServerActions(profile)
-	})
+	more := style.SecondaryIconButton(tr.T(i18n.KeyServerMore),
+		theme.MoreHorizontalIcon(), func() {
+			s.showServerActions(profile)
+		})
 
-	var panel fyne.CanvasObject = layout.NewSpacer()
+	var panel fyne.CanvasObject
 	if effective := profile.EffectivePanelURL(); effective != "" {
 		if parsed, err := url.Parse(effective); err == nil {
-			link := widget.NewHyperlink(tr.T(i18n.KeyServerPanel)+" · "+parsed.Host, parsed)
-			panel = link
+			panel = widget.NewHyperlink(tr.T(i18n.KeyServerPanel)+" · "+parsed.Host, parsed)
 		}
 	}
+	actions := []fyne.CanvasObject{
+		container.NewCenter(play), container.NewCenter(more),
+	}
+	if panel != nil {
+		actions = append([]fyne.CanvasObject{panel}, actions...)
+	}
 
-	details := container.NewBorder(nil, nil, nil, container.NewHBox(panel, play, more),
-		container.NewVBox(address, statusLabel))
+	details := container.NewBorder(nil, nil, nil,
+		container.NewHBox(actions...), container.NewVBox(address, statusLabel))
 	content := container.NewVBox(title, details)
 	s.checkServer(profile, statusLabel, play, modsInstalled)
 	return style.Card(content, active)

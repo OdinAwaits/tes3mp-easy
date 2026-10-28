@@ -226,3 +226,93 @@ func CenteredMutedLabel(text string) *widget.Label {
 	label.Alignment = fyne.TextAlignCenter
 	return label
 }
+
+// PrimaryButton is the one accent action of a zone: Play on a server card, Run
+// wizard on Installation, Save in a dialog. Two of them on one screen means the
+// zone is wrong.
+func PrimaryButton(text string, tapped func()) *widget.Button {
+	return button(text, nil, tapped, widget.HighImportance)
+}
+
+// PrimaryIconButton is PrimaryButton with a leading icon.
+func PrimaryIconButton(text string, icon fyne.Resource, tapped func()) *widget.Button {
+	return button(text, icon, tapped, widget.HighImportance)
+}
+
+// SecondaryButton is a row action: it stays visible without competing with the
+// accent action of the screen.
+func SecondaryButton(text string, tapped func()) *widget.Button {
+	return button(text, nil, tapped, widget.MediumImportance)
+}
+
+// SecondaryIconButton is SecondaryButton with a leading icon. Fyne 2.8 has no
+// tooltip widget, so an icon never replaces the label: it only precedes it.
+func SecondaryIconButton(text string, icon fyne.Resource, tapped func()) *widget.Button {
+	return button(text, icon, tapped, widget.MediumImportance)
+}
+
+// QuietButton is for the third level: actions inside a row that is already
+// busy, and dismissals that must not attract the eye.
+func QuietButton(text string, tapped func()) *widget.Button {
+	return button(text, nil, tapped, widget.LowImportance)
+}
+
+// DangerButton is reserved for the danger zone: deleting client data.
+func DangerButton(text string, tapped func()) *widget.Button {
+	return button(text, nil, tapped, widget.DangerImportance)
+}
+
+// button keeps the shared metrics: the theme owns the height and the radius,
+// the alignment stays centered so a leading icon does not shift the label.
+func button(text string, icon fyne.Resource, tapped func(),
+	importance widget.Importance,
+) *widget.Button {
+	control := widget.NewButtonWithIcon(text, icon, tapped)
+	control.Importance = importance
+	control.Alignment = widget.ButtonAlignCenter
+	return control
+}
+
+// Badge is a short state label with a tinted rounded background, so it reads as
+// a mark instead of a random coloured line of text.
+func Badge(text string, importance widget.Importance) fyne.CanvasObject {
+	surface := canvas.NewRectangle(badgeFill(importance))
+	surface.CornerRadius = 10
+	label := widget.NewLabel(text)
+	label.TextStyle = fyne.TextStyle{Bold: true}
+	label.Importance = badgeText(importance)
+	return container.NewStack(surface, container.NewPadded(label))
+}
+
+// badgeText reuses the label importance so the text colour follows the theme.
+func badgeText(importance widget.Importance) widget.Importance {
+	switch importance {
+	case widget.SuccessImportance, widget.WarningImportance,
+		widget.DangerImportance:
+		return importance
+	default:
+		return widget.MediumImportance
+	}
+}
+
+// badgeFill is the matching theme colour with a low alpha: the tint stays quiet
+// on both themes and never hides the text.
+func badgeFill(importance widget.Importance) color.Color {
+	name := fyne.ThemeColorName(theme.ColorNamePrimary)
+	switch importance {
+	case widget.SuccessImportance:
+		name = theme.ColorNameSuccess
+	case widget.WarningImportance:
+		name = theme.ColorNameWarning
+	case widget.DangerImportance:
+		name = theme.ColorNameError
+	case widget.LowImportance:
+		name = theme.ColorNameDisabled
+	}
+	value, ok := theme.Color(name).(color.NRGBA)
+	if !ok {
+		return theme.Color(name)
+	}
+	value.A = 0x33
+	return value
+}

@@ -28,9 +28,8 @@ func (s *shell) diagnosticsScreen(tr *i18n.Translator) fyne.CanvasObject {
 		diagnosticLine(tr.T(i18n.KeyInstallFonts), s.fontsStatus(tr)),
 		diagnosticLine(tr.T(i18n.KeyInstallLanguage), s.localizationStatus(tr)),
 	)
-	copyReport := widget.NewButtonWithIcon(tr.T(i18n.KeyDiagnosticsCopyReport),
+	copyReport := style.PrimaryIconButton(tr.T(i18n.KeyDiagnosticsCopyReport),
 		theme.ContentCopyIcon(), s.copyReport)
-	copyReport.Importance = widget.HighImportance
 	report := style.Card(container.NewVBox(
 		style.Subheading(tr.T(i18n.KeyDiagnosticsReport)),
 		style.MutedLabel(tr.T(i18n.KeyDiagnosticsReportHint)),

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
@@ -500,6 +501,80 @@ func TestPlayWithoutMorrowindSendsToInstallation(t *testing.T) {
 	}
 	if len(s.playing) != 0 {
 		t.Fatalf("Play without Morrowind started work for %v", s.playing)
+	}
+}
+
+// TestScreenAccentBudget keeps one accent action per zone: the screen action
+// (Run wizard, Copy report) and one Play per server card. Row actions are
+// secondary, so a checklist does not look like ten primary buttons.
+func TestScreenAccentBudget(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	tr := s.service.Translator()
+	for _, profile := range []config.Server{
+		{Address: "203.0.113.10", Port: 25565, Name: "One"},
+		{Address: "play.example.org", Port: 25570, Name: "Two"},
+	} {
+		if _, err := s.service.SaveServer("", profile); err != nil {
+			t.Fatalf("SaveServer: %v", err)
+		}
+	}
+
+	for _, screen := range []struct {
+		name  string
+		want  int
+		build func() fyne.CanvasObject
+	}{
+		{name: "installation", want: 1, build: func() fyne.CanvasObject {
+			return s.installScreen(tr)
+		}},
+		{name: "play", want: 2, build: func() fyne.CanvasObject {
+			return s.playScreen(tr)
+		}},
+		{name: "diagnostics", want: 1, build: func() fyne.CanvasObject {
+			return s.diagnosticsScreen(tr)
+		}},
+		{name: "about", want: 0, build: func() fyne.CanvasObject {
+			return s.aboutScreen(tr)
+		}},
+	} {
+		accent := 0
+		walkObjects(screen.build(), func(item fyne.CanvasObject) {
+			button, ok := item.(*widget.Button)
+			if ok && button.Importance == widget.HighImportance {
+				accent++
+			}
+		})
+		if accent != screen.want {
+			t.Errorf("%s has %d accent buttons, want %d", screen.name, accent,
+				screen.want)
+		}
+	}
+}
+
+// TestInstallationIsOneCard keeps the checklist as one surface with separators:
+// five separate cards pushed the screen past one window height and read as five
+// unrelated blocks.
+func TestInstallationIsOneCard(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+
+	cards, separators := 0, 0
+	walkObjects(s.installScreen(s.service.Translator()), func(item fyne.CanvasObject) {
+		if rect, ok := item.(*canvas.Rectangle); ok && rect.CornerRadius >= 12 {
+			cards++
+		}
+		if _, ok := item.(*widget.Separator); ok {
+			separators++
+		}
+	})
+	if cards != 1 {
+		t.Fatalf("installation has %d cards, want 1", cards)
+	}
+	// Five rows need four separators; the Advanced accordion adds its own.
+	if separators < 4 {
+		t.Fatalf("installation has %d separators, want at least 4 between rows",
+			separators)
 	}
 }
 

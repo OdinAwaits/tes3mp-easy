@@ -63,17 +63,17 @@ func (s *shell) aboutScreen(tr *i18n.Translator) fyne.CanvasObject {
 		container.NewGridWithColumns(2, application, components))
 }
 
-// aboutLine is a name/detail pair with an optional trailing control.
+// aboutLine is a name/detail pair with an optional trailing control. The
+// control is centered because a Border slot hands it the full row height, and a
+// two-line detail used to stretch a badge or a button into a coloured block.
 func aboutLine(name, detail string, trailing fyne.CanvasObject) fyne.CanvasObject {
 	text := container.NewVBox(widget.NewLabel(name), style.MutedLabel(detail))
 	if trailing == nil {
 		return text
 	}
-	return container.NewBorder(nil, nil, nil, trailing, text)
+	return container.NewBorder(nil, nil, nil, container.NewCenter(trailing), text)
 }
 
-func aboutBadge(text string, importance widget.Importance) *widget.Label {
-	badge := widget.NewLabel(text)
-	badge.Importance = importance
-	return badge
+func aboutBadge(text string, importance widget.Importance) fyne.CanvasObject {
+	return style.Badge(text, importance)
 }

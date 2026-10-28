@@ -6,7 +6,10 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 )
 
 func TestThemeForForcesVariant(t *testing.T) {
@@ -134,6 +137,45 @@ func TestThemeControlMetrics(t *testing.T) {
 		}
 		if icon := th.Size(theme.SizeNameInlineIcon); icon > 18 {
 			t.Errorf("%s inline icon = %.0f, want <= 18", mode, icon)
+		}
+	}
+}
+
+func TestBadgeIsATintedMark(t *testing.T) {
+	test.NewApp()
+
+	badge := Badge("Ready", widget.SuccessImportance)
+	if height := badge.MinSize().Height; height < 20 {
+		t.Fatalf("badge height = %.0f, want a padded mark", height)
+	}
+	tinted := false
+	walkObjects(badge, func(object fyne.CanvasObject) {
+		rect, ok := object.(*canvas.Rectangle)
+		if !ok {
+			return
+		}
+		if rect.CornerRadius < 8 {
+			t.Errorf("badge radius = %.0f, want a rounded mark", rect.CornerRadius)
+		}
+		fill, ok := rect.FillColor.(color.NRGBA)
+		if !ok {
+			t.Fatalf("badge fill is not NRGBA")
+		}
+		if fill.A != 0x33 {
+			t.Errorf("badge fill alpha = %#x, want a 0x33 tint", fill.A)
+		}
+		tinted = true
+	})
+	if !tinted {
+		t.Fatal("badge has no background")
+	}
+}
+
+func walkObjects(root fyne.CanvasObject, visit func(fyne.CanvasObject)) {
+	visit(root)
+	if container, ok := root.(*fyne.Container); ok {
+		for _, child := range container.Objects {
+			walkObjects(child, visit)
 		}
 	}
 }

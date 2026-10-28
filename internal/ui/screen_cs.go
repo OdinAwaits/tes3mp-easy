@@ -39,16 +39,15 @@ func (s *shell) editorScreen(tr *i18n.Translator) fyne.CanvasObject {
 		}
 	}
 
-	launch := widget.NewButtonWithIcon(tr.T(i18n.KeyCSLaunch),
+	launch := style.PrimaryIconButton(tr.T(i18n.KeyCSLaunch),
 		theme.MediaPlayIcon(), func() {
 			s.launchEditor(profile.ID)
 		})
-	launch.Importance = widget.HighImportance
-	checkAgain := widget.NewButtonWithIcon(tr.T(i18n.KeyCSCheckAgain),
+	checkAgain := style.SecondaryIconButton(tr.T(i18n.KeyCSCheckAgain),
 		theme.ViewRefreshIcon(), func() {
 			s.showScreen(screenCS)
 		})
-	openFolder := widget.NewButtonWithIcon(tr.T(i18n.KeyCSOpenFolder),
+	openFolder := style.SecondaryIconButton(tr.T(i18n.KeyCSOpenFolder),
 		theme.FolderOpenIcon(), func() {
 			s.openFolder(filepath.Dir(state.Path))
 		})

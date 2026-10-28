@@ -40,43 +40,49 @@ func (s *shell) installScreen(tr *i18n.Translator) fyne.CanvasObject {
 	localizationState := s.localizationStatus(tr)
 	uiVideoState := s.uiVideoStatus(tr)
 
-	runWizard := widget.NewButtonWithIcon(tr.T(i18n.KeyInstallRunWizard),
+	runWizard := style.PrimaryIconButton(tr.T(i18n.KeyInstallRunWizard),
 		theme.DocumentCreateIcon(), s.showSetup)
-	runWizard.Importance = widget.HighImportance
 
-	tes3mpInstall := tr.T(i18n.KeyInstallInstall)
+	es3mpInstall := tr.T(i18n.KeyInstallInstall)
 	if s.tes3mpInstalled() {
-		tes3mpInstall = tr.T(i18n.KeyInstallReinstall)
+		es3mpInstall = tr.T(i18n.KeyInstallReinstall)
 	}
 
 	languageActions := []fyne.CanvasObject{
-		widget.NewButton(tr.T(i18n.KeyLocaleInstall), s.showLanguageDialog),
+		style.SecondaryButton(tr.T(i18n.KeyLocaleInstall), s.showLanguageDialog),
 	}
 	if s.localizationInstalled() {
 		languageActions = []fyne.CanvasObject{
-			widget.NewButton(tr.T(i18n.KeyLocaleChange), s.showLanguageDialog),
-			widget.NewButton(tr.T(i18n.KeyLanguageWizardRemove),
+			style.SecondaryButton(tr.T(i18n.KeyLocaleChange), s.showLanguageDialog),
+			style.SecondaryButton(tr.T(i18n.KeyLanguageWizardRemove),
 				s.removeLocalization),
 		}
 	}
 
-	rows := container.NewVBox(
+	rows := []fyne.CanvasObject{
 		installRow(tr.T(i18n.KeyInstallMorrowind), morrowindState,
-			widget.NewButton(tr.T(i18n.KeySetupFind), s.findMorrowind),
-			widget.NewButton(tr.T(i18n.KeyInstallChangeFolder), func() {
+			style.SecondaryButton(tr.T(i18n.KeySetupFind), s.findMorrowind),
+			style.SecondaryButton(tr.T(i18n.KeyInstallChangeFolder), func() {
 				s.openWizard(wizardMorrowind)
 			}),
 		),
 		installRow(tr.Tf(i18n.KeySetupTES3MP, tes3mp.Version), tes3mpState,
-			widget.NewButton(tes3mpInstall, s.installTES3MPFromList),
+			style.SecondaryButton(es3mpInstall, s.installTES3MPFromList),
 		),
 		s.fontsRow(tr),
 		installRow(tr.T(i18n.KeyInstallLanguage), localizationState,
 			languageActions...),
 		installRow(tr.T(i18n.KeyInstallUIVideo), uiVideoState,
-			widget.NewButton(tr.T(i18n.KeyInstallUIVideoConfigure),
+			style.SecondaryButton(tr.T(i18n.KeyInstallUIVideoConfigure),
 				s.showUIVideoDialog)),
-	)
+	}
+	content := make([]fyne.CanvasObject, 0, len(rows)*2)
+	for index, row := range rows {
+		if index > 0 {
+			content = append(content, widget.NewSeparator())
+		}
+		content = append(content, row)
+	}
 
 	header := container.NewVBox(
 		style.Heading(tr.T(i18n.KeyInstallTitle)),
@@ -85,7 +91,7 @@ func (s *shell) installScreen(tr *i18n.Translator) fyne.CanvasObject {
 	)
 	return container.NewVBox(
 		header,
-		rows,
+		style.Card(container.NewVBox(content...), false),
 		s.installationAdvanced(tr),
 		s.installationDangerZone(tr),
 	)
@@ -124,26 +130,29 @@ func (s *shell) fontsRow(tr *i18n.Translator) fyne.CanvasObject {
 
 	var actions []fyne.CanvasObject
 	if state.downloading {
-		actions = append(actions, widget.NewButton(tr.T(i18n.KeyFontsCancel),
+		actions = append(actions, style.SecondaryButton(tr.T(i18n.KeyFontsCancel),
 			s.cancelFontDownload))
 	} else {
 		actions = append(actions,
-			widget.NewButton(tr.T(i18n.KeyFontsSetChange),
+			style.SecondaryButton(tr.T(i18n.KeyFontsSetChange),
 				s.showFontsDialog))
 		switch {
 		case state.err != nil, state.canceled:
-			actions = append(actions, widget.NewButton(tr.T(i18n.KeyFontsRetry),
+			actions = append(actions, style.SecondaryButton(tr.T(i18n.KeyFontsRetry),
 				s.startFontDownload))
 		case !s.fontsInstalled():
-			actions = append(actions, widget.NewButton(tr.T(i18n.KeyInstallInstall),
+			actions = append(actions, style.SecondaryButton(tr.T(i18n.KeyInstallInstall),
 				s.startFontDownload))
 		}
 	}
 	return installRow(tr.T(i18n.KeyInstallFonts), status, actions...)
 }
 
-// installRow renders one checklist line: title and status on the left, actions
-// on the right.
+// installRow renders one line of the checklist: the actions sit next to the
+// title, the status and the details stay under it. Keeping the buttons in the
+// right slot of the whole row left a field of empty space between the text and
+// the buttons on a wide window. The rows share one card; installScreen adds the
+// separators.
 func installRow(title string, status installStatus,
 	actions ...fyne.CanvasObject,
 ) fyne.CanvasObject {
@@ -151,7 +160,12 @@ func installRow(title string, status installStatus,
 	summary.Wrapping = fyne.TextWrapWord
 	summary.Importance = status.importance
 
-	lines := []fyne.CanvasObject{style.Subheading(title), summary}
+	titleRow := fyne.CanvasObject(style.Subheading(title))
+	if len(actions) > 0 {
+		titleRow = container.NewBorder(nil, nil, nil,
+			container.NewHBox(actions...), titleRow)
+	}
+	lines := []fyne.CanvasObject{titleRow, summary}
 	if status.progressSet {
 		bar := widget.NewProgressBar()
 		bar.Min = 0
@@ -166,12 +180,7 @@ func installRow(title string, status installStatus,
 		detail.Importance = widget.LowImportance
 		lines = append(lines, detail)
 	}
-	text := container.NewVBox(lines...)
-	if len(actions) == 0 {
-		return style.Card(text, false)
-	}
-	return style.Card(container.NewBorder(nil, nil, nil,
-		container.NewHBox(actions...), text), false)
+	return container.NewVBox(lines...)
 }
 
 func (s *shell) morrowindStatus(tr *i18n.Translator) installStatus {
@@ -385,8 +394,7 @@ func protonHint(tr *i18n.Translator, status app.ProtonStatus) string {
 // installationDangerZone removes client-owned folders. It is the only place in
 // the shell that deletes user data, so it stays visibly separate.
 func (s *shell) installationDangerZone(tr *i18n.Translator) fyne.CanvasObject {
-	button := widget.NewButton(tr.T(i18n.KeyUninstall), s.showUninstallDialog)
-	button.Importance = widget.DangerImportance
+	button := style.DangerButton(tr.T(i18n.KeyUninstall), s.showUninstallDialog)
 	return container.NewVBox(
 		style.Subheading(tr.T(i18n.KeyUninstallDangerZone)),
 		button,
