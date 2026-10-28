@@ -1,7 +1,13 @@
 # BL-020. Шаг 3 мастера: длинный скролл и превью под списком
 
-**Статус:** новое (28.10.2026). Продолжение BL-012: содержимое шага выросло, а
-вёрстка осталась одноколоночной.
+**Статус:** сделано (28.10.2026). Шаг собран `fontsStepLayout`
+(`container.NewHSplit`, offset 0.32): слева набор и статусы, справа образец и
+карточка `settings.cfg` (`uiVideoFormCard`), лицензия — одной строкой под
+сплитом. Образец больше не под списком, поэтому раскрытый `Select` его не
+накрывает; `uiVideoStatus` виден только пока `settings.cfg` нет. Диалог
+Installation → Fonts получил ту же раскладку и окно 760×440. Тесты:
+`TestFontsStepPutsSampleBesideTheList`, `TestUIVideoFormCardHoldsTheWholeForm`,
+`TestWizardStepsAreTranslatedAndOrdered` (без изменений).
 
 **Симптом.**
 

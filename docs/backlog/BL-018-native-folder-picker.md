@@ -1,7 +1,18 @@
 # BL-018. Выбор папки всё ещё не системный диалог
 
-**Статус:** новое (28.10.2026). Документация обещает системный выбор папки, а
-код открывает собственный список Fyne.
+**Статус:** сделано (28.10.2026). `chooseFolder` (`internal/ui/folders.go`)
+вызывает пакетную `pickFolder folderPicker`: `folders_picker_linux.go` —
+`filechooser.OpenFile` портала (`github.com/rymdport/portal` стала прямой
+зависимостью), `folders_picker_windows.go` — диалог оболочки
+`SHBrowseForFolderW` с `BIF_USENEWDIALOGSTYLE` и стартовой папкой через
+`SHParseDisplayName`, `folders_picker_other.go` — «нет нативного диалога».
+Отмена (`ok == false`) ничего не меняет, ошибка или отсутствие портала
+открывает прежний Fyne-список (`showFyneFolderPicker`), «Enter path…» остаётся
+вторым действием. На Windows выбран диалог оболочки, а не COM `IFileOpenDialog`:
+он системный, но не требует ручных обёрток vtable и `unsafe`-вызовов, которые
+нечем проверить без машины с Windows. Тесты: `TestPathPickerUsesNativeDialog`,
+`TestPathPickerCancelChangesNothing`, `TestPathPickerFallsBackToFyneDialog`,
+`TestFolderURI`. Документация: `docs/v2/06-client.md` §6, §12.
 
 **Симптом.** «Change…»/«Browse…» в Installation → Advanced и «Choose» в первом
 шаге мастера открывают окно Fyne: свой список, стрелка вверх, поле имени, без

@@ -1,7 +1,17 @@
 # BL-017. Шапка: язык списком, тема тогглом, подпись темы не сливается
 
-**Статус:** новое (28.10.2026). Пересматривает выбор контролов из BL-008: там
-язык сделали кнопкой-тогглом, а тему — списком; на практике удобнее наоборот.
+**Статус:** сделано (28.10.2026). Язык — `widget.Select` по `i18n.Supported` с
+подписями `i18n.DisplayName`, тема — `widget.Check` «Тёмная тема»; обе группы
+собирает `headerControl` (`internal/ui/ui.go`): подпись строкой над контролом,
+`container.NewGridWrap` с прежней `headerControlWidth`, поэтому высота групп
+одинаковая, а подпись не сливается со значением. `nextLanguage`, `themeModes`,
+`TestNextLanguage` и `TestThemeModeLabels` удалены; ключи `theme.*` заменены на
+`settings.language` и `settings.dark_theme`. `system` остался значением по
+умолчанию: `style.IsDark` показывает фактический вариант (для `system` — тему
+рабочего стола), первое переключение пишет явный `dark`/`light`. Документация:
+`docs/v2/06-client.md` §12. Тесты: `TestHeaderHasLanguageAndThemeSwitches`,
+`TestLanguageByLabel`, `TestThemeToggleLabels`, `TestIsDarkForExplicitModes`,
+`TestHeaderFitsSupportedWindow` (без изменений).
 
 **Симптом.**
 
