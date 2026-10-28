@@ -1,17 +1,25 @@
 # BL-017. Шапка: язык списком, тема тогглом, подпись темы не сливается
 
 **Статус:** сделано (28.10.2026). Язык — `widget.Select` по `i18n.Supported` с
-подписями `i18n.DisplayName`, тема — `widget.Check` «Тёмная тема»; обе группы
-собирает `headerControl` (`internal/ui/ui.go`): подпись строкой над контролом,
-`container.NewGridWrap` с прежней `headerControlWidth`, поэтому высота групп
-одинаковая, а подпись не сливается со значением. `nextLanguage`, `themeModes`,
-`TestNextLanguage` и `TestThemeModeLabels` удалены; ключи `theme.*` заменены на
-`settings.language` и `settings.dark_theme`. `system` остался значением по
-умолчанию: `style.IsDark` показывает фактический вариант (для `system` — тему
-рабочего стола), первое переключение пишет явный `dark`/`light`. Документация:
-`docs/v2/06-client.md` §12. Тесты: `TestHeaderHasLanguageAndThemeSwitches`,
-`TestLanguageByLabel`, `TestThemeToggleLabels`, `TestIsDarkForExplicitModes`,
-`TestHeaderFitsSupportedWindow` (без изменений).
+подписями `i18n.DisplayName`, тема — тоггл-пилюля `switchToggle`
+(`internal/ui/switch.go`, 44×24, Space/Enter): `widget.Check` с галочкой
+читался как поле формы, а не как «настройка включена». Обе группы собирает
+`headerControl` (`internal/ui/ui.go`): подпись строкой над контролом и
+`headerSlot` — ячейка `headerControlWidth`×`headerControlHeight`, где список
+тянется по ширине, а пилюля сохраняет свой размер и стоит по левому краю. Из-за
+общей ячейки высота групп одинаковая, подписи стоят на одной линии, а подпись не
+сливается со значением. Подпись тоггла — `settings.dark_theme` («Тёмная тема»),
+ключ `settings.theme` удалён вместе с `KeySettingsTheme`. `nextLanguage`,
+`themeModes`, `TestNextLanguage` и `TestThemeModeLabels` удалены; ключи
+`theme.*` заменены на `settings.language` и `settings.dark_theme`. `system`
+остался значением по умолчанию: `style.IsDark` показывает фактический вариант
+(для `system` — тему рабочего стола), первое переключение пишет явный
+`dark`/`light`. Документация: `docs/v2/06-client.md` §12. Тесты:
+`TestHeaderHasLanguageAndThemeSwitches`, `TestLanguageByLabel`,
+`TestThemeToggleLabels`, `TestIsDarkForExplicitModes`,
+`TestHeaderFitsSupportedWindow` (без изменений), `TestSwitchToggleFlipsOnTap`,
+`TestSwitchToggleSetCheckedIsSilent`, `TestSwitchToggleKeyboard`,
+`TestSwitchToggleMovesTheKnob`.
 
 **Симптом.**
 

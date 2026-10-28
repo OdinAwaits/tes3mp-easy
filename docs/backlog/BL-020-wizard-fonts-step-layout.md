@@ -1,12 +1,19 @@
 # BL-020. Шаг 3 мастера: длинный скролл и превью под списком
 
 **Статус:** сделано (28.10.2026). Шаг собран `fontsStepLayout`
-(`container.NewHSplit`, offset 0.32): слева набор и статусы, справа образец и
-карточка `settings.cfg` (`uiVideoFormCard`), лицензия — одной строкой под
-сплитом. Образец больше не под списком, поэтому раскрытый `Select` его не
-накрывает; `uiVideoStatus` виден только пока `settings.cfg` нет. Диалог
+(`container.NewHSplit`, offset 0.55): слева набор, статусы и карточка
+`settings.cfg` (`uiVideoFormCard`), справа образец. Обе половины обёрнуты в свой
+`container.NewVScroll` (`fontsColumns`), поэтому образец виден, пока правят
+значения, и каждая колонка прокручивается независимо. Лицензия — одной строкой
+под сплитом, `uiVideoStatus` виден только пока `settings.cfg` нет. Диалог
+мастера больше не растягивается содержимым: `wizardSize` берёт размер окна
+лаунчера, ужимает его под живой канвас и держит не ниже 780×580, а
+`cappedMinLayout`/`wizardContentCap` не дают `MinSize` прокрутки раздуть диалог,
+так что длинный шаг прокручивается внутри и не уходит за край окна. Диалог
 Installation → Fonts получил ту же раскладку и окно 760×440. Тесты:
-`TestFontsStepPutsSampleBesideTheList`, `TestUIVideoFormCardHoldsTheWholeForm`,
+`TestFontsStepPutsSampleBesideTheForm`, `TestFontsColumnsScrollOnTheirOwn`,
+`TestUIVideoFormCardHoldsTheWholeForm`, `TestWizardFillsTheLauncherWindow`,
+`TestWizardContentFitsTheDialog`, `TestWizardSizeShrinksWithTheWindow`,
 `TestWizardStepsAreTranslatedAndOrdered` (без изменений).
 
 **Симптом.**
