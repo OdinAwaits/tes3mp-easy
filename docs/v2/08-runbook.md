@@ -52,7 +52,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/in
 Конкретную версию серверного релиза можно закрепить:
 
 ```bash
-TES3MP_EASY_VERSION=0.3.0 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
+TES3MP_EASY_VERSION=0.3.1 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
 ```
 
 Ручной путь, если архив нужно скачать заранее:
@@ -62,7 +62,7 @@ TES3MP_EASY_VERSION=0.3.0 bash <(curl -Ls https://raw.githubusercontent.com/Saag
    релизы помечены тегом `server-v<version>`:
 
    ```bash
-   VERSION=0.3.0
+   VERSION=0.3.1
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/server-v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz"
    curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/server-v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
    sha256sum -c "tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
@@ -73,7 +73,7 @@ TES3MP_EASY_VERSION=0.3.0 bash <(curl -Ls https://raw.githubusercontent.com/Saag
    Локальная сборка релиза:
 
    ```bash
-   go run ./cmd/tes3mp-easy-pack --version 0.3.0
+   go run ./cmd/tes3mp-easy-pack --version 0.3.1
    ```
 
 2. Проверьте хост без изменений:
@@ -1038,8 +1038,8 @@ panic.
 
 ```bash
 # серверный релиз
-git tag -a server-v0.3.0 -m "tes3mp-easy server 0.3.0"
-git push origin server-v0.3.0
+git tag -a server-v0.3.1 -m "tes3mp-easy server 0.3.1"
+git push origin server-v0.3.1
 
 # клиентский релиз
 git tag -a client-v0.2.6 -m "tes3mp-easy client 0.2.6"
@@ -1050,10 +1050,15 @@ git push origin client-v0.2.6
   github.com/Saagilat/tes3mp-easy/internal/version.Server` (server) и
   `.Client` (client), поэтому коммит «bump version» не нужен. Значения в
   `internal/version` — фолбэки для локальных сборок.
+- `internal/version.Client` должен совпадать с последним тегом `client-v*`:
+  `tes3mp-easy-pack` подставляет только `version.Server`, поэтому шапка панели
+  берёт клиентскую версию из фолбэка в дереве. Если тег отстаёт, панель
+  объявит неопубликованный клиент, поэтому клиентский релиз выпускается
+  раньше серверного.
 - `install.sh` читает список релизов и берёт серверный архив с наибольшей
   версией, поэтому новый клиентский релиз не подменяет серверный.
-  `TES3MP_EASY_VERSION=0.3.0` прибивает версию серверного релиза;
-  `--version 0.3.0` у `tes3mp-easy-pack` задаёт её для локальной сборки.
+  `TES3MP_EASY_VERSION=0.3.1` прибивает версию серверного релиза;
+  `--version 0.3.1` у `tes3mp-easy-pack` задаёт её для локальной сборки.
 - `internal/contract` и `internal/serverapi` описывают протокол
   клиент↔панель: несовместимые изменения выпускаются в обоих каналах.
 - Панель отдаёт свою версию в `/api/v1/server` как `panel_version` — это
