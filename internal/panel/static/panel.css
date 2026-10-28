@@ -416,6 +416,77 @@ pre code {
   margin-bottom: 1rem;
 }
 
+.archive-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 1rem;
+}
+
+.archive-column {
+  min-width: 0;
+}
+
+.archive-column > h2,
+.archive-column > h3 {
+  margin-top: 1.25rem;
+}
+
+.archive-column > h2:first-child,
+.archive-column > h3:first-child {
+  margin-top: 0;
+}
+
+.archive-list {
+  display: grid;
+  gap: .7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.archive-list li + li {
+  margin-top: 0;
+}
+
+.archive-item {
+  padding: .9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+
+.archive-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .45rem;
+  margin-bottom: .35rem;
+}
+
+.archive-date {
+  color: var(--text);
+  font-size: .88rem;
+  font-weight: 650;
+}
+
+.archive-name {
+  margin: 0 0 .45rem;
+  overflow-wrap: anywhere;
+}
+
+.archive-meta {
+  margin: 0 0 .65rem;
+  color: var(--muted);
+  font-size: .85rem;
+  overflow-wrap: anywhere;
+}
+
+.archive-item .row-actions {
+  margin-top: .65rem;
+}
+
 .page-subhead {
   display: flex;
   flex-wrap: wrap;
@@ -1036,6 +1107,12 @@ body.auth {
   color: var(--muted);
   font-size: .9rem;
   text-align: center;
+}
+
+@media (max-width: 900px) {
+  .archive-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {

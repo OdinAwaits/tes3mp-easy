@@ -141,9 +141,12 @@ predeploy-лимиты, защиту текущего mods-архива и за�
 - `backups create`: state, `--if-running`, dry-run, `locked`, `no_space`,
   отсутствующий конфиг (`archive_invalid`), state-only retention;
 - `backups prune`: dry-run, защита пакетов, указанных в state;
-- `mods import`: валидный архив, битый gzip, отсутствующий upload, lock,
-  cross-filesystem, `EXDEV` copy fallback (успех и ошибка копирования),
-  non-`EXDEV` rename error;
+- `mods import`: валидный архив, `--name` с сохранением имени и коллизией,
+  битый gzip, отсутствующий upload, lock, cross-filesystem, `EXDEV` copy
+  fallback (успех и ошибка копирования), non-`EXDEV` rename error;
+- `state import`: валидный state на активном пакете, basename/`--name`,
+  коллизия, отсутствующий пакет модов, dry-run, `EXDEV` copy fallback,
+  retention защищает импортированный архив;
 - `mods deploy`: `--current`/`--latest`/`--archive`, `--no-restart`, отсутствие
   метаданных, неверные цели, `service_unavailable`, rollback; `configs/` —
   `0700`, `customScripts.lua` — `0600`, полный `doctor` после деплоя без ошибок;
@@ -172,12 +175,16 @@ HTTPS-порту с fixture-парой в режиме `files`. Проверяю
 - auth: создание/reuse/corrupt `auth.json`, режимы `0600`, `reset-password`,
   первый вход с временным паролем, смена пароля, cookie-флаги, CSRF,
   rate limit;
-- публичные маршруты: `/`, `/backups`, скачивание `mods`, пагинация,
-  `/api/v1/server`, `/api/v1/mods/current`, `/api/v1/mods/current/archive`,
-  path traversal, не-`.tar.gz`, отсутствующий файл, `Content-Disposition`;
+- публичные маршруты: `/`, `/backups` с двумя колонками, скачивание `mods`,
+  `state`, ZIP-сборка state+mods, пагинация, `/api/v1/server`,
+  `/api/v1/mods/current`, `/api/v1/mods/current/archive`, path traversal,
+  не-`.tar.gz`, отсутствующий файл, `Content-Disposition`;
 - `/admin/restore-points` отвечает `301` на `/admin/state`;
 - админские маршруты: дашборд, статус, логи, `doctor`, моды, состояния,
-  конфиги, staff, upload, приватное скачивание state;
+  конфиги, staff, upload, приватное скачивание state, restore из ZIP
+  (`mods import --name` → `mods deploy` → `state import` → `state deploy`);
+  отдельный state проверяется против активного пакета, несовпадение даёт `422`
+  до мутаций;
 - метрики: парсинг fixture-файлов `memory.current`, `cpu.stat`, `/proc/meminfo`
   и `/proc/stat`, расчёт CPU % игры и системы и `null` при остановленном
   сервере или пропуске больше 45 секунд, окна 1 ч/6 ч/24 ч и бакеты (≤360
@@ -322,11 +329,12 @@ GUI-тесты не гоняются в CI: Fyne требует дисплея. 
    `state-predeploy-*` существует. Проверить state со старым пакетом модов:
    восстановление заблокировано, «Задеплоить моды» активирует пакет, затем
    восстановление проходит. Старый state с cfg/banlist отклоняется.
-5. **Публичные архивы.** Без логина скачиваются `mods` и `state`; `/backups`
-   без `type` показывает моды, `/backups?type=state` — состояния. В скачанном
-   state нет `tes3mp-server-default.cfg` и `banlist.json`. Старый state с этими
-   файлами отдаёт 404. Список не раскрывает пути и логи; пагинация работает на
-   длинной истории.
+5. **Публичные архивы.** Без логина `/backups` одновременно показывает две
+   колонки: состояния и моды. У state видны дата и имя его `mods_archive`; при
+   доступном пакете кнопка «state + моды» скачивает ZIP с обоими архивами.
+   В скачанном state нет `tes3mp-server-default.cfg` и `banlist.json`. Старый
+   state с этими файлами отдаёт `404` и напрямую, и через bundle. Список не
+   раскрывает пути и логи; независимая пагинация работает на длинной истории.
 6. **Retention.** Синтетическая история на 5 лет: месячные state живы, дневные и
    недельные прорежены, бюджет не превышен; пакет, указанный в state, не удалён;
    после `backups prune` исчезают только незащищённые mods.

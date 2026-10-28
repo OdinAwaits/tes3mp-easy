@@ -59,6 +59,10 @@ type Config struct {
 	// run. State deploy uses it for the archive it is about to restore.
 	ProtectedState []string
 
+	// ProtectedMods names mods archives that must not be pruned by this run.
+	// Import uses it for the archive that was just published.
+	ProtectedMods []string
+
 	Now         time.Time
 	StateBudget int64
 	ModsBudget  int64

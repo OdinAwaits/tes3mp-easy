@@ -1,6 +1,8 @@
 package panel
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -27,10 +29,11 @@ type backupsCall struct {
 }
 
 type fakePublicOps struct {
-	status     Status
-	statusErr  error
-	backups    Backups
-	backupsErr error
+	status        Status
+	statusErr     error
+	backups       Backups
+	backupsByType map[string]Backups
+	backupsErr    error
 
 	statusCalls  []string
 	backupsCalls []backupsCall
@@ -45,7 +48,13 @@ func (f *fakePublicOps) BackupsList(_ context.Context, typ string, limit int,
 	before string,
 ) (Backups, error) {
 	f.backupsCalls = append(f.backupsCalls, backupsCall{typ: typ, limit: limit, before: before})
-	return f.backups, f.backupsErr
+	if f.backupsErr != nil {
+		return f.backups, f.backupsErr
+	}
+	if backups, ok := f.backupsByType[typ]; ok {
+		return backups, nil
+	}
+	return f.backups, nil
 }
 
 func (f *fakePublicOps) Start(context.Context) error                 { return nil }
@@ -400,68 +409,94 @@ func TestPublicModsNoMods(t *testing.T) {
 
 func TestPublicBackupsPage(t *testing.T) {
 	env := newPublicTestEnv(t)
-	current := "mods-current.tar.gz"
-	next := "mods-next.tar.gz"
-	env.ops.backups = Backups{
-		Type:    "mods",
-		Current: &current,
-		Items: []BackupItem{
-			{
-				Name: "mods-2026-10-23_11-00-00.tar.gz", Size: 2048,
-				Mtime: "2026-10-23T11:00:00Z", Current: true,
-			},
-			{
-				Name: "mods-2026-10-01_11-00-00.tar.gz", Size: 1024,
-				Mtime: "2026-10-01T11:00:00Z",
-			},
-			{
-				Name: "mods-2025-01-15_11-00-00.tar.gz", Size: 10,
-				Mtime: "2025-01-15T11:00:00Z",
-			},
+	current := "mods-2026-10-23_11-00-00.tar.gz"
+	stateNext := "state-2026-10-20_12-00-00.tar.gz"
+	modsNext := "mods-2026-10-01_11-00-00.tar.gz"
+	linkedMods := "mods-2026-10-23_11-00-00.tar.gz"
+	modsAvailable := true
+	env.ops.backupsByType = map[string]Backups{
+		"state": {
+			Type: "state",
+			Items: []BackupItem{{
+				Name: "state-manual-2026-10-23_11-00-00.tar.gz", Size: 4096,
+				Mtime: "2026-10-23T11:00:00Z", ModsArchive: &linkedMods,
+				ModsAvailable: &modsAvailable,
+			}},
+			NextBefore: &stateNext,
 		},
-		NextBefore: &next,
+		"mods": {
+			Type:    "mods",
+			Current: &current,
+			Items: []BackupItem{
+				{Name: current, Size: 2048, Mtime: "2026-10-23T11:00:00Z", Current: true},
+				{Name: "mods-2026-10-01_11-00-00.tar.gz", Size: 1024,
+					Mtime: "2026-10-01T11:00:00Z"},
+				{Name: "mods-2025-01-15_11-00-00.tar.gz", Size: 10,
+					Mtime: "2025-01-15T11:00:00Z"},
+			},
+			NextBefore: &modsNext,
+		},
 	}
 
 	rec := panelRequest(t, env.handler, http.MethodGet,
-		"/backups?type=mods&limit=2&before=mods-before.tar.gz", nil, nil, nil)
+		"/backups?limit=2&state_before=state-2026-10-22_12-00-00.tar.gz"+
+			"&mods_before=mods-2026-10-02_11-00-00.tar.gz", nil, nil, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /backups = %d: %s", rec.Code, rec.Body.String())
 	}
 	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
 		t.Fatalf("Content-Type = %q", got)
 	}
-	if len(env.ops.backupsCalls) != 1 {
+	if len(env.ops.backupsCalls) != 2 {
 		t.Fatalf("backups calls = %+v", env.ops.backupsCalls)
 	}
-	if call := env.ops.backupsCalls[0]; call.typ != "mods" || call.limit != 2 ||
-		call.before != "mods-before.tar.gz" {
-		t.Fatalf("BackupsList call = %+v", call)
+	if call := env.ops.backupsCalls[0]; call.typ != "state" || call.limit != 2 ||
+		call.before != "state-2026-10-22_12-00-00.tar.gz" {
+		t.Fatalf("state BackupsList call = %+v", call)
+	}
+	if call := env.ops.backupsCalls[1]; call.typ != "mods" || call.limit != 2 ||
+		call.before != "mods-2026-10-02_11-00-00.tar.gz" {
+		t.Fatalf("mods BackupsList call = %+v", call)
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
+		"state-manual-2026-10-23_11-00-00.tar.gz",
 		"mods-2026-10-23_11-00-00.tar.gz",
 		"mods-2026-10-01_11-00-00.tar.gz",
 		"mods-2025-01-15_11-00-00.tar.gz",
-		"2026-10-23", "2026-W40", "2025-01",
-		"mods-current.tar.gz", "(текущий)",
+		"2026-10-23 11:00 UTC", "2026-W40", "2025-01",
+		"Состояния", "Моды", "Моды:",
+		"/backups/state/state-manual-2026-10-23_11-00-00.tar.gz",
+		"/backups/state/state-manual-2026-10-23_11-00-00.tar.gz/bundle",
 		"/backups/mods/mods-2026-10-23_11-00-00.tar.gz",
-		"type=mods", "before=mods-next.tar.gz", "limit=2",
-		"Показать более старые",
+		"Скачать состояние + моды (.zip)",
+		"state_before=state-2026-10-20_12-00-00.tar.gz",
+		"mods_before=mods-2026-10-01_11-00-00.tar.gz", "limit=2",
+		"Более старые состояния", "Более старые моды",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("backups page does not contain %q:\n%s", want, body)
 		}
 	}
+	if strings.Contains(body, "sha256") {
+		t.Fatalf("backups page shows sha256:\n%s", body)
+	}
 }
 
-func TestPublicStateBackupsPage(t *testing.T) {
+func TestPublicStateBackupsPageMarksMissingMods(t *testing.T) {
 	env := newPublicTestEnv(t)
-	env.ops.backups = Backups{
-		Type: "state",
-		Items: []BackupItem{{
-			Name: "state-manual-2026-10-23_11-00-00.tar.gz", Size: 4096,
-			Mtime: "2026-10-23T11:00:00Z",
-		}},
+	modsName := "mods-2026-10-23_11-00-00.tar.gz"
+	modsMissing := false
+	env.ops.backupsByType = map[string]Backups{
+		"state": {
+			Type: "state",
+			Items: []BackupItem{{
+				Name: "state-manual-2026-10-23_11-00-00.tar.gz", Size: 4096,
+				Mtime: "2026-10-23T11:00:00Z", ModsArchive: &modsName,
+				ModsAvailable: &modsMissing,
+			}},
+		},
+		"mods": {Type: "mods", Items: []BackupItem{}},
 	}
 
 	rec := panelRequest(t, env.handler, http.MethodGet,
@@ -469,38 +504,48 @@ func TestPublicStateBackupsPage(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /backups?type=state = %d: %s", rec.Code, rec.Body.String())
 	}
-	if len(env.ops.backupsCalls) != 1 ||
-		env.ops.backupsCalls[0].typ != "state" {
+	if len(env.ops.backupsCalls) != 2 ||
+		env.ops.backupsCalls[0].typ != "state" ||
+		env.ops.backupsCalls[1].typ != "mods" {
 		t.Fatalf("BackupsList calls = %+v", env.ops.backupsCalls)
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
 		"state-manual-2026-10-23_11-00-00.tar.gz",
 		"/backups/state/state-manual-2026-10-23_11-00-00.tar.gz",
-		"Состояния", "Моды", "aria-current=\"page\"",
+		"mods-2026-10-23_11-00-00.tar.gz", "файл отсутствует",
+		"Архивов модов пока нет.",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("state backups page does not contain %q:\n%s", want, body)
 		}
 	}
+	if strings.Contains(body, "/bundle") {
+		t.Fatalf("state with missing mods offers a bundle:\n%s", body)
+	}
 }
 
 func TestPublicBackupsDefaultsAndValidation(t *testing.T) {
 	env := newPublicTestEnv(t)
-	env.ops.backups = Backups{Type: "mods", Items: []BackupItem{}}
 
 	rec := panelRequest(t, env.handler, http.MethodGet, "/backups", nil, nil, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("default backups = %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "Архивов пока нет") {
-		t.Fatal("empty backups page has no empty-state message")
+	body := rec.Body.String()
+	if !strings.Contains(body, "Состояний пока нет") ||
+		!strings.Contains(body, "Архивов модов пока нет") {
+		t.Fatal("empty backups page has no empty-state messages")
 	}
-	if len(env.ops.backupsCalls) != 1 ||
-		env.ops.backupsCalls[0].typ != "mods" ||
-		env.ops.backupsCalls[0].limit != defaultBackupLimit ||
-		env.ops.backupsCalls[0].before != "" {
-		t.Fatalf("default BackupsList call = %+v", env.ops.backupsCalls)
+	if len(env.ops.backupsCalls) != 2 {
+		t.Fatalf("default BackupsList calls = %+v", env.ops.backupsCalls)
+	}
+	for index, typ := range []string{"state", "mods"} {
+		call := env.ops.backupsCalls[index]
+		if call.typ != typ || call.limit != defaultBackupLimit ||
+			call.before != "" {
+			t.Fatalf("default BackupsList call = %+v", call)
+		}
 	}
 
 	tests := []struct {
@@ -512,6 +557,8 @@ func TestPublicBackupsDefaultsAndValidation(t *testing.T) {
 		{path: "/backups?type=mods&limit=nope"},
 		{path: "/backups?type=mods&before=../secret.tar.gz"},
 		{path: "/backups?type=mods&before=notes.txt"},
+		{path: "/backups?state_before=../secret.tar.gz"},
+		{path: "/backups?mods_before=notes.txt"},
 	}
 	for _, tt := range tests {
 		rec := panelRequest(t, env.handler, http.MethodGet, tt.path, nil, nil, nil)
@@ -519,8 +566,28 @@ func TestPublicBackupsDefaultsAndValidation(t *testing.T) {
 			t.Fatalf("%s = %d, want 400", tt.path, rec.Code)
 		}
 	}
-	if len(env.ops.backupsCalls) != 1 {
+	if len(env.ops.backupsCalls) != 2 {
 		t.Fatalf("invalid queries called ops: %+v", env.ops.backupsCalls)
+	}
+}
+
+func TestPublicBackupsLegacyCursor(t *testing.T) {
+	env := newPublicTestEnv(t)
+	before := "state-2026-10-22_12-00-00.tar.gz"
+
+	rec := panelRequest(t, env.handler, http.MethodGet,
+		"/backups?type=state&before="+before, nil, nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("legacy cursor page = %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(env.ops.backupsCalls) != 2 {
+		t.Fatalf("BackupsList calls = %+v", env.ops.backupsCalls)
+	}
+	if call := env.ops.backupsCalls[0]; call.typ != "state" || call.before != before {
+		t.Fatalf("legacy state cursor = %+v", call)
+	}
+	if call := env.ops.backupsCalls[1]; call.typ != "mods" || call.before != "" {
+		t.Fatalf("legacy mods cursor = %+v", call)
 	}
 }
 
@@ -648,6 +715,103 @@ func TestPublicStateDownload(t *testing.T) {
 	}
 }
 
+func TestPublicStateBundle(t *testing.T) {
+	env := newPublicTestEnv(t)
+	mods := fixtures.DefaultMods()
+	mods.Name = "mods-2026-10-23_11-00-00.tar.gz"
+	modsBody := mods.Bytes(t)
+	manifest := mods.Manifest(modsBody)
+	modsPath := writeTestBackup(t, env.cfg.Root, "mods", mods.Name, modsBody)
+	wantMods, err := os.ReadFile(modsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := fixtures.FullState(manifest)
+	state.Name = "state-manual-2026-10-23_11-00-00.tar.gz"
+	statePath := writeTestBackup(t, env.cfg.Root, "state", state.Name, state.Bytes(t))
+	wantState, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := panelRequest(t, env.handler, http.MethodGet,
+		"/backups/state/"+state.Name+"/bundle", nil, nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET state bundle = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/zip" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if disposition := rec.Header().Get("Content-Disposition"); !strings.Contains(
+		disposition, "state-manual-2026-10-23_11-00-00-with-mods.zip") {
+		t.Fatalf("Content-Disposition = %q", disposition)
+	}
+
+	reader, err := zip.NewReader(bytes.NewReader(rec.Body.Bytes()),
+		int64(rec.Body.Len()))
+	if err != nil {
+		t.Fatalf("open bundle zip: %v", err)
+	}
+	if len(reader.File) != 2 {
+		t.Fatalf("bundle entries = %d, want 2", len(reader.File))
+	}
+	want := map[string][]byte{
+		state.Name: wantState,
+		mods.Name:  wantMods,
+	}
+	for _, file := range reader.File {
+		body, ok := want[file.Name]
+		if !ok {
+			t.Fatalf("unexpected bundle entry %q", file.Name)
+		}
+		entry, err := file.Open()
+		if err != nil {
+			t.Fatalf("open %s: %v", file.Name, err)
+		}
+		got, err := io.ReadAll(entry)
+		_ = entry.Close()
+		if err != nil {
+			t.Fatalf("read %s: %v", file.Name, err)
+		}
+		if !bytes.Equal(got, body) {
+			t.Fatalf("bundle entry %s content changed", file.Name)
+		}
+		delete(want, file.Name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("bundle is missing entries: %v", want)
+	}
+
+	missingMods := fixtures.DefaultMods()
+	missingMods.Name = "mods-2026-10-24_11-00-00.tar.gz"
+	missingManifest := missingMods.Manifest(missingMods.Bytes(t))
+	missingState := fixtures.FullState(missingManifest)
+	missingState.Name = "state-manual-2026-10-24_11-00-00.tar.gz"
+	writeTestBackup(t, env.cfg.Root, "state", missingState.Name, missingState.Bytes(t))
+	rec = panelRequest(t, env.handler, http.MethodGet,
+		"/backups/state/"+missingState.Name+"/bundle", nil, nil, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("bundle with missing mods = %d, want 404", rec.Code)
+	}
+
+	legacy := fixtures.FullState(manifest)
+	legacy.Name = "state-manual-2026-10-23_12-00-00.tar.gz"
+	legacy.Configs = []fixtures.StateFile{
+		{Name: "config.lua", Body: "config = {}\n"},
+		{Name: "tes3mp-server-default.cfg", Body: "[General]\npassword = x\n"},
+	}
+	writeTestBackup(t, env.cfg.Root, "state", legacy.Name, legacy.Bytes(t))
+	rec = panelRequest(t, env.handler, http.MethodGet,
+		"/backups/state/"+legacy.Name+"/bundle", nil, nil, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("legacy state bundle = %d, want 404", rec.Code)
+	}
+	if strings.Contains(rec.Body.String(), "password") {
+		t.Fatal("legacy state bundle leaked the server config")
+	}
+}
+
 func TestPublicDownloadRateLimit(t *testing.T) {
 	env := newPublicTestEnv(t)
 	name := "mods-2026-10-23_11-00-00.tar.gz"
@@ -692,10 +856,16 @@ func TestPublicHomePage(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		"Morrowind with friends", "running", "работает", "25565",
-		name, sum, "/backups", "/admin/login",
+		"Публичные архивы", "/backups", "/backups#state", "/backups#mods",
+		"/admin/login",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("home page does not contain %q:\n%s", want, body)
+		}
+	}
+	for _, unwanted := range []string{name, sum, "Текущие моды", "sha256"} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("home page still shows %q:\n%s", unwanted, body)
 		}
 	}
 

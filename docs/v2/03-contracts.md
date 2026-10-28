@@ -282,6 +282,37 @@ CLI: `state deploy (--latest|--archive <name>) [--no-restart] [--dry-run]`.
 - Если сервер работал, он останавливается до подмены и запускается после, кроме
   `--no-restart`.
 
+### `state import`
+
+CLI: `state import --file <path> [--name <archive>] [--dry-run]`.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "archive": "state-manual-2026-10-22_12-00-00.tar.gz",
+    "sha256": "abc...",
+    "mods_archive": "mods-2026-10-22_12-00-00.tar.gz",
+    "players": 12,
+    "world_files": 340,
+    "pruned": [],
+    "warnings": []
+  }
+}
+```
+
+- Файл должен быть обычным state `.tar.gz` и находиться на той же файловой
+  системе, что `backups/state`; при `EXDEV` используется атомарное копирование.
+- `--name` сохраняет точное имя скачанного state. Без него берётся basename
+  файла. Оба варианта обязаны соответствовать §6.6.
+- State проверяется полностью, включая `configs/config.lua` и совпадение
+  `current.txt` с активным `backups/mods/current.txt`. Поэтому перед импортом
+  нужный пакет модов уже должен быть задеплоен.
+- Импорт только кладёт архив в `backups/state`; восстановление выполняет
+  отдельный `state deploy`. Импортированный архив защищён от retention этого
+  запуска.
+- Коллизия имени — `invalid_argument`; ops ничего не перезаписывает.
+
 ### `mods import`
 
 ```json
@@ -300,7 +331,12 @@ CLI: `state deploy (--latest|--archive <name>) [--no-restart] [--dry-run]`.
 
 `mods import` не меняет `current.txt`. Импорт — это «положить архив в
 `backups/mods/`», а не «включить моды». Retention модов применяется сразу
-после успешного импорта.
+после успешного импорта и защищает только что импортированный архив.
+
+Необязательный `--name` сохраняет точное имя пакета. Он нужен для
+восстановления state: `current.txt` внутри state ссылается на конкретное имя
+модов. При совпадении имени ops возвращает `invalid_argument` и не
+перезаписывает файл.
 
 ### `mods deploy`
 
@@ -597,11 +633,16 @@ Gzip-мусор после tar, повреждённый gzip, абсолютн�
 `ETag: "<sha256>"`. Поддерживает `If-None-Match`. Лимит скачиваний общий с
 публичной страницей бэкапов; при превышении — 429 `rate_limited`.
 
-### `GET /backups?type=mods|state`
+### `GET /backups`
 
-Публичная HTML-страница со списком архивов. `type` по умолчанию `mods`;
-неизвестное значение — `400`. Пагинация — `limit` (1..500, по умолчанию 200) и
-`before`.
+Публичная HTML-страница: состояния и архивы модов показаны одновременно в двух
+колонках. Для каждого состояния видна его дата и `mods_archive`, на который оно
+ссылается. Неизвестный legacy-параметр `type` — `400`.
+
+Пагинация независимая для каждой колонки: `limit` (1..500, по умолчанию 200),
+`state_before` и `mods_before` — имена-курсоры из `next_before` соответствующего
+списка. Legacy-параметр `before` вместе с `type=mods|state` продолжает работать
+как курсор выбранной колонки.
 
 ### `GET /backups/mods/<name>` и `GET /backups/state/<name>`
 
@@ -610,6 +651,15 @@ symlink, каталоги и отсутствующие файлы — `404`. П
 проверяется на layout §6.2: старые архивы с `tes3mp-server-default.cfg` или
 `banlist.json` не отдаются. Оба маршрута используют общий rate limit
 скачиваний.
+
+### `GET /backups/state/<name>/bundle`
+
+Скачивание состояния вместе с пакетом модов, на который оно ссылается, одним
+ZIP-файлом (`application/zip`, имя `<state>-with-mods.zip`). Имя пакета берётся
+из `current.txt` внутри state, а не из query. В ZIP лежат исходный state и
+исходный mods без перепаковки. Если state не проходит проверку layout, пакет
+модов отсутствует или является symlink/каталогом — `404`. Маршрут использует
+общий rate limit скачиваний.
 
 ### `GET /healthz`
 
@@ -649,7 +699,7 @@ symlink, каталоги и отсутствующие файлы — `404`. П
 |---|---|
 | `status`, `logs`, `backups list`, `config get` | 5 с |
 | `start`, `stop`, `restart`, `staff set`, `config set`, `backups prune` | 2 мин |
-| `mods import`, `mods deploy`, `backups create`, `state deploy` | 30 мин |
+| `mods import`, `mods deploy`, `state import`, `backups create`, `state deploy` | 30 мин |
 
 - Одновременно может идти только одна мутация. Второй запрос ждёт lock до 30 с;
   если не дождался — `409 locked` и сообщение «операция уже выполняется».

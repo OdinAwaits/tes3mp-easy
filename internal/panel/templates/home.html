@@ -20,6 +20,9 @@
         <span class="muted">Статус сервера</span>
       </p>
       {{if .StatusError}}<p role="alert">{{.StatusError}}</p>{{end}}
+      <p class="actions">
+        <a class="button button--primary" href="/backups">Архивы и состояния</a>
+      </p>
     </section>
 
     <div class="grid">
@@ -36,20 +39,12 @@
       </section>
 
       <section class="card">
-        <h2>Текущие моды</h2>
-        {{if .Mods}}
-          <dl class="meta-list">
-            <dt>Архив</dt>
-            <dd><code>{{.Mods.Name}}</code></dd>
-            <dt>Размер</dt>
-            <dd>{{.Mods.SizeLabel}} ({{.Mods.Size}} байт)</dd>
-            <dt>sha256</dt>
-            <dd><code>{{.Mods.SHA256}}</code></dd>
-          </dl>
-          <p><a class="button button--secondary" href="{{.Mods.DownloadURL}}">Скачать текущий архив модов</a></p>
-        {{else}}
-          <p role="alert">{{.ModsError}}</p>
-        {{end}}
+        <h2>Публичные архивы</h2>
+        <p class="muted">Состояния мира и архивы модов доступны без входа.</p>
+        <div class="actions">
+          <a class="button button--secondary" href="/backups#state">Состояния</a>
+          <a class="button button--secondary" href="/backups#mods">Моды</a>
+        </div>
       </section>
     </div>
   </main>

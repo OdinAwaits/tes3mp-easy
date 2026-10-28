@@ -1,10 +1,12 @@
 package panel
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -62,8 +64,7 @@ type publicAPIErrorResponse struct {
 
 type currentMods struct {
 	archive.Current
-	Size    int64
-	ModTime time.Time
+	Size int64
 }
 
 type homePageData struct {
@@ -74,28 +75,20 @@ type homePageData struct {
 	Status      string
 	StatusLabel string
 	StatusError string
-	Mods        *modsCurrent
-	ModsError   string
-}
-
-type modsCurrent struct {
-	Name        string
-	SHA256      string
-	Size        int64
-	SizeLabel   string
-	DownloadURL string
 }
 
 type backupItemView struct {
-	Name          string
-	Size          int64
-	SizeLabel     string
-	Mtime         string
-	MtimeLabel    string
-	Current       bool
-	DownloadURL   string
-	ModsArchive   *string
-	ModsAvailable *bool
+	Name            string
+	Size            int64
+	SizeLabel       string
+	Mtime           string
+	MtimeLabel      string
+	Current         bool
+	DownloadURL     string
+	ModsArchive     *string
+	ModsAvailable   *bool
+	ModsDownloadURL string
+	BundleURL       string
 }
 
 type backupGroup struct {
@@ -104,17 +97,15 @@ type backupGroup struct {
 }
 
 type backupsPageData struct {
-	Type      string
-	ActiveNav string
-	TypeLabel string
-	Current   string
-	Groups    []backupGroup
-	ItemCount int
-	NextURL   string
-	Error     string
-	Empty     bool
-	ModsURL   string
-	Limit     int
+	ActiveNav    string
+	StateGroups  []backupGroup
+	ModsGroups   []backupGroup
+	StateEmpty   bool
+	ModsEmpty    bool
+	StateNextURL string
+	ModsNextURL  string
+	Limit        int
+	Error        string
 }
 
 func (h *panelHandler) allowDownload(w http.ResponseWriter, r *http.Request) bool {
@@ -234,18 +225,6 @@ func (h *panelHandler) handleHome(w http.ResponseWriter, r *http.Request) {
 		data.StatusLabel = statusLabel(status)
 	}
 
-	current, err := h.readCurrentMods()
-	if err != nil {
-		data.ModsError = "Текущий архив модов не найден."
-	} else {
-		data.Mods = &modsCurrent{
-			Name:        current.Name,
-			SHA256:      current.SHA256,
-			Size:        current.Size,
-			SizeLabel:   humanSize(current.Size),
-			DownloadURL: modsCurrentURL,
-		}
-	}
 	h.render(w, http.StatusOK, "home.html", data)
 }
 
@@ -292,18 +271,14 @@ func (h *panelHandler) readCurrentMods() (currentMods, error) {
 		info.Size() > archive.MaxCompressedSize {
 		return currentMods{}, errNoMods
 	}
-	return currentMods{Current: current, Size: info.Size(), ModTime: info.ModTime()}, nil
+	return currentMods{Current: current, Size: info.Size()}, nil
 }
 
 func (h *panelHandler) handleBackups(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
-	typ := query.Get("type")
-	if typ == "" {
-		typ = "mods"
-	}
-	if typ != "mods" && typ != "state" {
+	legacyType := query.Get("type")
+	if legacyType != "" && legacyType != "mods" && legacyType != "state" {
 		h.renderBackups(w, http.StatusBadRequest, backupsPageData{
-			Type:  "mods",
 			Error: "Неизвестный тип бэкапа. Доступны mods и state.",
 		})
 		return
@@ -314,67 +289,94 @@ func (h *panelHandler) handleBackups(w http.ResponseWriter, r *http.Request) {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 || parsed > maxBackupLimit {
 			h.renderBackups(w, http.StatusBadRequest, backupsPageData{
-				Type:  typ,
 				Error: "Параметр limit должен быть числом от 1 до 500.",
 			})
 			return
 		}
 		limit = parsed
 	}
-	before := query.Get("before")
-	if before != "" && !safeArchiveName(before) {
-		h.renderBackups(w, http.StatusBadRequest, backupsPageData{
-			Type:  typ,
-			Error: "Некорректное имя архива в параметре before.",
-		})
-		return
+
+	stateBefore := query.Get("state_before")
+	modsBefore := query.Get("mods_before")
+	// Old bookmarks use a single type plus before. Keep them working while the
+	// page now shows both columns at once.
+	if legacyBefore := query.Get("before"); legacyBefore != "" {
+		switch {
+		case legacyType == "state" && stateBefore == "":
+			stateBefore = legacyBefore
+		case legacyType != "state" && modsBefore == "":
+			modsBefore = legacyBefore
+		}
+	}
+	for _, before := range []string{stateBefore, modsBefore} {
+		if before != "" && !safeArchiveName(before) {
+			h.renderBackups(w, http.StatusBadRequest, backupsPageData{
+				Error: "Некорректное имя архива в параметре before.",
+			})
+			return
+		}
 	}
 	if h.ops == nil {
 		h.renderBackups(w, http.StatusServiceUnavailable, backupsPageData{
-			Type:  typ,
 			Error: "Сервер временно недоступен: ops-клиент не настроен.",
 		})
 		return
 	}
 
-	backups, err := h.ops.BackupsList(r.Context(), typ, limit, before)
+	stateBackups, err := h.ops.BackupsList(r.Context(), "state", limit, stateBefore)
 	if err != nil {
 		code, message := publicPageFailure(err)
-		h.renderBackups(w, code, backupsPageData{Type: typ, Error: message})
+		h.renderBackups(w, code, backupsPageData{Error: message})
+		return
+	}
+	modsBackups, err := h.ops.BackupsList(r.Context(), "mods", limit, modsBefore)
+	if err != nil {
+		code, message := publicPageFailure(err)
+		h.renderBackups(w, code, backupsPageData{Error: message})
 		return
 	}
 
 	data := backupsPageData{
-		Type:      typ,
-		TypeLabel: backupTypeLabel(typ),
-		Groups:    groupBackups(backups.Items, typ, h.now()),
-		ItemCount: len(backups.Items),
-		Empty:     len(backups.Items) == 0,
-		ModsURL:   "/backups?type=mods",
-		Limit:     limit,
+		StateGroups: groupBackups(stateBackups.Items, "state", h.now()),
+		ModsGroups:  groupBackups(modsBackups.Items, "mods", h.now()),
+		StateEmpty:  len(stateBackups.Items) == 0,
+		ModsEmpty:   len(modsBackups.Items) == 0,
+		Limit:       limit,
 	}
-	if backups.Current != nil {
-		data.Current = *backups.Current
-	}
-	if backups.NextBefore != nil && *backups.NextBefore != "" {
-		values := url.Values{"type": {typ}, "before": {*backups.NextBefore}}
-		if limit != defaultBackupLimit {
-			values.Set("limit", strconv.Itoa(limit))
-		}
-		data.NextURL = "/backups?" + values.Encode()
-	}
+	data.StateNextURL = backupNextURL("state", stateBackups.NextBefore,
+		limit, stateBefore, modsBefore)
+	data.ModsNextURL = backupNextURL("mods", modsBackups.NextBefore,
+		limit, stateBefore, modsBefore)
 	h.renderBackups(w, http.StatusOK, data)
+}
+
+func backupNextURL(typ string, nextBefore *string, limit int,
+	stateBefore, modsBefore string,
+) string {
+	if nextBefore == nil || *nextBefore == "" {
+		return ""
+	}
+	values := url.Values{}
+	if stateBefore != "" {
+		values.Set("state_before", stateBefore)
+	}
+	if modsBefore != "" {
+		values.Set("mods_before", modsBefore)
+	}
+	if typ == "state" {
+		values.Set("state_before", *nextBefore)
+	} else {
+		values.Set("mods_before", *nextBefore)
+	}
+	if limit != defaultBackupLimit {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	return "/backups?" + values.Encode() + "#" + typ
 }
 
 func (h *panelHandler) renderBackups(w http.ResponseWriter, status int, data backupsPageData) {
 	if data.ActiveNav == "" {
 		data.ActiveNav = "backups"
-	}
-	if data.ModsURL == "" {
-		data.ModsURL = "/backups?type=mods"
-	}
-	if data.TypeLabel == "" {
-		data.TypeLabel = backupTypeLabel(data.Type)
 	}
 	if data.Limit == 0 {
 		data.Limit = defaultBackupLimit
@@ -435,6 +437,87 @@ func (h *panelHandler) handleBackupDownload(typ string) http.HandlerFunc {
 		w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
 		http.ServeContent(w, r, name, info.ModTime(), file)
 	}
+}
+
+func (h *panelHandler) handleStateBundle(w http.ResponseWriter, r *http.Request) {
+	if !h.allowDownload(w, r) {
+		return
+	}
+	name := r.PathValue("name")
+	if !safeArchiveName(name) || archive.ValidateStateArchiveName(name) != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	statePath := filepath.Join(h.cfg.Root, "backups", "state", name)
+	stateInfo, err := os.Lstat(statePath)
+	if err != nil || stateInfo.Mode()&os.ModeSymlink != 0 ||
+		!stateInfo.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
+	contents, err := archive.ValidateStateLayoutFile(statePath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	modsName := contents.Current.Name
+	if archive.ValidateModsArchiveName(modsName) != nil {
+		http.NotFound(w, r)
+		return
+	}
+	modsPath := filepath.Join(h.cfg.Root, "backups", "mods", modsName)
+	modsInfo, err := os.Lstat(modsPath)
+	if err != nil || modsInfo.Mode()&os.ModeSymlink != 0 ||
+		!modsInfo.Mode().IsRegular() ||
+		modsInfo.Size() > archive.MaxCompressedSize {
+		http.NotFound(w, r)
+		return
+	}
+
+	stateFile, err := os.Open(statePath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer stateFile.Close()
+	modsFile, err := os.Open(modsPath)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer modsFile.Close()
+
+	bundleName := strings.TrimSuffix(name, ".tar.gz") + "-with-mods.zip"
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", contentDisposition(bundleName))
+	w.Header().Set("Cache-Control", "public, max-age=0, must-revalidate")
+	w.WriteHeader(http.StatusOK)
+
+	writer := zip.NewWriter(w)
+	for _, entry := range []struct {
+		name string
+		info os.FileInfo
+		file *os.File
+	}{
+		{name: name, info: stateInfo, file: stateFile},
+		{name: modsName, info: modsInfo, file: modsFile},
+	} {
+		header := &zip.FileHeader{
+			Name:     entry.name,
+			Method:   zip.Store,
+			Modified: entry.info.ModTime(),
+		}
+		target, err := writer.CreateHeader(header)
+		if err != nil {
+			return
+		}
+		if _, err := io.Copy(target, entry.file); err != nil {
+			return
+		}
+	}
+	_ = writer.Close()
 }
 
 func writeJSON(w http.ResponseWriter, status int, cacheControl string, value any) {
@@ -538,13 +621,6 @@ func statusLabel(status string) string {
 	}
 }
 
-func backupTypeLabel(typ string) string {
-	if typ == "mods" {
-		return "Моды"
-	}
-	return "Состояния"
-}
-
 func humanSize(size int64) string {
 	if size < 1024 {
 		return fmt.Sprintf("%d B", size)
@@ -568,18 +644,26 @@ func groupBackups(items []BackupItem, typ string, now time.Time) []backupGroup {
 			groups = append(groups, backupGroup{Label: label})
 		}
 		mtime, mtimeLabel := backupTime(item.Mtime)
-		groups[len(groups)-1].Items = append(groups[len(groups)-1].Items,
-			backupItemView{
-				Name:          item.Name,
-				Size:          item.Size,
-				SizeLabel:     humanSize(item.Size),
-				Mtime:         mtime,
-				MtimeLabel:    mtimeLabel,
-				Current:       item.Current,
-				DownloadURL:   "/backups/" + typ + "/" + url.PathEscape(item.Name),
-				ModsArchive:   item.ModsArchive,
-				ModsAvailable: item.ModsAvailable,
-			})
+		view := backupItemView{
+			Name:          item.Name,
+			Size:          item.Size,
+			SizeLabel:     humanSize(item.Size),
+			Mtime:         mtime,
+			MtimeLabel:    mtimeLabel,
+			Current:       item.Current,
+			DownloadURL:   "/backups/" + typ + "/" + url.PathEscape(item.Name),
+			ModsArchive:   item.ModsArchive,
+			ModsAvailable: item.ModsAvailable,
+		}
+		if typ == "state" && item.ModsArchive != nil &&
+			archive.ValidateModsArchiveName(*item.ModsArchive) == nil {
+			if item.ModsAvailable != nil && *item.ModsAvailable {
+				view.ModsDownloadURL = "/backups/mods/" +
+					url.PathEscape(*item.ModsArchive)
+				view.BundleURL = view.DownloadURL + "/bundle"
+			}
+		}
+		groups[len(groups)-1].Items = append(groups[len(groups)-1].Items, view)
 	}
 	return groups
 }

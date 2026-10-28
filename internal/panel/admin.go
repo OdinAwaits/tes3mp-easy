@@ -21,15 +21,19 @@ import (
 )
 
 const (
-	defaultLogTail      = 200
-	maxLogTail          = 2000
-	maxAdminFormBytes   = 64 << 10
-	maxConfigFormBytes  = 1 << 20
-	maxModsUploadBytes  = 512 << 20
-	maxUploadBodyBytes  = maxModsUploadBytes + (1 << 20)
-	maxPlayerFileBytes  = 4 << 20
-	maxStaffPlayers     = 1000
-	adminBackupPageSize = 200
+	defaultLogTail     = 200
+	maxLogTail         = 2000
+	maxAdminFormBytes  = 64 << 10
+	maxConfigFormBytes = 1 << 20
+	maxModsUploadBytes = 512 << 20
+	maxUploadBodyBytes = maxModsUploadBytes + (1 << 20)
+	// A restore bundle carries one state and one mods tar.gz. Each member is
+	// limited independently by archive.MaxCompressedSize.
+	maxRestoreUploadBytes = 2*archive.MaxCompressedSize + (16 << 20)
+	maxRestoreBodyBytes   = maxRestoreUploadBytes + (1 << 20)
+	maxPlayerFileBytes    = 4 << 20
+	maxStaffPlayers       = 1000
+	adminBackupPageSize   = 200
 )
 
 // opsDoctor and opsSnapshotter are optional capabilities. The public Ops
@@ -123,11 +127,15 @@ type adminLogsPageData struct {
 	Tail  int
 }
 
+type modsCurrent struct {
+	Name      string
+	SizeLabel string
+}
+
 type adminModsPageData struct {
 	adminPage
 	Items    []adminBackupItem
 	Current  string
-	SHA256   string
 	Previous string
 	Empty    bool
 	ModsURL  string
@@ -227,6 +235,8 @@ func adminPageFor(r *http.Request, session sessionState) adminPage {
 		page.Notice = "Предыдущий архив модов задеплоен."
 	case "state_deployed":
 		page.Notice = "Состояние восстановлено."
+	case "state_restored":
+		page.Notice = "Состояние и моды восстановлены из загруженного архива."
 	case "staff_saved":
 		page.Notice = "Ранг изменён. Перезапустите сервер, чтобы применить его."
 	case "config_saved":
@@ -428,8 +438,6 @@ func (h *panelHandler) dashboardData(r *http.Request,
 	} else {
 		data.Mods = &modsCurrent{
 			Name:      current.Name,
-			SHA256:    current.SHA256,
-			Size:      current.Size,
 			SizeLabel: humanSize(current.Size),
 		}
 	}
@@ -685,7 +693,6 @@ func (h *panelHandler) modsPageData(r *http.Request,
 		data.Current = *backups.Current
 	}
 	if current, currentErr := h.readCurrentMods(); currentErr == nil {
-		data.SHA256 = current.SHA256
 		if data.Current == "" {
 			data.Current = current.Name
 		}
@@ -833,98 +840,135 @@ func (h *panelHandler) handleModsUpload(w http.ResponseWriter, r *http.Request,
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBodyBytes)
-	reader, err := r.MultipartReader()
+	upload, err := h.receiveAdminUpload(r, session.CSRF, maxModsUploadBytes)
 	if err != nil {
-		h.renderModsFailure(w, r, session, http.StatusBadRequest,
-			"Ожидалась multipart-форма с архивом.", "file")
+		h.renderModsUploadFailure(w, r, session, err)
 		return
 	}
-
-	csrfOK := false
-	if token := r.Header.Get(csrfHeaderName); token != "" {
-		csrfOK = tokensEqual(token, session.CSRF)
+	if !upload.CSRF {
+		h.removeUpload(upload.Path)
+		http.Error(w, "CSRF token is missing or invalid", http.StatusForbidden)
+		return
 	}
-	uploadPath := ""
-	var uploadSize int64
+	if upload.Path == "" {
+		h.renderModsFailure(w, r, session, http.StatusBadRequest,
+			"В форме нет файла архива.", "file")
+		return
+	}
+	defer h.removeUpload(upload.Path)
+
+	result, err := h.ops.ModsImport(r.Context(), upload.Path)
+	if err != nil {
+		status, message, field := adminFailure(err)
+		h.logger.Printf("audit: action=mods.upload size=%d result=error code=%s",
+			upload.Size, adminErrorCode(err))
+		h.renderModsFailure(w, r, session, status, message, field)
+		return
+	}
+	h.logger.Printf("audit: action=mods.upload size=%d archive=%s result=ok",
+		upload.Size, result.Archive)
+	http.Redirect(w, r, "/admin/mods?ok=mods_uploaded", http.StatusSeeOther)
+}
+
+// adminUpload is one file streamed out of a multipart request. Path is a
+// private file in panel-data/uploads, not the browser-supplied name.
+type adminUpload struct {
+	Path     string
+	FileName string
+	Size     int64
+	CSRF     bool
+}
+
+var (
+	errMultipartUpload = errors.New("multipart upload is required")
+	errNoUploadFile    = errors.New("multipart request has no file")
+)
+
+// receiveAdminUpload streams the first file part to uploads and validates the
+// CSRF field while reading. It is deliberately independent of the destination
+// handler so mods and state restore share the same upload rules.
+func (h *panelHandler) receiveAdminUpload(r *http.Request, csrf string,
+	maxBytes int64,
+) (adminUpload, error) {
+	reader, err := r.MultipartReader()
+	if err != nil {
+		return adminUpload{}, errMultipartUpload
+	}
+
+	upload := adminUpload{}
+	if token := r.Header.Get(csrfHeaderName); token != "" {
+		upload.CSRF = tokensEqual(token, csrf)
+	}
 	for {
 		part, partErr := reader.NextPart()
 		if errors.Is(partErr, io.EOF) {
 			break
 		}
 		if partErr != nil {
-			h.removeUpload(uploadPath)
-			if isRequestTooLarge(partErr) {
-				h.renderModsFailure(w, r, session, http.StatusRequestEntityTooLarge,
-					"Архив больше 512 MiB.", "file")
-				return
-			}
-			h.renderModsFailure(w, r, session, http.StatusBadRequest,
-				"Не удалось прочитать загружаемый файл.", "file")
-			return
+			h.removeUpload(upload.Path)
+			return adminUpload{}, partErr
 		}
 
 		name := part.FormName()
 		if name == csrfFormField && part.FileName() == "" {
 			token, readErr := readSmallPart(part, 1024)
-			if readErr == nil && tokensEqual(string(token), session.CSRF) {
-				csrfOK = true
+			if readErr == nil {
+				upload.CSRF = tokensEqual(string(token), csrf)
 			}
 			_ = part.Close()
 			continue
 		}
-		if part.FileName() == "" && name != "file" && name != "archive" {
+		if part.FileName() == "" {
 			_, _ = io.Copy(io.Discard, io.LimitReader(part, maxAdminFormBytes))
 			_ = part.Close()
 			continue
 		}
-		if uploadPath != "" {
+		if upload.Path != "" {
 			_, _ = io.Copy(io.Discard, part)
 			_ = part.Close()
 			continue
 		}
 
-		uploadPath, uploadSize, err = h.receiveUpload(part)
+		upload.FileName = safeUploadFileName(part.FileName())
+		upload.Path, upload.Size, err = h.receiveUploadWithLimit(part, maxBytes)
 		_ = part.Close()
 		if err != nil {
-			h.removeUpload(uploadPath)
-			if isRequestTooLarge(err) {
-				h.renderModsFailure(w, r, session, http.StatusRequestEntityTooLarge,
-					"Архив больше 512 MiB.", "file")
-				return
-			}
-			h.logger.Printf("panel: mods upload: %v", err)
-			h.renderModsFailure(w, r, session, http.StatusInternalServerError,
-				"Не удалось сохранить загруженный файл.", "file")
-			return
+			h.removeUpload(upload.Path)
+			return adminUpload{}, err
 		}
 	}
-
-	if !csrfOK {
-		h.removeUpload(uploadPath)
-		http.Error(w, "CSRF token is missing or invalid", http.StatusForbidden)
-		return
+	if upload.Path == "" && upload.CSRF {
+		return upload, errNoUploadFile
 	}
-	if uploadPath == "" {
-		h.renderModsFailure(w, r, session, http.StatusBadRequest,
-			"В форме нет файла архива.", "file")
-		return
-	}
-	defer h.removeUpload(uploadPath)
-
-	result, err := h.ops.ModsImport(r.Context(), uploadPath)
-	if err != nil {
-		status, message, field := adminFailure(err)
-		h.logger.Printf("audit: action=mods.upload size=%d result=error code=%s",
-			uploadSize, adminErrorCode(err))
-		h.renderModsFailure(w, r, session, status, message, field)
-		return
-	}
-	h.logger.Printf("audit: action=mods.upload size=%d archive=%s result=ok",
-		uploadSize, result.Archive)
-	http.Redirect(w, r, "/admin/mods?ok=mods_uploaded", http.StatusSeeOther)
+	return upload, nil
 }
 
-func (h *panelHandler) receiveUpload(part io.Reader) (string, int64, error) {
+func safeUploadFileName(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	return filepath.Base(name)
+}
+
+func (h *panelHandler) renderModsUploadFailure(w http.ResponseWriter,
+	r *http.Request, session sessionState, err error,
+) {
+	switch {
+	case errors.Is(err, errMultipartUpload):
+		h.renderModsFailure(w, r, session, http.StatusBadRequest,
+			"Ожидалась multipart-форма с архивом.", "file")
+	case errors.Is(err, errNoUploadFile):
+		h.renderModsFailure(w, r, session, http.StatusBadRequest,
+			"В форме нет файла архива.", "file")
+	case isRequestTooLarge(err):
+		h.renderModsFailure(w, r, session, http.StatusRequestEntityTooLarge,
+			"Архив больше 512 MiB.", "file")
+	default:
+		h.logger.Printf("panel: mods upload: %v", err)
+		h.renderModsFailure(w, r, session, http.StatusInternalServerError,
+			"Не удалось сохранить загруженный файл.", "file")
+	}
+}
+
+func (h *panelHandler) receiveUploadWithLimit(part io.Reader, maxBytes int64) (string, int64, error) {
 	dir := filepath.Join(h.cfg.DataDir, "uploads")
 	if err := os.MkdirAll(dir, 0o2770); err != nil {
 		return "", 0, fmt.Errorf("create uploads directory: %w", err)
@@ -938,7 +982,7 @@ func (h *panelHandler) receiveUpload(part io.Reader) (string, int64, error) {
 	if err != nil {
 		return "", 0, fmt.Errorf("create upload: %w", err)
 	}
-	written, copyErr := io.Copy(file, io.LimitReader(part, maxModsUploadBytes+1))
+	written, copyErr := io.Copy(file, io.LimitReader(part, maxBytes+1))
 	closeErr := file.Close()
 	if copyErr != nil {
 		_ = os.Remove(target)
@@ -948,7 +992,7 @@ func (h *panelHandler) receiveUpload(part io.Reader) (string, int64, error) {
 		_ = os.Remove(target)
 		return "", 0, closeErr
 	}
-	if written > maxModsUploadBytes {
+	if written > maxBytes {
 		_ = os.Remove(target)
 		return "", 0, errUploadTooLarge
 	}
@@ -962,7 +1006,7 @@ func (h *panelHandler) receiveUpload(part io.Reader) (string, int64, error) {
 	return target, written, nil
 }
 
-var errUploadTooLarge = errors.New("upload is larger than 512 MiB")
+var errUploadTooLarge = errors.New("upload is larger than the configured limit")
 
 func readSmallPart(part io.Reader, limit int64) ([]byte, error) {
 	data, err := io.ReadAll(io.LimitReader(part, limit+1))

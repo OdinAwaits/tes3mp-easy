@@ -93,6 +93,11 @@ func Build(cfg Config) (Plan, error) {
 	for _, name := range cfg.ProtectedState {
 		protected[name] = true
 	}
+	for _, name := range cfg.ProtectedMods {
+		if name != "" {
+			protected[name] = true
+		}
+	}
 	for name := range automatic.monthlyReps {
 		protected[name] = true
 	}

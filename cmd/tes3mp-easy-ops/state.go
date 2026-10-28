@@ -30,10 +30,12 @@ func runState(opts options, args []string, client *systemd.Client,
 	if len(args) == 0 {
 		return writeError(stdout, stderr, opts.json,
 			ops.NewError(ops.ExitInvalidArgument,
-				"state: subcommand is required; want deploy"))
+				"state: subcommand is required; want import or deploy"))
 	}
 
 	switch args[0] {
+	case "import":
+		return runStateImport(opts, args[1:], stdout, stderr)
 	case "deploy":
 		return runStateDeploy(opts, args[1:], client, stdout, stderr)
 	default:

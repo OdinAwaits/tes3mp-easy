@@ -1,9 +1,9 @@
 // Command tes3mp-easy-ops is the administrative CLI for tes3mp-easy.
 //
 // This step implements the process contract, the read-only doctor, status,
-// logs, backups and config get commands, the mutating mods/state deploy,
-// staff set and config set commands, and fixed start/stop/restart through
-// tes3mp-easy-rootctl from docs/v2/04-ops.md.
+// logs, backups and config get commands, the mutating mods/state import and
+// deploy, staff set and config set commands, and fixed start/stop/restart
+// through tes3mp-easy-rootctl from docs/v2/04-ops.md.
 package main
 
 import (
@@ -46,8 +46,9 @@ Commands:
   backups list --type mods|state [--limit <n>] [--before <name>] [--sha256]
   backups create --type state [--manual] [--if-running]
   backups prune [--dry-run]
-  mods import --file <path>
+  mods import --file <path> [--name <archive>]
   mods deploy (--current|--latest|--archive <name>) [--no-restart]
+  state import --file <path> [--name <archive>]
   state deploy (--latest|--archive <name>) [--no-restart]
   staff set --player <name> --rank 0..3
   config get --file server|config|banlist

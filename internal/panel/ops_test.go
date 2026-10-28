@@ -321,6 +321,38 @@ func TestOpsClientCommands(t *testing.T) {
 	assertOpsCall(t, calls[18], client.binary, withRoot("restart")...)
 }
 
+func TestOpsClientNamedImports(t *testing.T) {
+	runner := &fakeOpsRunner{fn: func(_ context.Context, _ string, args ...string) ([]byte, []byte, int, error) {
+		if opsCommandKey(args) == "state import --file /tmp/state.tar.gz --name state-manual-2026-10-22_12-00-00.tar.gz" {
+			return []byte(`{"ok":true,"data":{"archive":"state-manual-2026-10-22_12-00-00.tar.gz","sha256":"abc","mods_archive":"mods-2026-10-22_12-00-00.tar.gz","players":1,"world_files":5,"pruned":[],"warnings":[]}}`), nil, 0, nil
+		}
+		return []byte(`{"ok":true,"data":{"archive":"mods-2026-10-22_12-00-00.tar.gz","sha256":"def","plugins":1,"scripts":0,"pruned":[],"warnings":[]}}`), nil, 0, nil
+	}}
+	client := newTestOpsClient(t, runner)
+	ctx := context.Background()
+
+	imported, err := client.ModsImportNamed(ctx, "/tmp/mods.tar.gz",
+		"mods-2026-10-22_12-00-00.tar.gz")
+	if err != nil || imported.Archive != "mods-2026-10-22_12-00-00.tar.gz" {
+		t.Fatalf("ModsImportNamed = %+v, %v", imported, err)
+	}
+	state, err := client.StateImport(ctx, "/tmp/state.tar.gz",
+		"state-manual-2026-10-22_12-00-00.tar.gz")
+	if err != nil || state.ModsArchive != "mods-2026-10-22_12-00-00.tar.gz" ||
+		state.Players != 1 || state.WorldFiles != 5 {
+		t.Fatalf("StateImport = %+v, %v", state, err)
+	}
+
+	root := []string{"--root", "/tes3mp-easy", "--json"}
+	calls := runner.calls()
+	assertOpsCall(t, calls[0], client.binary,
+		append(root, "mods", "import", "--file", "/tmp/mods.tar.gz",
+			"--name", "mods-2026-10-22_12-00-00.tar.gz")...)
+	assertOpsCall(t, calls[1], client.binary,
+		append(root, "state", "import", "--file", "/tmp/state.tar.gz",
+			"--name", "state-manual-2026-10-22_12-00-00.tar.gz")...)
+}
+
 func assertOpsCall(t *testing.T, call opsCall, name string, args ...string) {
 	t.Helper()
 	if call.name != name {
@@ -379,6 +411,22 @@ func TestOpsClientRejectsInvalidLocalArguments(t *testing.T) {
 		}},
 		{name: "state deploy", call: func() error {
 			_, err := client.StateDeploy(context.Background(), "")
+			return err
+		}},
+		{name: "mods import named path", call: func() error {
+			_, err := client.ModsImportNamed(context.Background(), "", "mods-x.tar.gz")
+			return err
+		}},
+		{name: "mods import named name", call: func() error {
+			_, err := client.ModsImportNamed(context.Background(), "/tmp/x", "")
+			return err
+		}},
+		{name: "state import path", call: func() error {
+			_, err := client.StateImport(context.Background(), "", "state-x.tar.gz")
+			return err
+		}},
+		{name: "state import name", call: func() error {
+			_, err := client.StateImport(context.Background(), "/tmp/x", "")
 			return err
 		}},
 		{name: "staff set", call: func() error {

@@ -30,18 +30,19 @@ func TestPanelHTTPContract(t *testing.T) {
 
 	resp = doHTTP(t, client, http.MethodGet, p.httpsURL("/backups"), "127.0.0.1")
 	requireStatus(t, resp, http.StatusOK, "HTTPS /backups")
-	requireContains(t, resp.Body, "Публичные архивы")
-	requireContains(t, resp.Body, "Архивов пока нет")
+	requireContains(t, resp.Body, "Архивы сервера")
+	requireContains(t, resp.Body, "Состояний пока нет")
+	requireContains(t, resp.Body, "Архивов модов пока нет")
 	requireSecurityHeaders(t, resp)
 
 	resp = doHTTP(t, client, http.MethodGet, p.httpsURL("/backups?type=mods"), "127.0.0.1")
 	requireStatus(t, resp, http.StatusOK, "HTTPS /backups?type=mods")
-	requireContains(t, resp.Body, "Публичные архивы")
+	requireContains(t, resp.Body, "Архивы сервера")
 
 	resp = doHTTP(t, client, http.MethodGet, p.httpsURL("/backups?type=state"), "127.0.0.1")
 	requireStatus(t, resp, http.StatusOK, "HTTPS /backups?type=state")
-	requireContains(t, resp.Body, "Публичные архивы")
-	requireContains(t, resp.Body, "Архивов пока нет")
+	requireContains(t, resp.Body, "Архивы сервера")
+	requireContains(t, resp.Body, "Состояний пока нет")
 
 	resp = doHTTP(t, client, http.MethodGet, p.httpsURL("/backups?type=bogus"), "127.0.0.1")
 	requireStatus(t, resp, http.StatusBadRequest, "HTTPS /backups?type=bogus")

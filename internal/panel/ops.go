@@ -79,6 +79,17 @@ type ImportResult struct {
 	Warnings []string `json:"warnings"`
 }
 
+// StateImportResult is the decoded `data` object of `ops state import`.
+type StateImportResult struct {
+	Archive     string   `json:"archive"`
+	SHA256      string   `json:"sha256"`
+	ModsArchive string   `json:"mods_archive"`
+	Players     int      `json:"players"`
+	WorldFiles  int      `json:"world_files"`
+	Pruned      []string `json:"pruned"`
+	Warnings    []string `json:"warnings"`
+}
+
 // DeployResult combines the fields of `ops mods deploy` and `ops state deploy`.
 // Fields that do not belong to the executed command remain zero-valued.
 type DeployResult struct {
@@ -748,17 +759,57 @@ func (c *OpsClient) BackupCreate(ctx context.Context, typ string, manual bool) (
 
 // ModsImport validates and stores an uploaded mods archive.
 func (c *OpsClient) ModsImport(ctx context.Context, path string) (ImportResult, error) {
+	return c.modsImport(ctx, path, "")
+}
+
+// ModsImportNamed is ModsImport with an explicit archive name. State archives
+// reference the exact mods filename, so restoring a downloaded bundle must not
+// let the import timestamp rename the package.
+func (c *OpsClient) ModsImportNamed(ctx context.Context, path, name string) (ImportResult, error) {
+	if name == "" {
+		return ImportResult{}, opsArgumentError("mods import", "archive name is required")
+	}
+	return c.modsImport(ctx, path, name)
+}
+
+func (c *OpsClient) modsImport(ctx context.Context, path, name string) (ImportResult, error) {
 	if path == "" {
 		return ImportResult{}, opsArgumentError("mods import", "file path is required")
 	}
-	raw, err := c.call(ctx, c.longMutationTimeout, "mods import",
-		"mods", "import", "--file", path)
+	args := []string{"mods", "import", "--file", path}
+	if name != "" {
+		args = append(args, "--name", name)
+	}
+	raw, err := c.call(ctx, c.longMutationTimeout, "mods import", args...)
 	if err != nil {
 		return ImportResult{}, err
 	}
 	var data ImportResult
 	if err := c.decodeData("mods import", raw, &data); err != nil {
 		return ImportResult{}, err
+	}
+	data.Pruned = nonNilStrings(data.Pruned)
+	data.Warnings = nonNilStrings(data.Warnings)
+	return data, nil
+}
+
+// StateImport validates an uploaded state archive against the active mods
+// package and stores it in backups/state under the requested name.
+func (c *OpsClient) StateImport(ctx context.Context, path, name string) (StateImportResult, error) {
+	if path == "" {
+		return StateImportResult{}, opsArgumentError("state import", "file path is required")
+	}
+	if name == "" {
+		return StateImportResult{}, opsArgumentError("state import", "archive name is required")
+	}
+	raw, err := c.call(ctx, c.longMutationTimeout, "state import",
+		"state", "import", "--file", path, "--name", name)
+	if err != nil {
+		return StateImportResult{}, err
+	}
+	var data StateImportResult
+	if err := c.decodeData("state import", raw, &data); err != nil {
+		return StateImportResult{}, err
 	}
 	data.Pruned = nonNilStrings(data.Pruned)
 	data.Warnings = nonNilStrings(data.Warnings)

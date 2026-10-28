@@ -513,6 +513,44 @@ sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
   --root /tes3mp-easy --json backups create --type state --manual
 ```
 
+Восстановить скачанный архив через панель:
+
+1. `/admin/state` → «Восстановить из скачанного архива».
+2. Выберите ZIP «состояние + моды» (с `/backups`) или отдельный state
+   `.tar.gz`.
+3. Дождитесь redirect с сообщением «Состояние и моды восстановлены…».
+
+Панель для ZIP сама импортирует моды под их исходным именем, задеплоит их,
+импортирует state и выполнит `state deploy`. Отдельный state принимается
+только на уже активном пакете модов. Временные загрузки удаляются.
+
+То же через CLI:
+
+```bash
+# Моды: сохранить имя из state, затем активировать
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json mods import \
+  --file /tes3mp-easy/panel-data/uploads/mods.tar.gz \
+  --name mods-2026-10-22_12-00-00.tar.gz
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json mods deploy \
+  --archive mods-2026-10-22_12-00-00.tar.gz
+
+# State: положить в backups/state, затем восстановить
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json state import \
+  --file /tes3mp-easy/panel-data/uploads/state.tar.gz \
+  --name state-2026-10-22_12-00-00.tar.gz
+sudo -u tes3mp /opt/tes3mp-easy/bin/tes3mp-easy-ops \
+  --root /tes3mp-easy --json state deploy \
+  --archive state-2026-10-22_12-00-00.tar.gz
+```
+
+`state import` проверяет state против активного `backups/mods/current.txt`,
+поэтому порядок обязателен. Коллизия имени возвращает `invalid_argument`;
+существующие архивы не перезаписываются. Перед импортом распакуйте ZIP из
+`/backups`, если работаете вручную: внутри лежат ровно state и mods `.tar.gz`.
+
 Список и текущий пакет:
 
 ```bash

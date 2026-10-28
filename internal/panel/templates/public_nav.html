@@ -5,7 +5,8 @@
     <span>TES3MP <strong>Easy</strong></span>
   </a>
   <nav class="nav" aria-label="Публичные страницы">
-    <a href="/backups"{{if eq .ActiveNav "backups"}} aria-current="page"{{end}}>Бэкапы</a>
+    <a href="/"{{if eq .ActiveNav "home"}} aria-current="page"{{end}}>Главная</a>
+    <a href="/backups"{{if eq .ActiveNav "backups"}} aria-current="page"{{end}}>Архивы</a>
     <a class="nav-cta" href="/admin/login"{{if eq .ActiveNav "login"}} aria-current="page"{{end}}>Вход в панель</a>
   </nav>
 </header>

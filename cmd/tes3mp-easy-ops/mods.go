@@ -25,11 +25,13 @@ import (
 
 type modsImportArgs struct {
 	file string
+	name string
 }
 
 type modsImportRequest struct {
 	root   string
 	file   string
+	name   string
 	now    time.Time
 	dryRun bool
 }
@@ -104,6 +106,7 @@ func runModsImport(opts options, args []string, stdout, stderr io.Writer) int {
 	result, importErr := importModsLocked(modsImportRequest{
 		root:   opts.root,
 		file:   importArgs.file,
+		name:   importArgs.name,
 		now:    modsImportNowFunc(),
 		dryRun: opts.dryRun,
 	})
@@ -134,6 +137,7 @@ func parseModsImportArgs(args []string) (modsImportArgs, *ops.Error) {
 	fs.Usage = func() {}
 
 	file := fs.String("file", "", "")
+	name := fs.String("name", "", "")
 
 	if err := fs.Parse(args); err != nil {
 		return modsImportArgs{}, ops.NewError(ops.ExitInvalidArgument,
@@ -147,7 +151,13 @@ func parseModsImportArgs(args []string) (modsImportArgs, *ops.Error) {
 		return modsImportArgs{}, ops.NewError(ops.ExitInvalidArgument,
 			"mods import: --file is required")
 	}
-	return modsImportArgs{file: *file}, nil
+	if *name != "" {
+		if err := archive.ValidateModsArchiveName(*name); err != nil {
+			return modsImportArgs{}, ops.NewError(ops.ExitInvalidArgument,
+				fmt.Sprintf("mods import: --name: %v", err))
+		}
+	}
+	return modsImportArgs{file: *file, name: *name}, nil
 }
 
 // importModsLocked validates the upload and moves it into backups/mods. The
@@ -165,7 +175,7 @@ func importModsLocked(req modsImportRequest) (modsImportResult, *ops.Error) {
 
 	modsDir := filepath.Join(req.root, "backups", "mods")
 	stateDir := filepath.Join(req.root, "backups", "state")
-	devicePath, err := prepareModsDestination(modsDir, req.dryRun)
+	devicePath, err := prepareArchiveDestination(modsDir, req.dryRun)
 	if err != nil {
 		return modsImportResult{}, modsImportError("prepare destination", err)
 	}
@@ -206,7 +216,7 @@ func importModsLocked(req modsImportRequest) (modsImportResult, *ops.Error) {
 		return modsImportResult{}, modsImportError("validate upload", err)
 	}
 
-	name, err := archive.NextArchiveNameInDir(modsDir, archive.KindMods, now)
+	name, err := modsImportArchiveName(req.name, modsDir, now)
 	if err != nil {
 		return modsImportResult{}, modsImportError("choose archive name", err)
 	}
@@ -220,9 +230,10 @@ func importModsLocked(req modsImportRequest) (modsImportResult, *ops.Error) {
 	}
 
 	cfg := retention.Config{
-		StateDir: stateDir,
-		ModsDir:  modsDir,
-		Now:      now,
+		StateDir:      stateDir,
+		ModsDir:       modsDir,
+		ProtectedMods: []string{name},
+		Now:           now,
 	}
 	if req.dryRun {
 		// A dry run may not have backups/mods yet. Check free space on the
@@ -260,19 +271,40 @@ func importModsLocked(req modsImportRequest) (modsImportResult, *ops.Error) {
 	return result, nil
 }
 
-// publishModsUpload moves a validated upload into backups/mods. Rename is the
+func modsImportArchiveName(requested, modsDir string, now time.Time) (string, error) {
+	if requested == "" {
+		return archive.NextArchiveNameInDir(modsDir, archive.KindMods, now)
+	}
+	if err := archive.ValidateModsArchiveName(requested); err != nil {
+		return "", err
+	}
+	target := filepath.Join(modsDir, requested)
+	if _, err := os.Lstat(target); err == nil {
+		return "", fmt.Errorf("%w: %s", fs.ErrExist, target)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", err
+	}
+	return requested, nil
+}
+
+// publishModsUpload moves a validated mods upload into backups/mods.
+func publishModsUpload(src, target string) error {
+	return publishUpload(src, target, modsImportRenameFunc)
+}
+
+// publishUpload moves a validated upload into a backup directory. Rename is the
 // fast path. It can return EXDEV even when both paths share st_dev: systemd
 // implements ReadWritePaths as separate bind mounts, and Linux forbids rename
 // across mount points. In that case copy into a .part file in the destination
 // directory, fsync, and rename within that directory.
-func publishModsUpload(src, target string) error {
+func publishUpload(src, target string, rename func(string, string) error) error {
 	dir := filepath.Dir(target)
-	err := modsImportRenameFunc(src, target)
+	err := rename(src, target)
 	if err == nil {
 		if syncErr := atomicfile.SyncDir(dir); syncErr != nil {
 			return errors.Join(
 				fmt.Errorf("sync backup directory: %w", syncErr),
-				modsImportRenameFunc(target, src),
+				rename(target, src),
 			)
 		}
 		return nil
@@ -281,22 +313,22 @@ func publishModsUpload(src, target string) error {
 		return fmt.Errorf("rename upload: %w", err)
 	}
 
-	if copyErr := copyModsUpload(src, target); copyErr != nil {
+	if copyErr := copyUpload(src, target); copyErr != nil {
 		return fmt.Errorf("rename upload: %v; copy fallback: %w", err, copyErr)
 	}
 	if removeErr := os.Remove(src); removeErr != nil {
 		return errors.Join(
 			fmt.Errorf("remove upload after copy: %w", removeErr),
-			removeModsTarget(target),
+			removeUploadTarget(target),
 			atomicfile.SyncDir(dir),
 		)
 	}
 	return nil
 }
 
-// copyModsUpload writes target through atomicfile so a crash cannot expose a
+// copyUpload writes target through atomicfile so a crash cannot expose a
 // partial backup. The caller removes src only after the destination is durable.
-func copyModsUpload(src, target string) error {
+func copyUpload(src, target string) error {
 	input, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("open upload: %w", err)
@@ -323,24 +355,24 @@ func copyModsUpload(src, target string) error {
 	if err := writer.Commit(); err != nil {
 		return errors.Join(
 			fmt.Errorf("commit backup: %w", err),
-			removeModsTarget(target),
+			removeUploadTarget(target),
 			atomicfile.SyncDir(filepath.Dir(target)),
 		)
 	}
 	return nil
 }
 
-func removeModsTarget(path string) error {
+func removeUploadTarget(path string) error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove backup %s: %w", path, err)
 	}
 	return nil
 }
 
-// prepareModsDestination creates backups/mods for a real import. A dry run
-// must not create anything, so it returns the nearest existing parent for the
-// same-filesystem check while NextArchiveNameInDir still targets modsDir.
-func prepareModsDestination(dir string, dryRun bool) (string, error) {
+// prepareArchiveDestination creates a backup directory for a real import. A dry
+// run must not create anything, so it returns the nearest existing parent for
+// the same-filesystem check.
+func prepareArchiveDestination(dir string, dryRun bool) (string, error) {
 	info, err := os.Lstat(dir)
 	switch {
 	case err == nil:
@@ -435,6 +467,8 @@ func modsImportError(operation string, err error) *ops.Error {
 		exit = ops.ExitUnsafePath
 	case errors.Is(err, syscall.ENOSPC):
 		exit = ops.ExitNoSpace
+	case errors.Is(err, fs.ErrExist):
+		exit = ops.ExitInvalidArgument
 	case errors.Is(err, syscall.EXDEV):
 		exit = ops.ExitInvalidArgument
 	}

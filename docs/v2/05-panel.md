@@ -123,10 +123,11 @@ TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10
 
 | Метод | Путь | Назначение |
 |---|---|---|
-| GET | `/` | Имя сервера, статус, текущие моды, ссылки на архивы модов, вход |
-| GET | `/backups` | Публичный список архивов модов и состояний |
+| GET | `/` | Имя сервера, статус, ссылки на публичные архивы, вход |
+| GET | `/backups` | Публичный список: состояния и моды в двух колонках |
 | GET | `/backups/mods/<name>` | Скачать архив модов |
 | GET | `/backups/state/<name>` | Скачать состояние |
+| GET | `/backups/state/<name>/bundle` | Скачать состояние и его пакет модов одним ZIP |
 | GET | `/api/v1/server` | Информация для клиента (без пароля) |
 | GET | `/api/v1/mods/current` | Метаданные текущего архива модов |
 | GET | `/api/v1/mods/current/archive` | Текущий архив модов |
@@ -146,7 +147,8 @@ ops-клиент (`ops.go`). Contract-тесты панели живут в `tes
 проверяют cookie, ошибки и реальный бинарник; лимиты памяти — в
 `test/resource`.
 
-Публичные скачивания модов и состояний и `/api/v1/mods/current/archive` делят
+Публичные скачивания модов, состояний, bundle state+mods и
+`/api/v1/mods/current/archive` делят
 лимит 60 запросов в минуту на IP. Имена архивов проверяются как
 `filepath.Base` + `.tar.gz` и по шаблону типа, symlink и каталоги не отдаются.
 State перед отдачей проверяется на текущий layout без cfg/banlist.
@@ -174,6 +176,7 @@ State перед отдачей проверяется на текущий layou
 | GET | `/admin/mods/download/<name>` | Скачать выбранный пакет модов |
 | GET | `/admin/state` | Состояния и их пакеты модов |
 | POST | `/admin/state/create` | Создать state сейчас |
+| POST | `/admin/state/restore` | Загрузить ZIP/state и восстановить |
 | POST | `/admin/state/deploy` | Восстановить state |
 | GET | `/admin/state/download/<name>` | Скачать state |
 | GET | `/admin/restore-points` | `301` на `/admin/state` |
@@ -190,12 +193,13 @@ State перед отдачей проверяется на текущий layou
 обновляют статус и журнал через `/api/v1/admin/{status,logs}` раз в 5 секунд,
 метрики — через `/api/v1/admin/metrics` раз в 15 секунд
 (`internal/panel/static/admin.js`, без inline-скриптов). Upload идёт потоково:
-`MaxBytesReader` на 512 MiB, `MultipartReader`, UUID-имя в
-`panel-data/uploads/`, CSRF-поле проверяется в том же проходе, а файл удаляется
-после `mods import`. Действия пишут аудит в journald
-(`action=mods.deploy archive=... result=ok`) без паролей, сессий и содержимого
-файлов. `doctor` кэшируется на минуту; статус `error` блокирует мутации с
-`503` и показывает проблемные проверки.
+`MaxBytesReader` на 512 MiB для модов и 1 ГиБ для ZIP/state restore,
+`MultipartReader`, UUID-имя в `panel-data/uploads/`, CSRF-поле проверяется в том
+же проходе, а файл удаляется после импорта. ZIP распаковывается в
+`panel-data/uploads/restore-*` и удаляется после запроса. Действия пишут аудит в
+journald (`action=mods.deploy archive=... result=ok`) без паролей, сессий и
+содержимого файлов. `doctor` кэшируется на минуту; статус `error` блокирует
+мутации с `503` и показывает проблемные проверки.
 
 ## 5. Аутентификация
 
@@ -259,21 +263,32 @@ State перед отдачей проверяется на текущий layou
 `configs/config.lua`; `tes3mp-server-default.cfg` с паролем сервера и
 `banlist.json` в архив не попадают.
 
+Публичная страница `/backups` показывает состояния и моды одновременно в двух
+колонках. Никаких вкладок и переключения `type` для просмотра нет.
+
 ```text
-GET /backups?type=mods|state
-  panel ──sudo -u tes3mp──► ops backups list --type <type> --limit 200 --json
-  panel группирует items по дням/неделям/месяцам для отображения
+GET /backups?limit=200&state_before=<name>&mods_before=<name>
+  panel ──sudo -u tes3mp──► ops backups list --type state ...
+  panel ──sudo -u tes3mp──► ops backups list --type mods ...
+  panel группирует оба списка по дням/неделям/месяцам
 ```
 
-- `limit` по умолчанию 200, максимум 500; `next_before` становится ссылкой
-  «показать более старые»;
-- `type` отсутствует или равен `mods`; `state` показывает состояния;
-  неизвестное значение возвращает `400`;
-- `before` проверяется как безопасное имя `.tar.gz` до вызова ops;
+- `limit` по умолчанию 200, максимум 500, применяется к каждой колонке;
+- `state_before` и `mods_before` — независимые курсоры; каждая колонка
+  показывает свою ссылку «более старые» и сохраняет курсор соседней колонки;
+- legacy `type=mods|state` и `before` принимаются для старых закладок;
+  неизвестный `type` возвращает `400`;
+- `before`, `state_before`, `mods_before` проверяются как безопасное имя
+  `.tar.gz` до вызова ops;
 - группировка только визуальная: контракт списка остаётся плоским;
-- текущий архив модов помечен, но скачивается как обычный.
+- текущий архив модов помечен, но скачивается как обычный;
+- у state показаны дата, размер и `mods_archive` из его `current.txt`; если
+  пакет есть, имя ведёт на его скачивание, если нет — бейдж «файл отсутствует».
 
-Скачивание:
+`sha256` в публичном HTML не выводится. Он остаётся в `/api/v1/mods/current`
+для клиента и в `ETag` скачивания текущего архива.
+
+Скачивание одного архива:
 
 ```text
 GET /backups/<type>/<name>
@@ -284,14 +299,25 @@ GET /backups/<type>/<name>
   http.ServeContent(w, r, name, mtime, file)
 ```
 
+Скачивание state вместе с его модами:
+
+```text
+GET /backups/state/<name>/bundle
+  validate state layout и читать current.txt из state
+  mods = backups/mods/<current.Name>, только regular file без symlink
+  zip.Store: <state>.tar.gz + <mods>.tar.gz
+  Content-Type: application/zip
+```
+
 - без авторизации;
 - без directory listing;
-- `Content-Type: application/gzip`,
+- для одиночных архивов `Content-Type: application/gzip`,
   `Content-Disposition: attachment; filename="..."`;
-- rate limit 60 скачиваний в минуту на IP;
+- ZIP-кнопка есть только у state, для которого пакет модов доступен;
+- rate limit 60 скачиваний в минуту на IP общий для всех маршрутов;
 - symlink и каталоги не отдаются;
 - старый state с `tes3mp-server-default.cfg` или `banlist.json` не отдаётся
-  (`404`), даже если файл лежит в `backups/state/`.
+  (`404`) ни напрямую, ни в bundle, даже если файл лежит в `backups/state/`.
 
 ## 7. Интеграция с ops
 
@@ -369,7 +395,7 @@ JSON-объект или мусор после envelope считаются `inte
   пример JSON и запрет на базовые ESM;
 - кнопка «Deploy» у выбранного;
 - кнопка «Rollback» — деплой предыдущего архива;
-- текущий мод-пак и его `sha256`;
+- текущий мод-пак;
 - результат последней операции.
 
 Загрузка:
@@ -440,9 +466,45 @@ Rollback — это не отдельная магия, а `mods deploy --archiv
    `ops mods deploy --archive <mods_archive>`;
 2. «Восстановить» вызывает `ops state deploy --archive <state>`.
 
+### Восстановление из скачанного архива
+
+На `/admin/state` есть форма «Восстановить из скачанного архива». Она принимает:
+
+- ZIP, который отдаёт кнопка «Скачать состояние + моды» на `/backups`;
+- отдельный state `.tar.gz`.
+
+ZIP-сценарий одной операцией:
+
+1. ZIP потоково сохраняется в `panel-data/uploads`, проверяется, что в корне
+   ровно два файла: `state-*.tar.gz` и `mods-*.tar.gz`, и распаковывается в
+   приватный `uploads/restore-*`;
+2. state и моды проверяются локально; `current.txt` состояния обязан совпадать
+   с именем и sha256 модов из ZIP;
+3. если модов с таким именем ещё нет, вызывается
+   `ops mods import --file ... --name <mods>`, затем
+   `ops mods deploy --archive <mods>`;
+4. `ops state import --file ... --name <state>`, затем
+   `ops state deploy --archive <state>`;
+5. redirect на `?ok=state_restored`; временные файлы удаляются.
+
+Отдельный state `.tar.gz` не импортирует моды: он проверяется против уже
+активного `backups/mods/current.txt`. Если пакет не совпадает, страница
+возвращает `422` до импорта и подмены данных.
+
+Если файл с тем же именем уже существует:
+
+- одинаковый sha256 — существующий архив переиспользуется;
+- другой sha256 — `409`, потому что переименование модов сломало бы
+  `current.txt` внутри state, а ops не перезаписывает архивы.
+
+Пароль сервера и `banlist.json` из скачанного архива не применяются.
+`state deploy` сам создаёт `state-predeploy-*` и перезапускает сервер, если он
+работал.
+
 Ограничения:
 
-- state-архивы публичны: `/backups?type=state` и `/backups/state/<name>`;
+- state-архивы публичны: `/backups#state` и `/backups/state/<name>`;
+  рядом доступна ZIP-кнопка «state + моды», если пакет модов существует;
   `/admin/state/download/<name>` остаётся для админской страницы;
 - отдельного удаления и истории конфигов нет;
 - `state deploy` восстанавливает только `players/`, `world/` и
@@ -666,11 +728,12 @@ panel-data/
 ## 16. Безопасность
 
 - Панель не отдаёт файлы по произвольному пути: публично только
-  `backups/mods/<name>` и `backups/state/<name>` после `filepath.Base`,
-  проверки имени и, для state, проверки layout. В state входит только
-  `configs/config.lua`; `tes3mp-server-default.cfg` с паролем сервера и
-  `banlist.json` в архив не попадают. Старые state с этими файлами публично не
-  отдаются.
+  `backups/mods/<name>`, `backups/state/<name>` и
+  `backups/state/<name>/bundle` после `filepath.Base`, проверки имени и, для
+  state, проверки layout. В state входит только `configs/config.lua`;
+  `tes3mp-server-default.cfg` с паролем сервера и `banlist.json` в архив не
+  попадают. Старые state с этими файлами публично не отдаются. Bundle берёт
+  имя модов из `current.txt` внутри state, а не из запроса.
 - Нет file manager, web terminal, raw editor.
 - Все формы — CSRF.
 - Все изменяющие действия — POST, без GET-побочек.
@@ -693,8 +756,8 @@ panel-data/
 | CSS и тема | `/static/panel.css` отдаётся как `text/css`; полные шаблоны подключают общий `head`; нет `style=`; активный раздел помечен `aria-current` |
 | Логин | верный/неверный пароль, rate limit, cookie-флаги, CSRF |
 | Argon2id | memory 32768, threads 1, time 3, verify |
-| Публичные скачивания | path traversal, не-`.tar.gz`, отсутствующий файл, `Content-Disposition`, state с cfg/banlist → `404` |
-| Пагинация | `limit`/`before`, `next_before` |
+| Публичные скачивания | path traversal, не-`.tar.gz`, отсутствующий файл, `Content-Disposition`, state с cfg/banlist → `404`, ZIP state+mods |
+| Пагинация | независимые `state_before`/`mods_before`, legacy `before`, `next_before` |
 | Загрузка модов | лимит 512 MiB, UUID-имя, `MultipartReader`, вызов fake ops, очистка upload |
 | Ошибки ops | каждый `error.code` → ожидаемый HTTP и текст |
 | Конфиги | валидация, повторное чтение, diff формы целиком, `config_invalid` |

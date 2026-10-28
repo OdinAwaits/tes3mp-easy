@@ -99,6 +99,7 @@ func (h *panelHandler) routes() http.Handler {
 	mux.HandleFunc("GET /backups", h.handleBackups)
 	mux.HandleFunc("GET /backups/mods/{name}", h.handleBackupDownload("mods"))
 	mux.HandleFunc("GET /backups/state/{name}", h.handleBackupDownload("state"))
+	mux.HandleFunc("GET /backups/state/{name}/bundle", h.handleStateBundle)
 	mux.HandleFunc("GET /api/v1/server", h.handleServerInfo)
 	mux.HandleFunc("GET /api/v1/mods/current", h.handleModsCurrent)
 	mux.HandleFunc("GET /api/v1/mods/current/archive", h.handleModsArchive)
@@ -118,6 +119,7 @@ func (h *panelHandler) routes() http.Handler {
 	mux.HandleFunc("GET /admin/state", h.authenticated(false, h.handleState))
 	mux.HandleFunc("GET /admin/restore-points", h.redirectToState)
 	mux.HandleFunc("POST /admin/state/create", h.authenticated(false, h.handleStateCreate))
+	mux.HandleFunc("POST /admin/state/restore", h.authenticated(false, h.handleStateRestore))
 	mux.HandleFunc("POST /admin/state/deploy", h.authenticated(false, h.handleStateDeploy))
 	mux.HandleFunc("GET /admin/state/download/{name}", h.authenticated(false, h.handleStateDownload))
 	mux.HandleFunc("GET /admin/config", h.authenticated(false, h.handleConfig))
@@ -290,7 +292,9 @@ func (h *panelHandler) authenticated(allowMustChange bool, next authenticatedHan
 			// Streaming multipart uploads cannot be parsed by the generic
 			// CSRF middleware without buffering the whole body. The upload
 			// handler validates the field while reading the stream.
-			if isMultipartForm(r) && r.URL.Path == "/admin/mods/upload" {
+			if isMultipartForm(r) &&
+				(r.URL.Path == "/admin/mods/upload" ||
+					r.URL.Path == "/admin/state/restore") {
 				if token := r.Header.Get(csrfHeaderName); token != "" &&
 					!tokensEqual(token, session.CSRF) {
 					http.Error(w, "CSRF token is missing or invalid", http.StatusForbidden)

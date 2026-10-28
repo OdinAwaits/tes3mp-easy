@@ -101,6 +101,7 @@ func TestParseModsImportArgs(t *testing.T) {
 		args []string
 		exit ops.ExitCode
 		file string
+		arch string
 	}{
 		{
 			name: "valid",
@@ -112,8 +113,17 @@ func TestParseModsImportArgs(t *testing.T) {
 			args: []string{"--file=/tmp/upload.tar.gz"},
 			exit: ops.ExitOK, file: "/tmp/upload.tar.gz",
 		},
+		{
+			name: "explicit name",
+			args: []string{"--file", "/tmp/upload.tar.gz",
+				"--name", "mods-2026-10-22_12-00-00.tar.gz"},
+			exit: ops.ExitOK, file: "/tmp/upload.tar.gz",
+			arch: "mods-2026-10-22_12-00-00.tar.gz",
+		},
 		{name: "missing file", args: nil, exit: ops.ExitInvalidArgument},
 		{name: "empty file", args: []string{"--file="}, exit: ops.ExitInvalidArgument},
+		{name: "invalid name", args: []string{"--file", "a", "--name", "state-x.tar.gz"},
+			exit: ops.ExitInvalidArgument},
 		{name: "unknown flag", args: []string{"--bogus"}, exit: ops.ExitInvalidArgument},
 		{
 			name: "extra argument",
@@ -142,6 +152,9 @@ func TestParseModsImportArgs(t *testing.T) {
 			}
 			if got.file != tt.file {
 				t.Fatalf("file = %q, want %q", got.file, tt.file)
+			}
+			if got.name != tt.arch {
+				t.Fatalf("name = %q, want %q", got.name, tt.arch)
 			}
 		})
 	}
@@ -592,6 +605,54 @@ func TestRunModsImportRejectsSymlinkDestination(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("symlink target contains %d entries, want none", len(entries))
+	}
+}
+
+func TestRunModsImportNamedArchive(t *testing.T) {
+	root := modsImportRoot(t)
+	fixModsImportNow(t, modsImportTestNow)
+	modsDir := filepath.Join(root, "backups", "mods")
+	fixtures.DefaultModsInit().Install(t, modsDir)
+	currentBefore := fixtures.ReadCurrent(t, modsDir)
+	upload, body := writeModsUpload(t, root, fixtures.ScriptedMods())
+	name := "mods-2026-10-20_09-30-00.tar.gz"
+
+	code, data, stdout, stderr := runModsImportCommand(t, root,
+		"--file", upload, "--name", name)
+	if code != int(ops.ExitOK) {
+		t.Fatalf("exit = %d, want 0; stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if data.Archive != name || data.SHA256 != fixtures.SHA256Hex(body) {
+		t.Fatalf("import data = %+v", data)
+	}
+	target := filepath.Join(modsDir, name)
+	copied, err := os.ReadFile(target)
+	if err != nil || !bytes.Equal(copied, body) {
+		t.Fatalf("named archive = %d bytes, %v", len(copied), err)
+	}
+	if _, err := os.Stat(upload); !os.IsNotExist(err) {
+		t.Fatalf("upload still exists after named import: %v", err)
+	}
+	if currentAfter := fixtures.ReadCurrent(t, modsDir); currentAfter != currentBefore {
+		t.Fatalf("current.txt changed: %q -> %q", currentBefore, currentAfter)
+	}
+}
+
+func TestRunModsImportNamedArchiveRejectsCollision(t *testing.T) {
+	root := modsImportRoot(t)
+	modsDir := filepath.Join(root, "backups", "mods")
+	upload, _ := writeModsUpload(t, root, fixtures.ScriptedMods())
+	name := "mods-2026-10-20_09-30-00.tar.gz"
+	fixtures.WriteFile(t, filepath.Join(modsDir, name), "existing")
+
+	code, _, stdout, _ := runModsImportCommand(t, root,
+		"--file", upload, "--name", name)
+	if code != int(ops.ExitInvalidArgument) {
+		t.Fatalf("exit = %d, want %d; stdout=%q", code,
+			ops.ExitInvalidArgument, stdout)
+	}
+	if _, err := os.Stat(upload); err != nil {
+		t.Fatalf("upload removed after collision: %v", err)
 	}
 }
 

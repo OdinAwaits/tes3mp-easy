@@ -24,6 +24,20 @@
       <p class="muted">Текущие моды: <code>{{.CurrentMods}}</code></p>
     {{end}}
 
+    <section class="card card--warning">
+      <h2>Восстановить из скачанного архива</h2>
+      <p>ZIP «состояние + моды» (кнопка на странице резервных копий) импортирует и задеплоит моды, затем восстановит состояние. Отдельный state <code>.tar.gz</code> восстановится только на уже активном пакете модов.</p>
+      <form method="post" action="/admin/state/restore" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf" value="{{.CSRF}}">
+        <div class="field">
+          <label for="restore-file">Архив .zip или state .tar.gz, до 1 ГиБ</label>
+          <input id="restore-file" type="file" name="file" accept=".zip,.tar.gz,application/zip,application/gzip" required>
+        </div>
+        <button class="button button--danger" type="submit">Загрузить и восстановить</button>
+      </form>
+      <p class="muted">Сервер будет перезапущен, если он работает. Пароль и banlist.json из загруженного архива не меняются. Перед восстановлением ops создаст state-predeploy-*.</p>
+    </section>
+
     <div class="toolbar">
       <div class="actions">
         <form method="post" action="/admin/state/create">

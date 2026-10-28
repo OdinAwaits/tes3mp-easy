@@ -193,6 +193,25 @@ func TestRetentionProtectedStateArchiveIsKept(t *testing.T) {
 	}
 }
 
+func TestRetentionProtectedModsArchiveIsKept(t *testing.T) {
+	modsDir := t.TempDir()
+	var oldest string
+	for i := 1; i <= 7; i++ {
+		name := writeArchive(t, modsDir, archive.KindMods,
+			testNow.AddDate(0, 0, -i), 0, 1)
+		if i == 7 {
+			oldest = name
+		}
+	}
+
+	cfg := testConfig("", modsDir)
+	cfg.ProtectedMods = []string{oldest}
+	plan := planFor(t, cfg)
+	if !names(plan.Keep)[oldest] {
+		t.Fatalf("protected mods archive %s was pruned", oldest)
+	}
+}
+
 func TestRetentionCurrentModsArchiveIsProtected(t *testing.T) {
 	modsDir := t.TempDir()
 	var namesByAge []string

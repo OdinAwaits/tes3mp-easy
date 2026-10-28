@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 {{template "head"}}
-  <title>Бэкапы — tes3mp-easy</title>
+  <title>Архивы — tes3mp-easy</title>
 </head>
 <body>
   {{template "publicNav" .}}
@@ -10,70 +10,92 @@
   <main class="page">
     <div class="page-head">
       <p class="eyebrow">Публичный архив</p>
-      <h1>Публичные архивы</h1>
-      <p class="lead">Скачайте текущий или предыдущий архив модов или состояние мира.</p>
+      <h1>Архивы сервера</h1>
+      <p class="lead">Состояния мира и архивы модов доступны без входа. У каждого состояния указан пакет модов, с которым оно создано.</p>
     </div>
-
-    <nav class="tabs" aria-label="Раздел">
-      <a href="{{.ModsURL}}"{{if eq .Type "mods"}} aria-current="page"{{end}}>Моды</a>
-      <a href="/backups?type=state"{{if eq .Type "state"}} aria-current="page"{{end}}>Состояния</a>
-      <a href="/">Главная</a>
-    </nav>
 
     {{if .Error}}<p role="alert">{{.Error}}</p>{{end}}
-    <div class="page-subhead">
-      <h2>{{.TypeLabel}}</h2>
-      {{if .Current}}<p class="muted">Текущий архив: <code>{{.Current}}</code></p>{{end}}
-    </div>
 
-    {{if .Empty}}
-      <p class="empty-state">Архивов пока нет.</p>
-    {{end}}
-
-    <div class="stack">
-      {{range .Groups}}
-        <section class="card">
+    <div class="archive-grid">
+      <section class="card archive-column" id="state">
+        <div class="page-subhead">
+          <h2>Состояния</h2>
+          <span class="muted">Мир, игроки и config.lua</span>
+        </div>
+        {{if .StateEmpty}}<p class="empty-state">Состояний пока нет.</p>{{end}}
+        {{range .StateGroups}}
           <h3>{{.Label}}</h3>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Архив</th>
-                  <th>Размер</th>
-                  <th>Дата (UTC)</th>
-                  <th>Скачать</th>
-                </tr>
-              </thead>
-              <tbody>
-                {{range .Items}}
-                  <tr>
-                    <td>
-                      <code>{{.Name}}</code>
-                      {{if .Current}}<span class="tag">(текущий)</span>{{end}}
-                    </td>
-                    <td>{{.SizeLabel}}</td>
-                    <td><time datetime="{{.Mtime}}">{{.MtimeLabel}}</time></td>
-                    <td><a class="button button--secondary button--small" href="{{.DownloadURL}}">Скачать</a></td>
-                  </tr>
-                {{end}}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      {{end}}
+          <ul class="archive-list">
+            {{range .Items}}
+              <li class="archive-item">
+                <div class="archive-item-head">
+                  <time class="archive-date" datetime="{{.Mtime}}">{{.MtimeLabel}}</time>
+                  {{if .Current}}<span class="tag">текущий</span>{{end}}
+                </div>
+                <p class="archive-name"><code>{{.Name}}</code></p>
+                <p class="archive-meta">
+                  Моды:
+                  {{if .ModsArchive}}
+                    {{if .ModsDownloadURL}}
+                      <a href="{{.ModsDownloadURL}}"><code>{{.ModsArchive}}</code></a>
+                    {{else}}
+                      <code>{{.ModsArchive}}</code>
+                      <span class="badge" data-status="warn">файл отсутствует</span>
+                    {{end}}
+                  {{else}}
+                    <span class="muted">ссылка не читается</span>
+                  {{end}}
+                  <span class="muted">· {{.SizeLabel}}</span>
+                </p>
+                <div class="row-actions">
+                  <a class="button button--secondary button--small" href="{{.DownloadURL}}">Скачать состояние</a>
+                  {{if .BundleURL}}
+                    <a class="button button--primary button--small" href="{{.BundleURL}}">Скачать состояние + моды (.zip)</a>
+                  {{end}}
+                </div>
+              </li>
+            {{end}}
+          </ul>
+        {{end}}
+        {{if .StateNextURL}}<p class="pagination"><a class="button button--secondary button--small" href="{{.StateNextURL}}">Более старые состояния</a></p>{{end}}
+      </section>
+
+      <section class="card archive-column" id="mods">
+        <div class="page-subhead">
+          <h2>Моды</h2>
+          <span class="muted">Неизменяемые архивы</span>
+        </div>
+        {{if .ModsEmpty}}<p class="empty-state">Архивов модов пока нет.</p>{{end}}
+        {{range .ModsGroups}}
+          <h3>{{.Label}}</h3>
+          <ul class="archive-list">
+            {{range .Items}}
+              <li class="archive-item">
+                <div class="archive-item-head">
+                  <time class="archive-date" datetime="{{.Mtime}}">{{.MtimeLabel}}</time>
+                  {{if .Current}}<span class="tag">текущий</span>{{end}}
+                </div>
+                <p class="archive-name"><code>{{.Name}}</code></p>
+                <p class="archive-meta">{{.SizeLabel}}</p>
+                <div class="row-actions">
+                  <a class="button button--secondary button--small" href="{{.DownloadURL}}">Скачать моды</a>
+                </div>
+              </li>
+            {{end}}
+          </ul>
+        {{end}}
+        {{if .ModsNextURL}}<p class="pagination"><a class="button button--secondary button--small" href="{{.ModsNextURL}}">Более старые моды</a></p>{{end}}
+      </section>
     </div>
 
     <form class="toolbar" method="get" action="/backups">
-      <input type="hidden" name="type" value="{{.Type}}">
       <div class="field">
-        <label for="limit">Записей на страницу</label>
+        <label for="limit">Записей в каждой колонке</label>
         <input id="limit" type="number" name="limit" min="1" max="500"
                value="{{.Limit}}">
       </div>
       <button type="submit">Показать</button>
     </form>
-
-    {{if .NextURL}}<p class="pagination"><a class="button button--secondary" href="{{.NextURL}}">Показать более старые</a></p>{{end}}
   </main>
 </body>
 </html>

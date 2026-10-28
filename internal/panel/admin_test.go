@@ -3,6 +3,8 @@ package panel
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log"
@@ -22,6 +24,18 @@ import (
 type adminDeployCall struct {
 	kind string
 	ref  string
+}
+
+type adminImportCall struct {
+	path string
+	name string
+	body []byte
+}
+
+type adminStateImportCall struct {
+	path string
+	name string
+	body []byte
 }
 
 type adminConfigSetCall struct {
@@ -52,6 +66,14 @@ type fakeAdminOps struct {
 	importPath   string
 	importData   []byte
 	importMode   os.FileMode
+
+	importNamedCalls  []adminImportCall
+	importNamedResult ImportResult
+	importNamedErr    error
+
+	stateImports      []adminStateImportCall
+	stateImportResult StateImportResult
+	stateImportErr    error
 
 	deploys   []adminDeployCall
 	deployErr error
@@ -130,6 +152,38 @@ func (f *fakeAdminOps) ModsImport(_ context.Context, path string) (ImportResult,
 		f.importMode = info.Mode().Perm()
 	}
 	return f.importResult, f.importErr
+}
+
+func (f *fakeAdminOps) ModsImportNamed(_ context.Context, path, name string) (ImportResult, error) {
+	body, _ := os.ReadFile(path)
+	call := adminImportCall{path: path, name: name, body: body}
+	f.importNamedCalls = append(f.importNamedCalls, call)
+	if f.importNamedErr != nil {
+		return ImportResult{}, f.importNamedErr
+	}
+	result := f.importNamedResult
+	if result.Archive == "" {
+		result.Archive = name
+	}
+	if result.SHA256 == "" {
+		sum := sha256.Sum256(body)
+		result.SHA256 = hex.EncodeToString(sum[:])
+	}
+	return result, nil
+}
+
+func (f *fakeAdminOps) StateImport(_ context.Context, path, name string) (StateImportResult, error) {
+	body, _ := os.ReadFile(path)
+	call := adminStateImportCall{path: path, name: name, body: body}
+	f.stateImports = append(f.stateImports, call)
+	if f.stateImportErr != nil {
+		return StateImportResult{}, f.stateImportErr
+	}
+	result := f.stateImportResult
+	if result.Archive == "" {
+		result.Archive = name
+	}
+	return result, nil
 }
 
 func (f *fakeAdminOps) ModsDeploy(_ context.Context, ref string) (DeployResult, error) {
@@ -478,6 +532,9 @@ func TestAdminModsPageDeployAndRollback(t *testing.T) {
 			t.Fatalf("mods page does not contain %q:\n%s", want, body)
 		}
 	}
+	if strings.Contains(body, "sha256") {
+		t.Fatalf("mods page still shows sha256:\n%s", body)
+	}
 
 	rec = env.request(t, http.MethodPost, "/admin/mods/deploy",
 		url.Values{"archive": {"mods-2026-10-22_12-00-00.tar.gz"}})
@@ -649,6 +706,8 @@ func TestAdminStatePageGroupsAndValidatesInput(t *testing.T) {
 		"state-manual", "state-predeploy", "Восстановить",
 		"Скачать состояние", "mods-2026-10-23_12-00-00.tar.gz",
 		"Показать более старые", "state-2026-10-20_12-00-00.tar.gz",
+		"Восстановить из скачанного архива", "/admin/state/restore",
+		"enctype=\"multipart/form-data\"",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("state page does not contain %q:\n%s", want, body)

@@ -71,8 +71,9 @@ internal/
 | `backups list --type mods\|state [--limit 200] [--before <name>] [--sha256]` | Страница архивов; state-items содержат `mods_archive` и `mods_available` |
 | `backups create --type state [--manual] [--if-running] [--dry-run]` | Создаёт state и запускает state-only retention |
 | `backups prune [--dry-run]` | Полный retention state + mods |
-| `mods import --file <path>` | Проверяет и импортирует архив модов |
+| `mods import --file <path> [--name <archive>]` | Проверяет и импортирует архив модов; `--name` сохраняет имя для восстановления state |
 | `mods deploy (--current\|--latest\|--archive <name>) [--no-restart]` | Деплоит пакет модов, создаёт `state-predeploy-*`, запускает full retention |
+| `state import --file <path> [--name <archive>]` | Проверяет state на текущем пакете модов и кладёт его в `backups/state` |
 | `state deploy (--latest\|--archive <name>) [--no-restart]` | Восстанавливает world+players+config.lua на текущем пакете модов |
 | `staff set --player <name> --rank 0..3` | Меняет `settings.staffRank` |
 | `config get --file server\|config\|banlist` | Отдаёт структурированные настройки |
@@ -333,6 +334,19 @@ CLI: `backups prune [--dry-run]`.
 Ошибки отдельных удалений возвращаются в `warnings`, остальные файлы
 обрабатываются. `--dry-run` только печатает имена.
 
+### `state import`
+
+CLI: `state import --file <path> [--name <archive>] [--dry-run]`.
+
+Импорт нужен для скачанного state. Команда проверяет layout,
+`current.txt` и `configs/config.lua`, а также требует, чтобы
+`current.txt` состояния совпадал с активным `backups/mods/current.txt` и
+sha256 пакета. Поэтому сначала выполняется `mods deploy`.
+
+`--name` задаёт точное имя в `backups/state`; без него используется basename
+файла. Коллизия — `invalid_argument`. Импорт защищает новый архив от retention
+этого запуска и не запускает `state deploy`.
+
 ### `state deploy`
 
 CLI: `state deploy (--latest|--archive <name>) [--no-restart] [--dry-run]`.
@@ -358,6 +372,11 @@ CLI: `state deploy (--latest|--archive <name>) [--no-restart] [--dry-run]`.
 Вход — путь к `.tar.gz`, который панель сохранила в `panel-data/uploads/`.
 Ops не доверяет ни имени, ни содержимому.
 
+Необязательный `--name` сохраняет точное имя модов. Это нужно для state,
+который ссылается на конкретный `mods-*.tar.gz`; без флага импорт выбирает
+новое имя по текущему времени. Существующее имя не перезаписывается:
+возвращается `invalid_argument`.
+
 Проверки:
 
 - upload и `backups/mods` на одной файловой системе (`stat.Dev`), иначе
@@ -380,7 +399,8 @@ Ops не доверяет ни имени, ни содержимому.
 - нет дубликатов имён.
 
 При успехе архив переименовывается в
-`backups/mods/mods-YYYY-MM-DD_HH-MM-SS.tar.gz`. В штатном panel unit upload и
+`backups/mods/mods-YYYY-MM-DD_HH-MM-SS.tar.gz` (или в имя из `--name`). В
+штатном panel unit upload и
 `backups/mods` находятся на одном mount. Если `rename` всё же возвращает
 `EXDEV` (нестандартный unit), ops копирует upload в `.part` в `backups/mods`,
 делает `fsync`, переименовывает `.part` в целевое имя и удаляет исходный
