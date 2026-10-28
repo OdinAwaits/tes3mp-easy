@@ -177,12 +177,12 @@ func Resolve(options Options) (Environment, error) {
 		env.ConfigDir = filepath.Join(env.PrefixDir, "pfx", "drive_c",
 			"users", "steamuser", "Documents", "My Games", "OpenMW")
 		if strings.TrimSpace(options.ProtonPath) == "" {
-			env.ProtonDir, err = DiscoverProton(home)
+			env.ProtonDir, err = FindProton(home)
 			if err != nil {
 				return Environment{}, err
 			}
 		} else {
-			env.ProtonDir, err = protonDir(options.ProtonPath, home)
+			env.ProtonDir, err = ProtonFolder(options.ProtonPath, home)
 			if err != nil {
 				return Environment{}, err
 			}

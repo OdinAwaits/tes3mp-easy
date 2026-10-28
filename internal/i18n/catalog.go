@@ -5,17 +5,18 @@ const (
 	KeyAppTitle   = "app.title"
 	KeyAppTagline = "app.tagline"
 
-	KeyCommonAdd      = "common.add"
-	KeyCommonEdit     = "common.edit"
-	KeyCommonDelete   = "common.delete"
-	KeyCommonSave     = "common.save"
-	KeyCommonCancel   = "common.cancel"
-	KeyCommonClose    = "common.close"
-	KeyCommonAbout    = "common.about"
-	KeyCommonPlay     = "common.play"
-	KeyCommonError    = "common.error"
-	KeyCommonSetup    = "common.setup"
-	KeyCommonAdvanced = "common.advanced"
+	KeyCommonAdd       = "common.add"
+	KeyCommonEdit      = "common.edit"
+	KeyCommonDelete    = "common.delete"
+	KeyCommonSave      = "common.save"
+	KeyCommonCancel    = "common.cancel"
+	KeyCommonClose     = "common.close"
+	KeyCommonAbout     = "common.about"
+	KeyCommonPlay      = "common.play"
+	KeyCommonError     = "common.error"
+	KeyCommonSetup     = "common.setup"
+	KeyCommonAdvanced  = "common.advanced"
+	KeyCommonEnterPath = "common.enter_path"
 
 	KeyRailPlay        = "rail.play"
 	KeyRailInstall     = "rail.installation"
@@ -79,7 +80,9 @@ const (
 	KeyInstallChange           = "install.change"
 	KeyInstallBrowse           = "install.browse"
 	KeyInstallWorkDirHint      = "install.work_dir_hint"
-	KeyInstallProtonHint       = "install.proton_hint"
+	KeyInstallProtonFound      = "install.proton_found"
+	KeyInstallProtonManual     = "install.proton_manual"
+	KeyInstallProtonMissing    = "install.proton_missing"
 
 	KeyUninstall              = "uninstall"
 	KeyUninstallDangerZone    = "uninstall.danger_zone"
@@ -325,17 +328,18 @@ var catalogs = map[Language]map[string]string{
 		KeyAppTitle:   "tes3mp-easy",
 		KeyAppTagline: "Morrowind with friends",
 
-		KeyCommonAdd:      "Add",
-		KeyCommonEdit:     "Edit",
-		KeyCommonDelete:   "Delete",
-		KeyCommonSave:     "Save",
-		KeyCommonCancel:   "Cancel",
-		KeyCommonClose:    "Close",
-		KeyCommonAbout:    "About",
-		KeyCommonPlay:     "Play",
-		KeyCommonError:    "Error",
-		KeyCommonSetup:    "Setup",
-		KeyCommonAdvanced: "Advanced",
+		KeyCommonAdd:       "Add",
+		KeyCommonEdit:      "Edit",
+		KeyCommonDelete:    "Delete",
+		KeyCommonSave:      "Save",
+		KeyCommonCancel:    "Cancel",
+		KeyCommonClose:     "Close",
+		KeyCommonAbout:     "About",
+		KeyCommonPlay:      "Play",
+		KeyCommonError:     "Error",
+		KeyCommonSetup:     "Setup",
+		KeyCommonAdvanced:  "Advanced",
+		KeyCommonEnterPath: "Enter path…",
 
 		KeyRailPlay:        "Play",
 		KeyRailInstall:     "Installation",
@@ -399,7 +403,9 @@ var catalogs = map[Language]map[string]string{
 		KeyInstallChange:               "Change…",
 		KeyInstallBrowse:               "Browse…",
 		KeyInstallWorkDirHint:          "Keep the default. Changing the folder after installation requires installing TES3MP and the mods again.",
-		KeyInstallProtonHint:           "Only needed on Linux when Steam does not provide Proton.",
+		KeyInstallProtonFound:          "Found automatically",
+		KeyInstallProtonManual:         "Set manually",
+		KeyInstallProtonMissing:        "Not found — choose the folder",
 		KeyUninstall:                   "Uninstall",
 		KeyUninstallDangerZone:         "Danger zone",
 		KeyUninstallTitle:              "Uninstall TES3MP Easy",
@@ -559,7 +565,7 @@ var catalogs = map[Language]map[string]string{
 		KeyErrorGameMissing:            "TES3MP is not installed.",
 		KeyErrorGameMissingAct:         "Open Setup and install TES3MP, then retry.",
 		KeyErrorGameProton:             "The Proton runtime is not usable.",
-		KeyErrorGameProtonAct:          "Select a working Proton folder in Settings, or install Proton through Steam.",
+		KeyErrorGameProtonAct:          "Select a working Proton folder in Installation → Advanced, or install Proton through Steam.",
 		KeyErrorGameConfig:             "The game configuration could not be prepared.",
 		KeyErrorGameConfigAct:          "Check write permissions for the work folder and the OpenMW config folder, then retry.",
 		KeyErrorGameStart:              "TES3MP could not be started.",
@@ -641,17 +647,18 @@ var catalogs = map[Language]map[string]string{
 		KeyAppTitle:   "tes3mp-easy",
 		KeyAppTagline: "Morrowind с друзьями",
 
-		KeyCommonAdd:      "Добавить",
-		KeyCommonEdit:     "Изменить",
-		KeyCommonDelete:   "Удалить",
-		KeyCommonSave:     "Сохранить",
-		KeyCommonCancel:   "Отмена",
-		KeyCommonClose:    "Закрыть",
-		KeyCommonAbout:    "О клиенте",
-		KeyCommonPlay:     "Играть",
-		KeyCommonError:    "Ошибка",
-		KeyCommonSetup:    "Настройка",
-		KeyCommonAdvanced: "Дополнительно",
+		KeyCommonAdd:       "Добавить",
+		KeyCommonEdit:      "Изменить",
+		KeyCommonDelete:    "Удалить",
+		KeyCommonSave:      "Сохранить",
+		KeyCommonCancel:    "Отмена",
+		KeyCommonClose:     "Закрыть",
+		KeyCommonAbout:     "О клиенте",
+		KeyCommonPlay:      "Играть",
+		KeyCommonError:     "Ошибка",
+		KeyCommonSetup:     "Настройка",
+		KeyCommonAdvanced:  "Дополнительно",
+		KeyCommonEnterPath: "Ввести путь…",
 
 		KeyRailPlay:        "Играть",
 		KeyRailInstall:     "Установка",
@@ -715,7 +722,9 @@ var catalogs = map[Language]map[string]string{
 		KeyInstallChange:               "Сменить…",
 		KeyInstallBrowse:               "Выбрать…",
 		KeyInstallWorkDirHint:          "Оставьте по умолчанию. Смена папки после установки требует заново установить TES3MP и моды.",
-		KeyInstallProtonHint:           "Нужно только на Linux, если Proton не предоставлен Steam.",
+		KeyInstallProtonFound:          "Найдено автоматически",
+		KeyInstallProtonManual:         "Задано вручную",
+		KeyInstallProtonMissing:        "Не найден — выберите папку",
 		KeyUninstall:                   "Удалить установку",
 		KeyUninstallDangerZone:         "Опасная зона",
 		KeyUninstallTitle:              "Удаление TES3MP Easy",
@@ -875,7 +884,7 @@ var catalogs = map[Language]map[string]string{
 		KeyErrorGameMissing:            "TES3MP не установлен.",
 		KeyErrorGameMissingAct:         "Откройте мастер подготовки, установите TES3MP и повторите.",
 		KeyErrorGameProton:             "Proton не удаётся использовать.",
-		KeyErrorGameProtonAct:          "Выберите рабочую папку Proton в Настройках или установите Proton через Steam.",
+		KeyErrorGameProtonAct:          "Выберите рабочую папку Proton в «Установка → Дополнительно» или установите Proton через Steam.",
 		KeyErrorGameConfig:             "Не удалось подготовить конфигурацию игры.",
 		KeyErrorGameConfigAct:          "Проверьте права на запись в рабочей папке и папке конфигурации OpenMW, затем повторите.",
 		KeyErrorGameStart:              "Не удалось запустить TES3MP.",

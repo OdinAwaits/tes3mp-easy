@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -186,6 +187,182 @@ func TestInstallationAdvancedKeepsOnlyPathAccordions(t *testing.T) {
 				title)
 		}
 	}
+}
+
+// TestInstallationAdvancedEditsPathsWithPicker keeps folder editing on the
+// native picker: the rows must not contain text fields, and every row exposes
+// both the picker button and the typed-entry fallback.
+func TestInstallationAdvancedEditsPathsWithPicker(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	tr := s.service.Translator()
+
+	entries := 0
+	buttons := 0
+	walkObjects(s.installationAdvanced(tr), func(item fyne.CanvasObject) {
+		switch item.(type) {
+		case *widget.Entry:
+			entries++
+		case *widget.Button:
+			buttons++
+		}
+	})
+	if entries != 0 {
+		t.Fatalf("Advanced shows %d text fields, want none: paths are picked", entries)
+	}
+	rows := 1 + boolToInt(runtime.GOOS == "linux")
+	if want := 2 * rows; buttons < want {
+		t.Fatalf("Advanced has %d buttons, want at least %d (picker and typed "+
+			"entry per row)", buttons, want)
+	}
+}
+
+// TestPathButtonsOfferPickerAndTypedEntry keeps the fallback visible next to the
+// native picker, so a desktop without a portal can still set a folder.
+func TestPathButtonsOfferPickerAndTypedEntry(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	tr := s.service.Translator()
+
+	var captions []string
+	walkObjects(s.pathButtons(tr, "Title", tr.T(i18n.KeyInstallChange), t.TempDir(),
+		func(string) {}), func(item fyne.CanvasObject) {
+		if button, ok := item.(*widget.Button); ok {
+			captions = append(captions, button.Text)
+		}
+	})
+	want := []string{tr.T(i18n.KeyInstallChange), tr.T(i18n.KeyCommonEnterPath)}
+	if len(captions) != len(want) {
+		t.Fatalf("path buttons = %q, want %q", captions, want)
+	}
+	for index, caption := range want {
+		if captions[index] != caption {
+			t.Fatalf("path button %d = %q, want %q", index, captions[index], caption)
+		}
+	}
+}
+
+// TestPathPickerOpensFolderDialog proves the primary action is the native folder
+// dialog: after a click the top overlay is a folder list, not a text prompt.
+func TestPathPickerOpensFolderDialog(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	tr := s.service.Translator()
+
+	picker := pathButton(t, s, tr, tr.T(i18n.KeyInstallChange))
+	test.Tap(picker)
+	overlay := s.window.Canvas().Overlays().Top()
+	if overlay == nil {
+		t.Fatal("the picker button opened no dialog")
+	}
+	lists, entries := 0, 0
+	walkObjects(overlay, func(item fyne.CanvasObject) {
+		switch item.(type) {
+		case *widget.List:
+			lists++
+		case *widget.Entry:
+			entries++
+		}
+	})
+	if lists == 0 {
+		t.Fatal("the folder dialog shows no folder list")
+	}
+	if entries != 0 {
+		t.Fatalf("the folder dialog shows %d text fields, want none", entries)
+	}
+}
+
+// TestTypedPathFallbackOpensEntryDialog keeps the second action working: on a
+// desktop without a portal the user must still be able to type the folder.
+func TestTypedPathFallbackOpensEntryDialog(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	tr := s.service.Translator()
+
+	manual := pathButton(t, s, tr, tr.T(i18n.KeyCommonEnterPath))
+	test.Tap(manual)
+	overlay := s.window.Canvas().Overlays().Top()
+	if overlay == nil {
+		t.Fatal("the typed-entry button opened no dialog")
+	}
+	entries := 0
+	walkObjects(overlay, func(item fyne.CanvasObject) {
+		if _, ok := item.(*widget.Entry); ok {
+			entries++
+		}
+	})
+	if entries != 1 {
+		t.Fatalf("the typed-entry dialog has %d fields, want 1", entries)
+	}
+}
+
+// pathButton builds one path row and returns the button with the given caption.
+func pathButton(t *testing.T, s *shell, tr *i18n.Translator,
+	caption string,
+) *widget.Button {
+	t.Helper()
+	button := (*widget.Button)(nil)
+	walkObjects(s.pathButtons(tr, "Folder", tr.T(i18n.KeyInstallChange),
+		t.TempDir(), func(string) {}), func(item fyne.CanvasObject) {
+		if typed, ok := item.(*widget.Button); ok && typed.Text == caption {
+			button = typed
+		}
+	})
+	if button == nil {
+		t.Fatalf("the path row has no %q button", caption)
+	}
+	return button
+}
+
+// TestFolderURI guards the picker's start location: only an existing directory
+// positions the dialog, anything else keeps the platform default.
+func TestFolderURI(t *testing.T) {
+	dir := t.TempDir()
+	if folderURI(dir) == nil {
+		t.Fatalf("folderURI(%q) = nil, want the directory", dir)
+	}
+	if got := folderURI(filepath.Join(dir, "missing")); got != nil {
+		t.Fatalf("folderURI(missing) = %q, want nil", got)
+	}
+	if got := folderURI("   "); got != nil {
+		t.Fatalf("folderURI(empty) = %q, want nil", got)
+	}
+}
+
+// TestProtonHintNamesTheSource keeps the Proton row honest: a discovered folder
+// is labelled as such, a configured one as manual, and a missing one asks for a
+// folder instead of printing a dash.
+func TestProtonHintNamesTheSource(t *testing.T) {
+	tr := i18n.New(i18n.English)
+	tests := []struct {
+		name   string
+		status app.ProtonStatus
+		want   string
+	}{
+		{name: "discovered", status: app.ProtonStatus{Path: "/steam/Proton 9.0",
+			Source: app.ProtonDiscovered}, want: tr.T(i18n.KeyInstallProtonFound)},
+		{name: "manual", status: app.ProtonStatus{Path: "/opt/GE-Proton9",
+			Source: app.ProtonFromConfig}, want: tr.T(i18n.KeyInstallProtonManual)},
+		{name: "missing", status: app.ProtonStatus{Source: app.ProtonMissing,
+			Err: errors.New("Proton was not found")},
+			want: tr.T(i18n.KeyInstallProtonMissing)},
+		{name: "unusable manual path", status: app.ProtonStatus{
+			Path: "/opt/empty", Source: app.ProtonFromConfig,
+			Err: errors.New("no proton binary")},
+			want: tr.T(i18n.KeyInstallProtonMissing)},
+	}
+	for _, test := range tests {
+		if got := protonHint(tr, test.status); got != test.want {
+			t.Errorf("%s hint = %q, want %q", test.name, got, test.want)
+		}
+	}
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 // TestHeaderHasLanguageAndThemeSwitches pins the header contract: one language

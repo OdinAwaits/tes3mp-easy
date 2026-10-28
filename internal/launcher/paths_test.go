@@ -1,6 +1,7 @@
 package launcher
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,5 +94,28 @@ func TestProtonDir(t *testing.T) {
 	}
 	if _, err := protonDir(noProton, home); err == nil {
 		t.Fatal("Proton folder without proton accepted")
+	}
+}
+
+// TestProtonErrorsAreClassified keeps the UI contract: a Proton problem found
+// while discovering or validating the folder must report T3E-GAME-02 with the
+// "choose a folder" action instead of an unknown failure.
+func TestProtonErrorsAreClassified(t *testing.T) {
+	home := t.TempDir()
+	if _, err := FindProton(home); !errors.Is(err, ErrProton) {
+		t.Fatalf("FindProton error = %v, want ErrProton", err)
+	}
+	noProton := filepath.Join(home, "Proton 9.0")
+	if err := os.MkdirAll(noProton, 0o700); err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+	if _, err := ProtonFolder(noProton, home); !errors.Is(err, ErrProton) {
+		t.Fatalf("ProtonFolder error = %v, want ErrProton", err)
+	}
+	valid := filepath.Join(home, "Tools", "GE-Proton9")
+	writeExecutable(t, filepath.Join(valid, "proton"))
+	found, err := ProtonFolder(valid, home)
+	if err != nil || found != valid {
+		t.Fatalf("ProtonFolder(%q) = %q, %v; want %q", valid, found, err, valid)
 	}
 }

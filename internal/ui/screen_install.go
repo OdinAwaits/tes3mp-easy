@@ -316,7 +316,9 @@ func (s *shell) uiVideoStatus(tr *i18n.Translator) installStatus {
 }
 
 // installationAdvanced keeps the paths that used to live in the settings
-// dialog. The work directory stays platform-default unless changed here.
+// dialog. The work directory stays platform-default unless changed here, and the
+// Proton row shows the folder the launcher would actually use, not only the
+// persisted override.
 func (s *shell) installationAdvanced(tr *i18n.Translator) fyne.CanvasObject {
 	cfg := s.service.Config()
 	paths := s.service.Paths()
@@ -325,34 +327,34 @@ func (s *shell) installationAdvanced(tr *i18n.Translator) fyne.CanvasObject {
 	if strings.TrimSpace(cfg.WorkDir) != "" {
 		workDir = cfg.WorkDir
 	}
-	workDirRow := container.NewBorder(nil, nil, nil,
-		widget.NewButton(tr.T(i18n.KeyInstallChange), func() {
-			s.changePath(tr.T(i18n.KeySettingsWorkDir), workDir,
-				func(value string) {
+	workDirRow := container.NewVBox(
+		container.NewBorder(nil, nil, nil,
+			s.pathButtons(tr, tr.T(i18n.KeySettingsWorkDir),
+				tr.T(i18n.KeyInstallChange), workDir, func(value string) {
 					settings := s.settings()
 					settings.WorkDir = value
 					s.saveSettings(settings)
-				})
-		}),
-		container.NewVBox(pathLabel(workDir),
-			style.MutedLabel(tr.T(i18n.KeyInstallWorkDirHint))))
+				}),
+			pathLabel(workDir)),
+		style.MutedLabel(tr.T(i18n.KeyInstallWorkDirHint)))
 
 	items := []*widget.AccordionItem{
 		widget.NewAccordionItem(tr.T(i18n.KeySettingsWorkDir),
 			container.NewVBox(workDirRow)),
 	}
 	if runtime.GOOS == "linux" {
-		protonRow := container.NewBorder(nil, nil, nil,
-			widget.NewButton(tr.T(i18n.KeyInstallBrowse), func() {
-				s.changePath(tr.T(i18n.KeySettingsProton), cfg.ProtonPath,
+		proton := s.service.ProtonStatus()
+		protonRow := container.NewVBox(
+			container.NewBorder(nil, nil, nil,
+				s.pathButtons(tr, tr.T(i18n.KeySettingsProton),
+					tr.T(i18n.KeyInstallBrowse), proton.Path,
 					func(value string) {
 						settings := s.settings()
 						settings.ProtonPath = value
 						s.saveSettings(settings)
-					})
-			}),
-			container.NewVBox(pathLabel(cfg.ProtonPath),
-				style.MutedLabel(tr.T(i18n.KeyInstallProtonHint))))
+					}),
+				pathLabel(proton.Path)),
+			style.MutedLabel(protonHint(tr, proton)))
 		items = append(items, widget.NewAccordionItem(
 			tr.T(i18n.KeySettingsProton), container.NewVBox(protonRow)))
 	}
@@ -362,6 +364,18 @@ func (s *shell) installationAdvanced(tr *i18n.Translator) fyne.CanvasObject {
 		style.Subheading(tr.T(i18n.KeyCommonAdvanced)),
 		accordion,
 	)
+}
+
+// protonHint explains where the Proton folder comes from, or asks for one when
+// nothing usable was found.
+func protonHint(tr *i18n.Translator, status app.ProtonStatus) string {
+	if status.Err != nil || strings.TrimSpace(status.Path) == "" {
+		return tr.T(i18n.KeyInstallProtonMissing)
+	}
+	if status.Source == app.ProtonFromConfig {
+		return tr.T(i18n.KeyInstallProtonManual)
+	}
+	return tr.T(i18n.KeyInstallProtonFound)
 }
 
 // installationDangerZone removes client-owned folders. It is the only place in
@@ -374,23 +388,6 @@ func (s *shell) installationDangerZone(tr *i18n.Translator) fyne.CanvasObject {
 		button,
 		style.MutedLabel(tr.T(i18n.KeyUninstallKeepMorrowind)),
 	)
-}
-
-// changePath asks for a path and stores it through the supplied setter.
-func (s *shell) changePath(title, current string, apply func(string)) {
-	tr := s.service.Translator()
-	entry := widget.NewEntry()
-	entry.SetText(current)
-	content := container.NewVBox(widget.NewLabel(title), entry)
-	popup := dialog.NewCustomConfirm(title, tr.T(i18n.KeyCommonSave),
-		tr.T(i18n.KeyCommonCancel), content, func(ok bool) {
-			if !ok {
-				return
-			}
-			apply(strings.TrimSpace(entry.Text))
-		}, s.window)
-	popup.Resize(fyne.NewSize(560, 200))
-	popup.Show()
 }
 
 func (s *shell) saveSettings(settings app.Settings) {

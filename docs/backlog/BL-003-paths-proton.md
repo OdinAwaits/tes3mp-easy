@@ -1,7 +1,16 @@
 # BL-003. Пути и Proton: проводник вместо ручного ввода, эффективный Proton
 
-**Статус:** новое (28.10.2026), не начато. Включает BL-005 (Proton: путь не
-показывается, выбор идёт через ручной ввод).
+**Статус:** сделано (28.10.2026). Обе строки «Дополнительно» открывают
+системный выбор папки: `chooseFolder`/`pathButtons` (`internal/ui/folders.go`)
+стартуют с текущего каталога, «Ввести путь…» остался запасным действием, мастер
+использует тот же выбор. `app.Service.ProtonStatus` отдаёт эффективный Proton
+(`proton_path`, иначе `launcher.FindProton`) вместе с источником; строка
+подписывает источник или просит выбрать папку. Ошибки поиска и проверки Proton
+обёрнуты в `launcher.ErrProton` (`FindProton`/`ProtonFolder`), поэтому запуск
+показывает `T3E-GAME-02` и кнопку «Установка». Тесты: `TestProtonStatus*`,
+`TestProtonErrorsAreClassified`, `TestInstallationAdvancedEditsPathsWithPicker`,
+`TestPathButtonsOfferPickerAndTypedEntry`, `TestFolderURI`,
+`TestProtonHintNamesTheSource`; в `failure_test` добавлен случай «missing Proton».
 
 **Симптом.**
 

@@ -59,6 +59,27 @@ func DiscoverProton(home string) (string, error) {
 	return found[0], nil
 }
 
+// FindProton is DiscoverProton for callers outside the launcher. The error wraps
+// ErrProton, so the client reports a game/Proton failure with an actionable
+// action instead of an unknown one.
+func FindProton(home string) (string, error) {
+	path, err := DiscoverProton(home)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrProton, err)
+	}
+	return path, nil
+}
+
+// ProtonFolder validates an explicitly configured Proton folder the same way the
+// launcher does. The error wraps ErrProton for the same reason as FindProton.
+func ProtonFolder(raw, home string) (string, error) {
+	path, err := protonDir(raw, home)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrProton, err)
+	}
+	return path, nil
+}
+
 func protonDir(raw, home string) (string, error) {
 	path, err := expandHome(strings.TrimSpace(raw), home)
 	if err != nil {

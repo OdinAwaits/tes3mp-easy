@@ -483,12 +483,11 @@ func (w *setupWizard) detectMorrowind() {
 }
 
 func (w *setupWizard) chooseMorrowind() {
-	dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
-		if err != nil || uri == nil {
-			return
-		}
-		w.checkMorrowind(uri.Path())
-	}, w.shell.window).Show()
+	tr := w.shell.service.Translator()
+	// The same picker as Installation → Advanced: the current value positions
+	// the dialog, and a missing dialog still leaves the editable field.
+	w.shell.chooseFolder(tr.T(i18n.KeyWizardMorrowindTitle),
+		w.morrowind.Text, w.checkMorrowind)
 }
 
 func (w *setupWizard) checkMorrowind(path string) {

@@ -14,7 +14,7 @@ BL-008, BL-013 → BL-007, BL-014 → BL-004, BL-016 → BL-012.
 | --- | --- | --- |
 | [BL-001](BL-001-cyrillic-input.md) | Кириллица в клиенте на Linux (Proton/Wine) | отложено |
 | [BL-002](BL-002-lua-cjson.md) | `[ERR]: Could not find Lua CJSON!` в логе сервера | отложено |
-| [BL-003](BL-003-paths-proton.md) | Пути и Proton: проводник вместо ручного ввода | новое |
+| [BL-003](BL-003-paths-proton.md) | Пути и Proton: проводник вместо ручного ввода | сделано |
 | [BL-004](BL-004-morrowind-feedback.md) | Morrowind: отсутствие, поиск и проверка без «ошибки» | новое |
 | [BL-006](BL-006-latest-release.md) | Нет постоянной ссылки на последний релиз | новое |
 | [BL-007](BL-007-visual-system.md) | Визуальный слой: контраст, токены, кнопки, плотность | новое |

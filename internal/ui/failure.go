@@ -246,7 +246,7 @@ func failureNeedsSettings(kind app.FailureKind) bool {
 	switch kind {
 	case app.FailureMorrowindNotFound, app.FailureMorrowindIncomplete,
 		app.FailureMorrowindNotConfigured, app.FailureWorkDir,
-		app.FailureLocalization:
+		app.FailureLocalization, app.FailureGameProton:
 		return true
 	default:
 		return false

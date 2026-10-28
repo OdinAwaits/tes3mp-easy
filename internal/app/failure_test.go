@@ -54,6 +54,10 @@ func TestExplainClassifiesErrors(t *testing.T) {
 	if missingMorrowind == nil {
 		t.Fatal("morrowind.Inspect unexpectedly succeeded")
 	}
+	_, missingProton := launcher.FindProton(t.TempDir())
+	if missingProton == nil {
+		t.Fatal("launcher.FindProton unexpectedly succeeded")
+	}
 
 	tests := []struct {
 		name string
@@ -99,6 +103,9 @@ func TestExplainClassifiesErrors(t *testing.T) {
 		{name: "missing configured Morrowind folder",
 			err:  missingMorrowind,
 			want: FailureMorrowindNotFound},
+		{name: "missing Proton",
+			err:  missingProton,
+			want: FailureGameProton},
 		{name: "invalid panel response",
 			err:  fmt.Errorf("panel API: %w: empty name", serverapi.ErrInvalidResponse),
 			want: FailureServerAPI},
