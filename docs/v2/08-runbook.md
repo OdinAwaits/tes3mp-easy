@@ -997,8 +997,8 @@ git push origin client-v0.3.0
   github.com/Saagilat/tes3mp-easy/internal/version.Server` (server) и
   `.Client` (client), поэтому коммит «bump version» не нужен. Значения в
   `internal/version` — фолбэки для локальных сборок.
-- `install.sh` читает список релизов и берёт самый свежий с серверным
-  архивом, поэтому новый клиентский релиз не подменяет серверный.
+- `install.sh` читает список релизов и берёт серверный архив с наибольшей
+  версией, поэтому новый клиентский релиз не подменяет серверный.
   `TES3MP_EASY_VERSION=0.3.0` прибивает версию серверного релиза;
   `--version 0.3.0` у `tes3mp-easy-pack` задаёт её для локальной сборки.
 - `internal/contract` и `internal/serverapi` описывают протокол
