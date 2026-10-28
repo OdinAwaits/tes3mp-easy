@@ -174,13 +174,11 @@ const (
 	KeyModsUpToDate    = "mods.up_to_date"
 	KeyModsDone        = "mods.done"
 
-	KeySettingsWorkDir = "settings.work_dir"
-	KeySettingsProton  = "settings.proton"
-	KeySettingsTheme   = "settings.theme"
-
-	KeyThemeSystem = "theme.system"
-	KeyThemeDark   = "theme.dark"
-	KeyThemeLight  = "theme.light"
+	KeySettingsWorkDir   = "settings.work_dir"
+	KeySettingsProton    = "settings.proton"
+	KeySettingsTheme     = "settings.theme"
+	KeySettingsLanguage  = "settings.language"
+	KeySettingsDarkTheme = "settings.dark_theme"
 
 	KeyLocaleTitle              = "locale.title"
 	KeyLocaleQuestion           = "locale.question"
@@ -506,13 +504,11 @@ var catalogs = map[Language]map[string]string{
 		KeyModsUpToDate:    "Mods are up to date.",
 		KeyModsDone:        "Mods are installed.",
 
-		KeySettingsTheme:   "Theme",
-		KeySettingsWorkDir: "Work folder",
-		KeySettingsProton:  "Proton (Linux)",
-
-		KeyThemeSystem: "System",
-		KeyThemeDark:   "Dark",
-		KeyThemeLight:  "Light",
+		KeySettingsTheme:     "Theme",
+		KeySettingsLanguage:  "Language",
+		KeySettingsDarkTheme: "Dark theme",
+		KeySettingsWorkDir:   "Work folder",
+		KeySettingsProton:    "Proton (Linux)",
 
 		KeyLocaleTitle:              "Game language",
 		KeyLocaleQuestion:           "A language pack replaces the game text and, optionally, the voices. Without a pack the game runs in its original language — that is a normal setup, not an error.",
@@ -836,13 +832,11 @@ var catalogs = map[Language]map[string]string{
 		KeyModsUpToDate:    "Моды уже актуальны.",
 		KeyModsDone:        "Моды установлены.",
 
-		KeySettingsTheme:   "Тема",
-		KeySettingsWorkDir: "Рабочая папка",
-		KeySettingsProton:  "Proton (Linux)",
-
-		KeyThemeSystem: "Как в системе",
-		KeyThemeDark:   "Тёмная",
-		KeyThemeLight:  "Светлая",
+		KeySettingsTheme:     "Тема",
+		KeySettingsLanguage:  "Язык",
+		KeySettingsDarkTheme: "Тёмная тема",
+		KeySettingsWorkDir:   "Рабочая папка",
+		KeySettingsProton:    "Proton (Linux)",
 
 		KeyLocaleTitle:              "Язык игры",
 		KeyLocaleQuestion:           "Языковой пакет заменяет текст игры и, при желании, озвучку. Без пакета игра идёт на исходном языке — это нормальная настройка, а не ошибка.",

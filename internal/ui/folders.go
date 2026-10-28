@@ -16,7 +16,27 @@ import (
 // chooseFolder opens the native folder picker and stores the selection through
 // apply. current only positions the dialog: an empty or missing folder falls
 // back to the platform default.
+//
+// The native dialog is not available everywhere (Wayland without
+// xdg-desktop-portal, a remote X11 session, an unsupported desktop): a failed
+// call falls back to the Fyne list, and typed entry stays the second action of
+// pathButtons.
 func (s *shell) chooseFolder(title, current string, apply func(string)) {
+	picked, ok, err := pickFolder(s.window, title, current)
+	switch {
+	case err != nil:
+		s.service.LogError("native folder picker", err)
+		s.showFyneFolderPicker(current, apply)
+	case !ok:
+		// The user cancelled: neither the path nor config.json changes.
+	default:
+		apply(picked)
+	}
+}
+
+// showFyneFolderPicker is the fallback picker: the Fyne folder list, which
+// works on every desktop the client starts on.
+func (s *shell) showFyneFolderPicker(current string, apply func(string)) {
 	picker := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 		if err != nil {
 			s.showError(err)
@@ -33,15 +53,26 @@ func (s *shell) chooseFolder(title, current string, apply func(string)) {
 	picker.Show()
 }
 
-// folderURI is the start location of the picker, or nil when current is empty
-// or is not a directory.
-func folderURI(current string) fyne.ListableURI {
+// folderStart returns current when it is an existing directory, so both the
+// native picker and the Fyne fallback open there; anything else means the
+// platform default.
+func folderStart(current string) string {
 	current = strings.TrimSpace(current)
 	if current == "" {
-		return nil
+		return ""
 	}
 	info, err := os.Stat(current)
 	if err != nil || !info.IsDir() {
+		return ""
+	}
+	return current
+}
+
+// folderURI is the start location of the fallback picker, or nil when current
+// is empty or is not a directory.
+func folderURI(current string) fyne.ListableURI {
+	current = folderStart(current)
+	if current == "" {
 		return nil
 	}
 	listable, err := storage.ListerForURI(storage.NewFileURI(current))

@@ -243,18 +243,92 @@ func TestPathButtonsOfferPickerAndTypedEntry(t *testing.T) {
 	}
 }
 
-// TestPathPickerOpensFolderDialog proves the primary action is the native folder
-// dialog: after a click the top overlay is a folder list, not a text prompt.
-func TestPathPickerOpensFolderDialog(t *testing.T) {
+// stubFolderPicker replaces the platform folder dialog for one test.
+func stubFolderPicker(t *testing.T, pick folderPicker) {
+	t.Helper()
+	previous := pickFolder
+	pickFolder = pick
+	t.Cleanup(func() { pickFolder = previous })
+}
+
+// TestPathPickerUsesNativeDialog proves the primary action asks the platform
+// dialog and stores its answer directly, without a Fyne overlay: the platform
+// window is the one the user recognizes.
+func TestPathPickerUsesNativeDialog(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	tr := s.service.Translator()
+	start := t.TempDir()
+	picked := filepath.Join(start, "picked")
+
+	var gotTitle, gotCurrent string
+	stubFolderPicker(t, func(parent fyne.Window, title, current string) (string,
+		bool, error,
+	) {
+		gotTitle, gotCurrent = title, current
+		return picked, true, nil
+	})
+
+	applied := ""
+	button := pathRowButton(t, s, tr, tr.T(i18n.KeyInstallChange), start,
+		func(path string) { applied = path })
+	test.Tap(button)
+
+	if gotTitle != "Folder" {
+		t.Fatalf("the picker title = %q, want %q", gotTitle, "Folder")
+	}
+	if gotCurrent != start {
+		t.Fatalf("the picker start folder = %q, want %q", gotCurrent, start)
+	}
+	if applied != picked {
+		t.Fatalf("the picked folder = %q, want %q", applied, picked)
+	}
+	if overlay := s.window.Canvas().Overlays().Top(); overlay != nil {
+		t.Fatal("the native picker also opened a Fyne dialog")
+	}
+}
+
+// TestPathPickerCancelChangesNothing covers the cancel branch: an empty answer
+// keeps both the path and config.json as they were.
+func TestPathPickerCancelChangesNothing(t *testing.T) {
 	s := testShell(t)
 	defer s.window.Close()
 	tr := s.service.Translator()
 
-	picker := pathButton(t, s, tr, tr.T(i18n.KeyInstallChange))
-	test.Tap(picker)
+	stubFolderPicker(t, func(fyne.Window, string, string) (string, bool, error) {
+		return "", false, nil
+	})
+	called := false
+	button := pathRowButton(t, s, tr, tr.T(i18n.KeyInstallChange), t.TempDir(),
+		func(string) { called = true })
+	test.Tap(button)
+
+	if called {
+		t.Fatal("a cancelled picker applied a path")
+	}
+	if overlay := s.window.Canvas().Overlays().Top(); overlay != nil {
+		t.Fatal("a cancelled picker opened the fallback dialog")
+	}
+}
+
+// TestPathPickerFallsBackToFyneDialog covers the desktops without a portal: the
+// click lands in the Fyne folder list, which is still a list and not a text
+// prompt.
+func TestPathPickerFallsBackToFyneDialog(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	tr := s.service.Translator()
+
+	stubFolderPicker(t, func(fyne.Window, string, string) (string, bool, error) {
+		return "", false, errors.New("no xdg-desktop-portal")
+	})
+	button := pathRowButton(t, s, tr, tr.T(i18n.KeyInstallChange), t.TempDir(),
+		func(string) {})
+	test.Tap(button)
+
 	overlay := s.window.Canvas().Overlays().Top()
 	if overlay == nil {
-		t.Fatal("the picker button opened no dialog")
+		t.Fatal("the failed picker opened no fallback dialog")
 	}
 	lists, entries := 0, 0
 	walkObjects(overlay, func(item fyne.CanvasObject) {
@@ -266,10 +340,10 @@ func TestPathPickerOpensFolderDialog(t *testing.T) {
 		}
 	})
 	if lists == 0 {
-		t.Fatal("the folder dialog shows no folder list")
+		t.Fatal("the fallback dialog shows no folder list")
 	}
 	if entries != 0 {
-		t.Fatalf("the folder dialog shows %d text fields, want none", entries)
+		t.Fatalf("the fallback dialog shows %d text fields, want none", entries)
 	}
 }
 
@@ -302,9 +376,18 @@ func pathButton(t *testing.T, s *shell, tr *i18n.Translator,
 	caption string,
 ) *widget.Button {
 	t.Helper()
+	return pathRowButton(t, s, tr, caption, t.TempDir(), func(string) {})
+}
+
+// pathRowButton builds the row with the given start folder and setter, so a
+// test can observe what a button stores.
+func pathRowButton(t *testing.T, s *shell, tr *i18n.Translator, caption,
+	current string, apply func(string),
+) *widget.Button {
+	t.Helper()
 	button := (*widget.Button)(nil)
 	walkObjects(s.pathButtons(tr, "Folder", tr.T(i18n.KeyInstallChange),
-		t.TempDir(), func(string) {}), func(item fyne.CanvasObject) {
+		current, apply), func(item fyne.CanvasObject) {
 		if typed, ok := item.(*widget.Button); ok && typed.Text == caption {
 			button = typed
 		}
@@ -367,41 +450,69 @@ func boolToInt(value bool) int {
 }
 
 // TestHeaderHasLanguageAndThemeSwitches pins the header contract: one language
-// toggle and one theme list instead of three theme buttons and no language.
+// list that shows the current language and one two-position theme toggle.
 func TestHeaderHasLanguageAndThemeSwitches(t *testing.T) {
 	s := testShell(t)
 	defer s.window.Close()
 	tr := s.service.Translator()
 
-	var buttons []*widget.Button
+	var checks []*widget.Check
 	var selects []*widget.Select
+	buttons := 0
 	walkObjects(s.headerActions(tr), func(item fyne.CanvasObject) {
 		switch typed := item.(type) {
-		case *widget.Button:
-			buttons = append(buttons, typed)
+		case *widget.Check:
+			checks = append(checks, typed)
 		case *widget.Select:
 			selects = append(selects, typed)
+		case *widget.Button:
+			buttons++
 		}
 	})
+	if buttons != 0 {
+		t.Fatalf("header has %d buttons, want none: both settings are controls",
+			buttons)
+	}
 	if len(selects) != 1 {
-		t.Fatalf("header has %d lists, want 1 theme list", len(selects))
+		t.Fatalf("header has %d lists, want 1 language list", len(selects))
+	}
+	options := make([]string, 0, len(i18n.Supported()))
+	for _, language := range i18n.Supported() {
+		options = append(options, i18n.DisplayName(language))
 	}
 	if got, want := strings.Join(selects[0].Options, "|"),
-		strings.Join(themeModeLabels(tr), "|"); got != want {
-		t.Fatalf("theme list options = %q, want %q", got, want)
+		strings.Join(options, "|"); got != want {
+		t.Fatalf("language list options = %q, want %q", got, want)
 	}
-	if want := themeModeLabel(tr, style.ParseMode(s.service.Config().Theme)); selects[0].Selected != want {
-		t.Fatalf("theme list selection = %q, want %q", selects[0].Selected, want)
+	if want := i18n.DisplayName(s.service.Language()); selects[0].Selected != want {
+		t.Fatalf("language list selection = %q, want %q",
+			selects[0].Selected, want)
 	}
-	target, ok := nextLanguage(s.service.Language())
-	if !ok {
-		t.Fatal("the test configuration has no language target")
+	if len(checks) != 1 {
+		t.Fatalf("header has %d check boxes, want 1 theme toggle", len(checks))
 	}
-	if len(buttons) != 1 {
-		t.Fatalf("header has %d buttons, want 1 language toggle", len(buttons))
+	want := tr.T(i18n.KeySettingsDarkTheme)
+	if checks[0].Text != want {
+		t.Fatalf("theme toggle = %q, want %q", checks[0].Text, want)
 	}
-	if want := i18n.DisplayName(target); buttons[0].Text != want {
-		t.Fatalf("language toggle = %q, want %q", buttons[0].Text, want)
+	if got, want := checks[0].Checked,
+		style.IsDark(s.service.Config().Theme); got != want {
+		t.Fatalf("theme toggle checked = %t, want %t", got, want)
+	}
+}
+
+// TestLanguageByLabel keeps the list entry mapping independent of the option
+// order, the same way the language list is built.
+func TestLanguageByLabel(t *testing.T) {
+	for _, language := range i18n.Supported() {
+		got, ok := languageByLabel(i18n.DisplayName(language))
+		if !ok || got != language {
+			t.Fatalf("languageByLabel(%q) = %q, %t; want %q",
+				i18n.DisplayName(language), got, ok, language)
+		}
+	}
+	if got, ok := languageByLabel("Klingon"); ok || got != "" {
+		t.Fatalf("languageByLabel(Klingon) = %q, %t; want no match", got, ok)
 	}
 }
 

@@ -15,7 +15,6 @@ import (
 	"github.com/Saagilat/tes3mp-easy/internal/mods"
 	"github.com/Saagilat/tes3mp-easy/internal/openmwcfg"
 	"github.com/Saagilat/tes3mp-easy/internal/tes3mp"
-	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
 )
 
 func TestRunRejectsNilService(t *testing.T) {
@@ -24,51 +23,18 @@ func TestRunRejectsNilService(t *testing.T) {
 	}
 }
 
-func TestThemeModeLabels(t *testing.T) {
+func TestThemeToggleLabels(t *testing.T) {
 	for _, language := range i18n.Supported() {
 		translator := i18n.New(language)
-		labels := themeModeLabels(translator)
-		if len(labels) != len(themeModes) {
-			t.Fatalf("%s theme labels = %v, want %d modes",
-				language, labels, len(themeModes))
+		if got := translator.T(i18n.KeySettingsTheme); got == "" {
+			t.Fatalf("%s has no theme caption", language)
 		}
-		for index, label := range labels {
-			mode, ok := themeModeByLabel(translator, label)
-			if !ok || mode != themeModes[index].mode {
-				t.Fatalf("%s label %q maps to %q, %t; want %q",
-					language, label, mode, ok, themeModes[index].mode)
-			}
-			if got := themeModeLabel(translator, mode); got != label {
-				t.Fatalf("%s themeModeLabel(%q) = %q, want %q",
-					language, mode, got, label)
-			}
+		if got := translator.T(i18n.KeySettingsDarkTheme); got == "" {
+			t.Fatalf("%s has no dark theme toggle caption", language)
 		}
-		if _, ok := themeModeByLabel(translator, "unknown"); ok {
-			t.Fatalf("%s themeModeByLabel(unknown) matched a mode", language)
+		if got := translator.T(i18n.KeySettingsLanguage); got == "" {
+			t.Fatalf("%s has no language caption", language)
 		}
-		want := translator.T(i18n.KeyThemeSystem)
-		if got := themeModeLabel(translator, style.Mode("sepia")); got != want {
-			t.Fatalf("%s themeModeLabel(sepia) = %q, want %q",
-				language, got, want)
-		}
-	}
-}
-
-func TestNextLanguage(t *testing.T) {
-	languages := i18n.Supported()
-	if len(languages) < 2 {
-		t.Skip("a single interface language has no toggle target")
-	}
-	for index, language := range languages {
-		want := languages[(index+1)%len(languages)]
-		got, ok := nextLanguage(language)
-		if !ok || got != want {
-			t.Fatalf("nextLanguage(%q) = %q, %t; want %q",
-				language, got, ok, want)
-		}
-	}
-	if got, ok := nextLanguage(i18n.Language("de")); !ok || got != languages[0] {
-		t.Fatalf("nextLanguage(de) = %q, %t; want %q", got, ok, languages[0])
 	}
 }
 
@@ -139,9 +105,9 @@ func TestPlayButtonLabel(t *testing.T) {
 func TestThemeLabels(t *testing.T) {
 	translator := i18n.New(i18n.English)
 	for key, want := range map[string]string{
-		i18n.KeyThemeSystem: "System",
-		i18n.KeyThemeDark:   "Dark",
-		i18n.KeyThemeLight:  "Light",
+		i18n.KeySettingsTheme:     "Theme",
+		i18n.KeySettingsLanguage:  "Language",
+		i18n.KeySettingsDarkTheme: "Dark theme",
 	} {
 		if got := translator.T(key); got != want {
 			t.Fatalf("%q = %q, want %q", key, got, want)

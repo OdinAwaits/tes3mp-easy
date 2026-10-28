@@ -25,6 +25,15 @@ func TestThemeForForcesVariant(t *testing.T) {
 	}
 }
 
+func TestIsDarkForExplicitModes(t *testing.T) {
+	if !IsDark(string(ModeDark)) {
+		t.Fatal("explicit dark mode is not dark")
+	}
+	if IsDark(string(ModeLight)) {
+		t.Fatal("explicit light mode is dark")
+	}
+}
+
 func TestPaletteContrast(t *testing.T) {
 	for name, palette := range map[string]palette{
 		"dark": darkPalette, "light": lightPalette,

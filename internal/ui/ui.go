@@ -210,107 +210,73 @@ func (s *shell) headerActions(tr *i18n.Translator) fyne.CanvasObject {
 }
 
 // headerControlWidth is shared by both header controls, so the group keeps its
-// size when a longer translation or another language arrives. It fits the
-// "Как в системе" mode next to the theme caption.
+// size when a longer translation or another language arrives.
 const headerControlWidth float32 = 190
 
-// themeMode pairs a catalog key with the mode it selects; the order is the
-// order shown in the list.
-type themeMode struct {
-	key  string
-	mode style.Mode
+// headerControl stacks a caption above its control. A caption placed sideways in
+// a Border reads as part of the value ("ТемаСистемная"); above it, it names the
+// setting. Both header groups use the same structure, so they keep one height.
+func headerControl(caption string, control fyne.CanvasObject) fyne.CanvasObject {
+	return container.NewVBox(
+		style.MutedLabel(caption),
+		container.NewGridWrap(
+			fyne.NewSize(headerControlWidth, control.MinSize().Height), control),
+	)
 }
 
-var themeModes = []themeMode{
-	{key: i18n.KeyThemeSystem, mode: style.ModeSystem},
-	{key: i18n.KeyThemeDark, mode: style.ModeDark},
-	{key: i18n.KeyThemeLight, mode: style.ModeLight},
-}
-
-// themeModeLabels returns the localized mode names in themeModes order.
-func themeModeLabels(tr *i18n.Translator) []string {
-	labels := make([]string, 0, len(themeModes))
-	for _, option := range themeModes {
-		labels = append(labels, tr.T(option.key))
+// languageSwitch lists every supported language. A list shows the current
+// language at a glance and does not need a new control when a third one arrives.
+func (s *shell) languageSwitch(tr *i18n.Translator) fyne.CanvasObject {
+	languages := i18n.Supported()
+	labels := make([]string, 0, len(languages))
+	for _, language := range languages {
+		labels = append(labels, i18n.DisplayName(language))
 	}
-	return labels
-}
-
-// themeModeLabel returns the caption of one mode. An unknown mode falls back to
-// the system default, the same way style.ParseMode does.
-func themeModeLabel(tr *i18n.Translator, mode style.Mode) string {
-	mode = style.ParseMode(string(mode))
-	for _, option := range themeModes {
-		if option.mode == mode {
-			return tr.T(option.key)
+	selector := widget.NewSelect(labels, nil)
+	selector.SetSelected(i18n.DisplayName(s.service.Language()))
+	selector.OnChanged = func(label string) {
+		language, ok := languageByLabel(label)
+		if !ok || language == s.service.Language() {
+			return
 		}
+		s.setLanguage(language)
 	}
-	return tr.T(i18n.KeyThemeSystem)
+	if len(languages) < 2 {
+		selector.Disable()
+	}
+	return headerControl(tr.T(i18n.KeySettingsLanguage), selector)
 }
 
-// themeModeByLabel maps a list entry back to its mode without relying on the
-// index, so a reordered catalog cannot apply the wrong theme.
-func themeModeByLabel(tr *i18n.Translator, label string) (style.Mode, bool) {
-	for _, option := range themeModes {
-		if tr.T(option.key) == label {
-			return option.mode, true
+// languageByLabel maps a list entry back to its language without relying on the
+// index, so a reordered catalog cannot apply the wrong interface language.
+func languageByLabel(label string) (i18n.Language, bool) {
+	for _, language := range i18n.Supported() {
+		if i18n.DisplayName(language) == label {
+			return language, true
 		}
 	}
 	return "", false
 }
 
-// themeSwitch is the only theme control. A list shows all three modes at once,
-// including the system one, and its fixed width keeps the header stable.
+// themeSwitch is a two-position toggle: on means the amber dark theme, off the
+// light one. A config that still says "system" shows the variant the desktop
+// actually paints, and the first click writes an explicit dark or light mode.
 func (s *shell) themeSwitch(tr *i18n.Translator) fyne.CanvasObject {
-	current := style.ParseMode(s.service.Config().Theme)
-	selector := widget.NewSelect(themeModeLabels(tr), nil)
-	selector.SetSelected(themeModeLabel(tr, current))
-	selector.OnChanged = func(label string) {
-		mode, ok := themeModeByLabel(tr, label)
-		if !ok || mode == style.ParseMode(s.service.Config().Theme) {
+	toggle := widget.NewCheck(tr.T(i18n.KeySettingsDarkTheme), nil)
+	toggle.SetChecked(style.IsDark(s.service.Config().Theme))
+	toggle.OnChanged = func(checked bool) {
+		mode := style.ModeLight
+		if checked {
+			mode = style.ModeDark
+		}
+		if style.ParseMode(s.service.Config().Theme) == mode {
 			return
 		}
 		if !s.setTheme(string(mode)) {
-			selector.SetSelected(themeModeLabel(tr, current))
+			toggle.SetChecked(!checked)
 		}
 	}
-	group := container.NewBorder(nil, nil,
-		style.MutedLabel(tr.T(i18n.KeySettingsTheme)), nil, selector)
-	return container.NewGridWrap(
-		fyne.NewSize(headerControlWidth, selector.MinSize().Height), group)
-}
-
-// languageSwitch toggles the interface language. With two languages the caption
-// names the language the click switches to, so the control needs no new key and
-// no hint; a third language would turn it into the same list as the theme.
-func (s *shell) languageSwitch(tr *i18n.Translator) fyne.CanvasObject {
-	target, ok := nextLanguage(s.service.Language())
-	button := widget.NewButton(i18n.DisplayName(target), func() {
-		s.setLanguage(target)
-	})
-	// The caption starts at the same offset as the theme list text above it.
-	button.Alignment = widget.ButtonAlignLeading
-	if !ok {
-		button.Disable()
-	}
-	return container.NewGridWrap(
-		fyne.NewSize(headerControlWidth, button.MinSize().Height), button)
-}
-
-// nextLanguage returns the language the header button offers: the entry after
-// the current one in i18n.Supported, so two languages toggle each other. An
-// unknown current language falls back to the first supported one.
-func nextLanguage(current i18n.Language) (i18n.Language, bool) {
-	languages := i18n.Supported()
-	if len(languages) < 2 {
-		return "", false
-	}
-	for index, language := range languages {
-		if language == current {
-			return languages[(index+1)%len(languages)], true
-		}
-	}
-	return languages[0], true
+	return headerControl(tr.T(i18n.KeySettingsTheme), toggle)
 }
 
 // setTheme persists the theme and applies it in place. The window is not

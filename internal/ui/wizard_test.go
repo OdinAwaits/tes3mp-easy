@@ -7,11 +7,13 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/Saagilat/tes3mp-easy/internal/app"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
 	"github.com/Saagilat/tes3mp-easy/internal/morrowind"
+	"github.com/Saagilat/tes3mp-easy/internal/openmwcfg"
 )
 
 // newTestWizard builds the parts of the wizard the first step touches, without
@@ -24,8 +26,7 @@ func newTestWizard(t *testing.T, s *shell) *setupWizard {
 	w.problem = widget.NewLabel("")
 	w.retry = widget.NewButton("retry", nil)
 	w.retry.Hide()
-	w.spinner = widget.NewProgressBarInfinite()
-	w.spinner.Hide()
+	w.spinner, _ = newWizardSpinner()
 	return w
 }
 
@@ -56,7 +57,7 @@ func TestWizardBusyDisablesFolderActions(t *testing.T) {
 	check := widget.NewButton("check", nil)
 	w.morrowindActions = []fyne.Disableable{find, choose, check}
 
-	if !w.beginBusy() {
+	if !w.beginBusy(true) {
 		t.Fatal("beginBusy refused the first call")
 	}
 	for index, action := range w.morrowindActions {
@@ -67,7 +68,7 @@ func TestWizardBusyDisablesFolderActions(t *testing.T) {
 	if !w.spinner.Visible() {
 		t.Fatal("the spinner is hidden during a search")
 	}
-	if w.beginBusy() {
+	if w.beginBusy(true) {
 		t.Fatal("beginBusy accepted a second search")
 	}
 
@@ -80,6 +81,100 @@ func TestWizardBusyDisablesFolderActions(t *testing.T) {
 	if w.spinner.Visible() {
 		t.Fatal("the spinner stayed visible after the search")
 	}
+}
+
+// TestWizardInstallHasOneProgressBar is the BL-019 rule: the TES3MP step draws
+// its own bar, so a second endless one must not appear next to it.
+func TestWizardInstallHasOneProgressBar(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	w := newTestWizard(t, s)
+
+	progress := widget.NewProgressBar()
+	w.tes3mpProgress = progress
+
+	if !w.beginBusy(false) {
+		t.Fatal("beginBusy(false) refused the first call")
+	}
+	if w.spinner.Visible() {
+		t.Fatal("the endless bar is shown next to the install progress")
+	}
+	if !progress.Visible() {
+		t.Fatal("the install progress bar is hidden")
+	}
+	w.endBusy()
+	if w.spinner.Visible() {
+		t.Fatal("the endless bar stayed visible after the install")
+	}
+}
+
+// TestWizardFooterKeepsSpinnerSpace freezes the height of the busy row: a
+// hidden bar must not pull the footer buttons up.
+func TestWizardFooterKeepsSpinnerSpace(t *testing.T) {
+	spinner, row := newWizardSpinner()
+	if spinner.Visible() {
+		t.Fatal("a fresh busy row starts visible")
+	}
+	if got, want := row.MinSize().Height, spinner.MinSize().Height; got != want {
+		t.Fatalf("busy row height = %.0f, want %.0f", got, want)
+	}
+	spinner.Show()
+	if got, want := row.MinSize().Height, spinner.MinSize().Height; got != want {
+		t.Fatalf("busy row height grew to %.0f from %.0f", got, want)
+	}
+}
+
+// TestFontsStepPutsSampleBesideTheList is the BL-020 rule: the set list and the
+// sample never sit in one vertical container, because the dropdown of the list
+// opens downwards and covered the sample while the user compared sets.
+func TestFontsStepPutsSampleBesideTheList(t *testing.T) {
+	sets := widget.NewLabel("sets")
+	sample := widget.NewLabel("sample")
+	form := widget.NewLabel("form")
+
+	split, ok := fontsStepLayout(sets,
+		container.NewVBox(sample, form)).(*container.Split)
+	if !ok {
+		t.Fatal("the fonts step is not a horizontal split")
+	}
+	left := labelTexts(split.Leading)
+	right := labelTexts(split.Trailing)
+	if !left["sets"] || left["sample"] || left["form"] {
+		t.Fatalf("left column = %v, want only the set list", left)
+	}
+	if !right["sample"] || !right["form"] || right["sets"] {
+		t.Fatalf("right column = %v, want the sample and the form", right)
+	}
+}
+
+// TestUIVideoFormCardHoldsTheWholeForm keeps the settings.cfg fields inside one
+// block, so the step can place them beside the sample instead of below it.
+func TestUIVideoFormCardHoldsTheWholeForm(t *testing.T) {
+	form := newUIVideoForm(openmwcfg.Defaults())
+	card := uiVideoFormCard(i18n.New(i18n.English), form)
+
+	entries := 0
+	walkObjects(card, func(item fyne.CanvasObject) {
+		if _, ok := item.(*widget.Entry); ok {
+			entries++
+		}
+	})
+	if entries != 4 {
+		t.Fatalf("the form card has %d entries, want 4", entries)
+	}
+	texts := labelTexts(card)
+	if !texts[i18n.New(i18n.English).T(i18n.KeyInstallUIVideoTitle)] {
+		t.Fatalf("the form card has no heading: %v", texts)
+	}
+}
+
+// labelTexts collects the visible captions of an object tree.
+func labelTexts(object fyne.CanvasObject) map[string]bool {
+	texts := make(map[string]bool)
+	walkTexts(object, func(text string) {
+		texts[text] = true
+	})
+	return texts
 }
 
 // TestWizardMorrowindFailureClassification is the T3E-ENV-01 rule: a folder

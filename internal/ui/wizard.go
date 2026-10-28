@@ -3,9 +3,11 @@ package ui
 import (
 	"context"
 	"errors"
+	"image/color"
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
@@ -115,11 +117,11 @@ func (s *shell) openWizard(step wizardStep) {
 
 	problemRow := container.NewBorder(nil, nil, nil, w.retry, w.problem)
 	footer := container.NewBorder(nil, nil, w.back, w.next)
-	w.spinner = widget.NewProgressBarInfinite()
-	w.spinner.Hide()
+	var spinnerRow fyne.CanvasObject
+	w.spinner, spinnerRow = newWizardSpinner()
 	content := container.NewBorder(
 		container.NewVBox(w.title, w.stepNo),
-		container.NewVBox(w.spinner, problemRow, footer),
+		container.NewVBox(spinnerRow, problemRow, footer),
 		nil, nil,
 		container.NewVScroll(w.body),
 	)
@@ -210,21 +212,50 @@ func (w *setupWizard) fontsObjects(tr *i18n.Translator) []fyne.CanvasObject {
 	// second click on Next for it.
 	w.uiVideoStatus = widget.NewLabel("")
 	w.uiVideoStatus.Wrapping = fyne.TextWrapWord
-	w.uiVideoStatus.SetText(uiVideoStateLabel(tr, w.uiVideoState))
+	w.uiVideoStatus.Hide()
 	w.uiVideoForm = newUIVideoForm(openmwcfg.Defaults())
 	w.uiVideoForm.onChanged(w.uiVideoChanged)
 	w.uiVideoChanged()
 
-	objects := []fyne.CanvasObject{
-		wizardHint(tr, i18n.KeyWizardFontsHint),
-		widget.NewLabel(tr.T(i18n.KeyFontsSet)),
+	sets := container.NewVBox(
+		widget.NewLabelWithStyle(tr.T(i18n.KeyFontsSet),
+			fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		chooser.picker,
-		w.fontPreview.object(),
-		style.MutedLabel(tr.T(i18n.KeyFontsSetLicense)),
 		w.fontsStatus,
 		w.uiVideoStatus,
+	)
+	values := container.NewVBox(
+		w.fontPreview.object(),
+		uiVideoFormCard(tr, w.uiVideoForm),
+	)
+	license := licenseLabel(tr)
+	return []fyne.CanvasObject{
+		wizardHint(tr, i18n.KeyWizardFontsHint),
+		fontsStepLayout(sets, values),
+		license,
 	}
-	return append(objects, w.uiVideoForm.objects(tr)...)
+}
+
+// fontsStepLayout puts the set list beside the sample and the settings form:
+// widget.Select opens its popup downwards, so a sample under the list was
+// covered exactly while the user compared sets. The splitter keeps the step
+// usable in a smaller window instead of clipping one of the columns.
+func fontsStepLayout(sets, values fyne.CanvasObject) fyne.CanvasObject {
+	split := container.NewHSplit(sets, values)
+	split.SetOffset(0.32)
+	return split
+}
+
+// uiVideoFormCard is the settings.cfg half of the fonts step: a heading, the
+// four managed values and the one-line explanation of what the form touches.
+func uiVideoFormCard(tr *i18n.Translator, form *uiVideoForm) fyne.CanvasObject {
+	hint := style.MutedLabel(tr.T(i18n.KeyInstallUIVideoHint))
+	hint.Wrapping = fyne.TextWrapWord
+	objects := append([]fyne.CanvasObject{
+		widget.NewLabelWithStyle(tr.T(i18n.KeyInstallUIVideoTitle),
+			fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+	}, form.objects(tr)...)
+	return container.NewVBox(append(objects, hint)...)
 }
 
 // selectFontSet stores the chosen set. The files are downloaded after Finish,
@@ -293,9 +324,18 @@ func (w *setupWizard) loadUIVideo() {
 		w.uiVideoForm.set(state.Values)
 	}
 	w.uiVideoChanged()
+	// The fields already show the values of an existing settings.cfg; the
+	// status line is only needed while the file is missing, where it explains
+	// that the launcher would create it on the first save.
 	if w.uiVideoStatus != nil {
-		w.uiVideoStatus.SetText(
-			uiVideoStateLabel(w.shell.service.Translator(), state))
+		if state.Exists {
+			w.uiVideoStatus.SetText("")
+			w.uiVideoStatus.Hide()
+		} else {
+			w.uiVideoStatus.SetText(uiVideoStateLabel(
+				w.shell.service.Translator(), state))
+			w.uiVideoStatus.Show()
+		}
 	}
 	w.updateButtons()
 }
@@ -418,13 +458,27 @@ func (w *setupWizard) finishWizard() {
 	}
 }
 
-func (w *setupWizard) beginBusy() bool {
+// newWizardSpinner builds the busy row of the footer. The transparent rectangle
+// keeps the row at the height of the bar, so a check that starts or ends moves
+// nothing but its own bar; the buttons stay where the user last saw them.
+func newWizardSpinner() (*widget.ProgressBarInfinite, fyne.CanvasObject) {
+	spinner := widget.NewProgressBarInfinite()
+	space := canvas.NewRectangle(color.Transparent)
+	space.SetMinSize(spinner.MinSize())
+	spinner.Hide()
+	return spinner, container.NewStack(space, spinner)
+}
+
+// beginBusy locks the step while a background action runs. showSpinner is false
+// for actions that already draw their own progress: two bars on one screen made
+// the install look like two jobs.
+func (w *setupWizard) beginBusy(showSpinner bool) bool {
 	if w.busy {
 		return false
 	}
 	w.busy = true
 	w.setActionsEnabled(false)
-	if w.spinner != nil {
+	if showSpinner && w.spinner != nil {
 		w.spinner.Show()
 	}
 	w.updateButtons()
@@ -559,7 +613,7 @@ func (w *setupWizard) enterStep() {
 }
 
 func (w *setupWizard) detectMorrowind() {
-	if !w.beginBusy() {
+	if !w.beginBusy(true) {
 		return
 	}
 	tr := w.shell.service.Translator()
@@ -596,7 +650,7 @@ func (w *setupWizard) chooseMorrowind() {
 }
 
 func (w *setupWizard) checkMorrowind(path string) {
-	if !w.beginBusy() {
+	if !w.beginBusy(true) {
 		return
 	}
 	tr := w.shell.service.Translator()
@@ -666,7 +720,7 @@ func (w *setupWizard) renderFontsState(tr *i18n.Translator) {
 }
 
 func (w *setupWizard) checkTES3MP() {
-	if !w.beginBusy() {
+	if !w.beginBusy(true) {
 		return
 	}
 	tr := w.shell.service.Translator()
@@ -703,7 +757,7 @@ func (w *setupWizard) checkTES3MP() {
 }
 
 func (w *setupWizard) installTES3MP() {
-	if !w.beginBusy() {
+	if !w.beginBusy(false) {
 		return
 	}
 	tr := w.shell.service.Translator()

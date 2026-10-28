@@ -131,6 +131,14 @@ func (s *shell) fontPreviewFiles() fontPreviewFiles {
 	return files
 }
 
+// licenseLabel is the one-line note about where the font files come from. It
+// wraps instead of being cut by a narrow column.
+func licenseLabel(tr *i18n.Translator) *widget.Label {
+	label := style.MutedLabel(tr.T(i18n.KeyFontsSetLicense))
+	label.Wrapping = fyne.TextWrapWord
+	return label
+}
+
 // showFontsDialog switches the font set from the Installation checklist. The
 // files are downloaded in the background, and the row shows the progress.
 func (s *shell) showFontsDialog() {
@@ -148,14 +156,18 @@ func (s *shell) showFontsDialog() {
 	problem.Importance = widget.DangerImportance
 	problem.Hide()
 
-	content := container.NewVBox(
+	// Same order as the wizard step: the list on the left, the sample on the
+	// right, so the open dropdown never hides what is being compared.
+	sets := container.NewVBox(
 		style.MutedLabel(tr.T(i18n.KeyFontsSetHint)),
-		widget.NewLabel(tr.T(i18n.KeyFontsSet)),
+		widget.NewLabelWithStyle(tr.T(i18n.KeyFontsSet),
+			fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		chooser.picker,
-		preview.object(),
-		style.MutedLabel(tr.T(i18n.KeyFontsSetLicense)),
+		licenseLabel(tr),
 		problem,
 	)
+	content := fontsStepLayout(sets,
+		container.NewVBox(preview.object()))
 	popup := dialog.NewCustomWithoutButtons(tr.T(i18n.KeyFontsSet),
 		content, s.window)
 	cancel := widget.NewButton(tr.T(i18n.KeyCommonCancel), popup.Hide)
@@ -177,6 +189,6 @@ func (s *shell) showFontsDialog() {
 	})
 	apply.Importance = widget.HighImportance
 	popup.SetButtons([]fyne.CanvasObject{cancel, apply})
-	popup.Resize(fyne.NewSize(620, 420))
+	popup.Resize(fyne.NewSize(760, 440))
 	popup.Show()
 }

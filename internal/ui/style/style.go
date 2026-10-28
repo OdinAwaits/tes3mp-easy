@@ -41,6 +41,22 @@ func ThemeFor(mode string) fyne.Theme {
 	return amberTheme{mode: ParseMode(mode)}
 }
 
+// IsDark reports whether a persisted mode paints a dark interface: an explicit
+// dark or light mode decides, the system mode follows the desktop setting. The
+// header toggle uses it to show the variant the window really has.
+func IsDark(mode string) bool {
+	switch ParseMode(mode) {
+	case ModeDark:
+		return true
+	case ModeLight:
+		return false
+	}
+	if fyne.CurrentApp() == nil {
+		return true
+	}
+	return fyne.CurrentApp().Settings().ThemeVariant() == theme.VariantDark
+}
+
 type amberTheme struct {
 	mode Mode
 }
