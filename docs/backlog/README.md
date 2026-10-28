@@ -23,3 +23,8 @@ BL-008, BL-013 → BL-007, BL-014 → BL-004, BL-016 → BL-012.
 | [BL-010](BL-010-install-profile-row.md) | Installation: пустая строка «Профиль клиента» | сделано |
 | [BL-012](BL-012-fonts-catalog-preview.md) | Шрифты: десять наборов, Select, превью и один шаг | сделано |
 | [BL-015](BL-015-progress-flash.md) | 100% прогресса до начала скачивания TES3MP | сделано |
+| [BL-017](BL-017-header-language-select-theme-toggle.md) | Шапка: язык списком, тема тогглом, подпись не сливается | новое |
+| [BL-018](BL-018-native-folder-picker.md) | Выбор папки всё ещё не системный диалог | новое |
+| [BL-019](BL-019-tes3mp-step-extra-spinner.md) | Лишний бегущий индикатор при установке TES3MP | новое |
+| [BL-020](BL-020-wizard-fonts-step-layout.md) | Шаг 3 мастера: длинный скролл и превью под списком | новое |
+| [BL-021](BL-021-font-preview-slots-size-download.md) | Превью шрифтов: три гарнитуры, размер и докачка файлов | сделано |

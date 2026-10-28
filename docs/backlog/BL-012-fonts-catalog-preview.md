@@ -11,9 +11,15 @@ i18n остался только суффикс «(по умолчанию)». �
 чистится от файлов других наборов (`pruneFontCache`). Все десять наборов
 проверены живой установкой 28.10.2026. Защита: `TestCatalogIsComplete`
 (10 наборов, порядок, дедуп внутри набора), `TestInstallPrunesFontCacheOfOtherSets`,
-`TestFontSetChooserMapsLabelsToIDs`, `TestFontPreviewFollowsTheInstalledFile`,
+`TestFontSetChooserMapsLabelsToIDs`, `TestFontPreviewShowsEverySlotFile`,
 `TestWizardStepsAreTranslatedAndOrdered`, `go test ./...`. Документация:
 `docs/v2/06-client.md` §3/§9/§12, `docs/v2/03-contracts.md`, `docs/v2/07-testing.md`.
+
+Продолжение: BL-020 (вёрстка шага и превью под списком) и BL-021 (три гарнитуры
+набора и размер со `scaling factor` в образце). BL-021 сделано 28.10.2026:
+фолбэк превью на шрифт темы при отсутствующем файле пересмотрен — файлы набора
+докачиваются в `cache/fonts/` через `fonts.EnsureCached`, а шрифт темы остаётся
+только для ошибки загрузки.
 
 **Симптом.**
 
