@@ -70,6 +70,8 @@ SYSCTL_CONFIG_DIR=$(prefixed /etc/sysctl.d)
 SYSCTL_CONFIG_DEST="$SYSCTL_CONFIG_DIR/99-tes3mp-easy.conf"
 PANEL_ENV_DIR=$(prefixed /etc/tes3mp-easy)
 PANEL_ENV_DEST="$PANEL_ENV_DIR/panel.env"
+PANEL_CERT_DEST="$PANEL_ENV_DIR/panel.crt"
+PANEL_KEY_DEST="$PANEL_ENV_DIR/panel.key"
 OPT_ROOT=$(prefixed /opt/tes3mp-easy)
 TES3MP_RUNTIME_DIR="$OPT_ROOT/tes3mp"
 TES3MP_INSTALL_INFO="$TES3MP_RUNTIME_DIR/.tes3mp-install-info"
@@ -104,6 +106,20 @@ SYSTEMD_RUN_DIR="${TES3MP_EASY_SYSTEMD_RUN_DIR:-/run/systemd/system}"
 
 DATA_ROOT="$DEFAULT_ROOT"
 PUBLIC_ADDRESS="${TES3MP_EASY_PUBLIC_ADDRESS:-}"
+# The TLS mode decides where the panel gets its certificate:
+#   acme    — Let's Encrypt production, HTTP-01 on port 80 (default);
+#   staging — the same flow against the Let's Encrypt staging CA: the
+#             certificate is untrusted and the CA has generous rate limits, so
+#             the mode is for experiments and pre-production checks;
+#   files   — an operator-provided key pair, no CA traffic: hosts behind NAT,
+#             without a public IPv4 or with an existing certificate.
+# The panel only knows the `acme` and `files` modes; the staging mode reuses
+# `acme` and adds the staging directory below.
+TLS_MODE=acme
+TLS_CERT_SOURCE=""
+TLS_KEY_SOURCE=""
+readonly -a TLS_MODES=(acme staging files)
+readonly ACME_STAGING_DIRECTORY="https://acme-staging-v02.api.letsencrypt.org/directory"
 CHECK_ONLY=false
 
 passes=0
@@ -158,6 +174,11 @@ Options:
   --public-address IP
                  public IPv4 for the Let's Encrypt certificate; auto-detected
                  when omitted (env TES3MP_EASY_PUBLIC_ADDRESS)
+  --tls-mode MODE
+                 acme (default), staging or files; see "Configures panel TLS"
+  --tls-cert PATH
+                 certificate for --tls-mode files (PEM, full chain)
+  --tls-key PATH private key for --tls-mode files (PEM)
   -h, --help     show this help and exit
 
 Checks:
@@ -186,10 +207,15 @@ Installs server binaries:
   present. Source checkouts without bin/ install them manually.
 
 Configures panel TLS:
-  writes /etc/tes3mp-easy/panel.env with TES3MP_PANEL_TLS_MODE=acme and the
-  public IP. The panel obtains a six-day Let's Encrypt IP certificate through
+  writes /etc/tes3mp-easy/panel.env and, in files mode,
+  /etc/tes3mp-easy/panel.crt and panel.key (0640 root:tes3mp-panel).
+  acme (default) obtains a six-day Let's Encrypt IP certificate through
   HTTP-01, so TCP port 80 must be reachable from the internet while the panel
-  issues or renews a certificate. The panel itself listens only on port 443.
+  issues or renews a certificate. staging runs the same flow against the
+  Let's Encrypt staging CA: the panel then serves an untrusted certificate and
+  browsers warn. files copies an existing key pair and makes no CA requests,
+  so it needs neither a public IPv4 nor port 80. The panel itself always
+  listens only on port 443.
 
 Starts:
   tes3mp.service, tes3mp-easy-backup.timer and, after a release install, the
@@ -202,6 +228,16 @@ Exit status:
   1  a preflight check or an installation step failed
   2  invalid command line
 EOF
+}
+
+tls_mode_supported() {
+    local mode
+    for mode in "${TLS_MODES[@]}"; do
+        if [[ $mode == "$1" ]]; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 parse_args() {
@@ -237,6 +273,45 @@ parse_args() {
                 PUBLIC_ADDRESS=${1#*=}
                 shift
                 ;;
+            --tls-mode)
+                if (($# < 2)) || [[ -z $2 ]]; then
+                    printf 'bootstrap: --tls-mode requires acme, staging or files\n' >&2
+                    usage >&2
+                    exit 2
+                fi
+                TLS_MODE=$2
+                shift 2
+                ;;
+            --tls-mode=*)
+                TLS_MODE=${1#*=}
+                shift
+                ;;
+            --tls-cert)
+                if (($# < 2)) || [[ -z $2 ]]; then
+                    printf 'bootstrap: --tls-cert requires a path\n' >&2
+                    usage >&2
+                    exit 2
+                fi
+                TLS_CERT_SOURCE=$2
+                shift 2
+                ;;
+            --tls-cert=*)
+                TLS_CERT_SOURCE=${1#*=}
+                shift
+                ;;
+            --tls-key)
+                if (($# < 2)) || [[ -z $2 ]]; then
+                    printf 'bootstrap: --tls-key requires a path\n' >&2
+                    usage >&2
+                    exit 2
+                fi
+                TLS_KEY_SOURCE=$2
+                shift 2
+                ;;
+            --tls-key=*)
+                TLS_KEY_SOURCE=${1#*=}
+                shift
+                ;;
             -h | --help)
                 usage
                 exit 0
@@ -264,6 +339,21 @@ parse_args() {
     while [[ $DATA_ROOT == */ ]]; do
         DATA_ROOT=${DATA_ROOT%/}
     done
+
+    if ! tls_mode_supported "$TLS_MODE"; then
+        printf 'bootstrap: --tls-mode must be acme, staging or files: %q\n' \
+            "$TLS_MODE" >&2
+        exit 2
+    fi
+    if [[ $TLS_MODE == files ]]; then
+        if [[ -z $TLS_CERT_SOURCE || -z $TLS_KEY_SOURCE ]]; then
+            printf 'bootstrap: --tls-mode files requires --tls-cert PATH and --tls-key PATH\n' >&2
+            exit 2
+        fi
+    elif [[ -n $TLS_CERT_SOURCE || -n $TLS_KEY_SOURCE ]]; then
+        printf 'bootstrap: --tls-cert and --tls-key are only used with --tls-mode files\n' >&2
+        exit 2
+    fi
 }
 
 # version_ge REQUIRED ACTUAL returns success when ACTUAL >= REQUIRED.
@@ -1468,9 +1558,28 @@ port_80_is_free() {
     return 0
 }
 
+# clear_panel_failure_state removes a previous start-limit hit so an operator
+# can retry the panel immediately after fixing port 80, the firewall, the public
+# IP or a bad certificate. Only call reset-failed for a unit that is actually
+# failed: systemd 252 returns an error for an inactive unit that was never
+# started, and that must not abort a first install.
+clear_panel_failure_state() {
+    if systemctl --no-ask-password is-failed --quiet tes3mp-panel.service; then
+        run_install systemctl --no-ask-password reset-failed tes3mp-panel.service
+        pass "service: tes3mp-panel.service failed state cleared"
+    else
+        pass "service: tes3mp-panel.service has no failed state to clear"
+    fi
+}
+
 configure_panel_tls() {
     if [[ ! -x "$OPT_ROOT/bin/tes3mp-easy-panel" ]]; then
         info "panel TLS: skipped; the panel binary is not installed"
+        return
+    fi
+
+    if [[ $TLS_MODE == files ]]; then
+        configure_panel_tls_files
         return
     fi
 
@@ -1489,18 +1598,7 @@ configure_panel_tls() {
     # On upgrade an old panel process can still own :80. Stop the unit before
     # the challenge check; restart in start_runtime_services brings the new
     # binary up with the ACME settings.
-    #
-    # Clear a previous start-limit hit so an operator can retry ACME
-    # immediately after fixing port 80, the firewall or the public IP. Only
-    # call reset-failed for a unit that is actually failed: systemd 252
-    # returns an error for an inactive unit that was never started, and that
-    # must not abort a first install.
-    if systemctl --no-ask-password is-failed --quiet tes3mp-panel.service; then
-        run_install systemctl --no-ask-password reset-failed tes3mp-panel.service
-        pass "service: tes3mp-panel.service failed state cleared"
-    else
-        pass "service: tes3mp-panel.service has no failed state to clear"
-    fi
+    clear_panel_failure_state
     run_install systemctl --no-ask-password stop tes3mp-panel.service
     pass "service: tes3mp-panel.service stopped before the ACME port check"
 
@@ -1510,23 +1608,100 @@ configure_panel_tls() {
     pass "network: TCP port 80 is free for ACME HTTP-01"
 
     ensure_dir "$PANEL_ENV_DIR" root tes3mp-panel 0750
+    # A previous --tls-mode files run left its pair in /etc/tes3mp-easy. The
+    # acme panel reads panel-data/tls, so drop the unused copy: otherwise a
+    # later manual switch to files silently serves a forgotten certificate.
+    if [[ -e $PANEL_CERT_DEST || -e $PANEL_KEY_DEST ]]; then
+        run_install rm -f -- "$PANEL_CERT_DEST" "$PANEL_KEY_DEST"
+        pass "panel TLS: removed the files-mode key pair from $PANEL_ENV_DIR"
+    fi
+    local directory="" temp
+    if [[ $TLS_MODE == staging ]]; then
+        directory=$ACME_STAGING_DIRECTORY
+    fi
+    if ! temp=$(mktemp); then
+        abort_install "cannot create a temporary panel environment file"
+    fi
+    if ! {
+        printf '%s\n' '# Managed by bootstrap.sh; rerunning bootstrap overwrites this file.'
+        # The panel implements acme and files; staging only changes the CA
+        # directory, so the panel keeps the acme mode.
+        printf 'TES3MP_PANEL_TLS_MODE=acme\n'
+        printf 'TES3MP_PANEL_PUBLIC_ADDRESS=%s\n' "$PUBLIC_ADDRESS"
+        if [[ -n $directory ]]; then
+            printf 'TES3MP_PANEL_ACME_DIRECTORY=%s\n' "$directory"
+        fi
+    } >"$temp"; then
+        rm -f -- "$temp"
+        abort_install "cannot write the temporary panel environment file"
+    fi
+    run_install install -m 0640 -o root -g tes3mp-panel "$temp" "$PANEL_ENV_DEST"
+    rm -f -- "$temp"
+    pass "panel TLS: $TLS_MODE for $PUBLIC_ADDRESS ($PANEL_ENV_DEST)"
+    if [[ $TLS_MODE == staging ]]; then
+        warn "panel TLS: staging certificates are untrusted; browsers warn until --tls-mode acme runs"
+    fi
+}
+
+# configure_panel_tls_files installs an operator-provided key pair. It makes no
+# CA requests, so it neither detects a public IPv4 nor checks port 80: the panel
+# only reads the files. --public-address stays optional and is written only when
+# the operator supplied it, because a NAT host may have no public address at all.
+configure_panel_tls_files() {
+    local cert=$TLS_CERT_SOURCE key=$TLS_KEY_SOURCE
+    if [[ ! -f $cert ]]; then
+        abort_install "TLS certificate is not a file: $cert"
+    fi
+    if [[ ! -r $cert ]]; then
+        abort_install "TLS certificate is not readable: $cert"
+    fi
+    if [[ ! -f $key ]]; then
+        abort_install "TLS private key is not a file: $key"
+    fi
+    if [[ ! -r $key ]]; then
+        abort_install "TLS private key is not readable: $key"
+    fi
+    if [[ -n $PUBLIC_ADDRESS ]]; then
+        # files mode accepts a private IP or a DNS name, so this is a sanity
+        # check only: a host or host:port, never a URL or a path.
+        if [[ $PUBLIC_ADDRESS == *[[:space:]]* || $PUBLIC_ADDRESS == *"://"* ||
+            $PUBLIC_ADDRESS == *[/?#]* ]]; then
+            abort_install "public address must be a host or host:port without scheme or path: $PUBLIC_ADDRESS"
+        fi
+    fi
+
+    # start_runtime_services restarts the panel and the new process loads the
+    # new pair. Stop the unit first so no running process sees a truncated
+    # certificate while install(1) rewrites it.
+    clear_panel_failure_state
+    run_install systemctl --no-ask-password stop tes3mp-panel.service
+    pass "service: tes3mp-panel.service stopped before the TLS files were installed"
+
+    ensure_dir "$PANEL_ENV_DIR" root tes3mp-panel 0750
+    run_install install -m 0640 -o root -g tes3mp-panel "$cert" "$PANEL_CERT_DEST"
+    pass "panel TLS: certificate installed ($PANEL_CERT_DEST)"
+    run_install install -m 0640 -o root -g tes3mp-panel "$key" "$PANEL_KEY_DEST"
+    pass "panel TLS: private key installed ($PANEL_KEY_DEST)"
+
     local temp
     if ! temp=$(mktemp); then
         abort_install "cannot create a temporary panel environment file"
     fi
-    if ! printf '%s\n%s\n' \
-        '# Managed by bootstrap.sh; rerunning bootstrap overwrites this file.' \
-        'TES3MP_PANEL_TLS_MODE=acme' >"$temp"; then
+    if ! {
+        printf '%s\n' '# Managed by bootstrap.sh; rerunning bootstrap overwrites this file.'
+        printf 'TES3MP_PANEL_TLS_MODE=files\n'
+        printf 'TES3MP_PANEL_TLS_CERT=%s\n' "$PANEL_CERT_DEST"
+        printf 'TES3MP_PANEL_TLS_KEY=%s\n' "$PANEL_KEY_DEST"
+        if [[ -n $PUBLIC_ADDRESS ]]; then
+            printf 'TES3MP_PANEL_PUBLIC_ADDRESS=%s\n' "$PUBLIC_ADDRESS"
+        fi
+    } >"$temp"; then
         rm -f -- "$temp"
         abort_install "cannot write the temporary panel environment file"
     fi
-    if ! printf 'TES3MP_PANEL_PUBLIC_ADDRESS=%s\n' "$PUBLIC_ADDRESS" >>"$temp"; then
-        rm -f -- "$temp"
-        abort_install "cannot write the panel public address"
-    fi
     run_install install -m 0640 -o root -g tes3mp-panel "$temp" "$PANEL_ENV_DEST"
     rm -f -- "$temp"
-    pass "panel TLS: acme for $PUBLIC_ADDRESS ($PANEL_ENV_DEST)"
+    pass "panel TLS: files ($PANEL_ENV_DEST)"
 }
 
 panel_journal_tail() {
@@ -1599,6 +1774,16 @@ wait_for_panel_health() {
     abort_panel_startup "panel did not become healthy in 300s"
 }
 
+panel_url() {
+    if [[ -n $PUBLIC_ADDRESS ]]; then
+        printf 'https://%s/' "$PUBLIC_ADDRESS"
+    else
+        # files mode may run on a host without a public address: do not print
+        # the misleading https:/// .
+        printf 'https://<server-address>/'
+    fi
+}
+
 # report_initial_password prints the temporary panel password that the panel
 # writes on its first start. The file disappears after the first password
 # change, so a rerun of the installer only points at the recovery steps.
@@ -1609,7 +1794,7 @@ report_initial_password() {
         password=$(cat "$file" 2>/dev/null) || password=""
     fi
     if [[ -z $password ]]; then
-        info "panel: open https://$PUBLIC_ADDRESS/"
+        info "panel: open $(panel_url)"
         if [[ -e $file ]]; then
             info "panel: the temporary password is empty; read $file"
         else
@@ -1618,7 +1803,7 @@ report_initial_password() {
         fi
         return
     fi
-    info "panel: open https://$PUBLIC_ADDRESS/"
+    info "panel: open $(panel_url)"
     printf '%s[panel]%s temporary password: %s\n' \
         "$C_GREEN" "$C_RESET" "$password"
     info "panel: change it after the first login; the panel then deletes $file"

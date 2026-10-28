@@ -1336,6 +1336,9 @@ func TestBootstrapHelpAndUsage(t *testing.T) {
 
 		assertExit(t, got, 0)
 		assertContains(t, got.stdout, "Usage: sudo ./bootstrap.sh")
+		for _, want := range []string{"--tls-mode MODE", "--tls-cert PATH", "--tls-key PATH"} {
+			assertContains(t, got.stdout, want)
+		}
 		if got.stderr != "" {
 			t.Fatalf("stderr = %q, want empty", got.stderr)
 		}
@@ -1855,6 +1858,194 @@ func TestBootstrapAutoDetectsPublicAddress(t *testing.T) {
 	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.env",
 		"TES3MP_PANEL_TLS_MODE=acme",
 		"TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10")
+}
+
+func TestBootstrapConfiguresStagingTLS(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+
+	got := h.run(t, "--tls-mode", "staging")
+
+	assertExit(t, got, 0)
+	for _, want := range []string{
+		"network: TCP port 80 is free for ACME HTTP-01",
+		"panel TLS: staging for 203.0.113.10 (" +
+			filepath.Join(h.installRoot, "etc/tes3mp-easy/panel.env") + ")",
+		"panel TLS: staging certificates are untrusted",
+	} {
+		assertContains(t, got.stdout, want)
+	}
+	// The panel implements acme and files only: staging keeps the acme mode and
+	// only adds the CA directory.
+	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.env",
+		"TES3MP_PANEL_TLS_MODE=acme",
+		"TES3MP_PANEL_PUBLIC_ADDRESS=203.0.113.10",
+		"TES3MP_PANEL_ACME_DIRECTORY=https://acme-staging-v02.api.letsencrypt.org/directory")
+
+	logData, err := os.ReadFile(h.commandLog)
+	if err != nil {
+		t.Fatalf("read command log: %v", err)
+	}
+	// Staging still needs the HTTP-01 listener, so the port 80 check stays.
+	assertContains(t, string(logData), "ss args=-H -ltn")
+}
+
+func TestBootstrapConfiguresFilesTLS(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	// A host behind NAT has no public address at all: files mode must not
+	// detect or require one.
+	h.env["TES3MP_EASY_PUBLIC_ADDRESS"] = ""
+	cert := filepath.Join(h.dir, "operator-cert.pem")
+	key := filepath.Join(h.dir, "operator-key.pem")
+	h.writeFile(cert, "-----BEGIN CERTIFICATE-----\nfake\n", 0o644)
+	h.writeFile(key, "-----BEGIN PRIVATE KEY-----\nfake\n", 0o600)
+
+	got := h.run(t, "--tls-mode=files", "--tls-cert="+cert, "--tls-key="+key)
+
+	assertExit(t, got, 0)
+	envPath := filepath.Join(h.installRoot, "etc/tes3mp-easy/panel.env")
+	certDest := filepath.Join(h.installRoot, "etc/tes3mp-easy/panel.crt")
+	keyDest := filepath.Join(h.installRoot, "etc/tes3mp-easy/panel.key")
+	for _, want := range []string{
+		"service: tes3mp-panel.service stopped before the TLS files were installed",
+		"panel TLS: certificate installed (" + certDest + ")",
+		"panel TLS: private key installed (" + keyDest + ")",
+		"panel TLS: files (" + envPath + ")",
+		"panel: open https://<server-address>/",
+	} {
+		assertContains(t, got.stdout, want)
+	}
+	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.env",
+		"TES3MP_PANEL_TLS_MODE=files",
+		"TES3MP_PANEL_TLS_CERT="+certDest,
+		"TES3MP_PANEL_TLS_KEY="+keyDest)
+	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.crt", "BEGIN CERTIFICATE")
+	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.key", "BEGIN PRIVATE KEY")
+	for _, path := range []string{envPath, certDest, keyDest} {
+		assertPathMode(t, path, 0o640, false)
+	}
+
+	envData, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("read panel.env: %v", err)
+	}
+	if strings.Contains(string(envData), "TES3MP_PANEL_PUBLIC_ADDRESS") {
+		t.Fatalf("panel.env records a public address without one being set:\n%s", envData)
+	}
+	// files mode never talks to a CA, so it must not claim the HTTP-01 port.
+	if strings.Contains(got.stdout, "network: TCP port 80") ||
+		strings.Contains(got.stdout, "ACME") {
+		t.Fatalf("files mode reported ACME work:\n%s", got.stdout)
+	}
+
+	logData, err := os.ReadFile(h.commandLog)
+	if err != nil {
+		t.Fatalf("read command log: %v", err)
+	}
+	if strings.Contains(string(logData), "ss args=") {
+		t.Fatalf("files mode checked port 80:\n%s", logData)
+	}
+}
+
+func TestBootstrapACMERemovesFilesPair(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	certDest := filepath.Join(h.installRoot, "etc/tes3mp-easy/panel.crt")
+	keyDest := filepath.Join(h.installRoot, "etc/tes3mp-easy/panel.key")
+	h.writeFile(certDest, "-----BEGIN CERTIFICATE-----\nold\n", 0o640)
+	h.writeFile(keyDest, "-----BEGIN PRIVATE KEY-----\nold\n", 0o640)
+
+	got := h.run(t)
+
+	assertExit(t, got, 0)
+	assertContains(t, got.stdout,
+		"panel TLS: removed the files-mode key pair from "+
+			filepath.Join(h.installRoot, "etc/tes3mp-easy"))
+	for _, path := range []string{certDest, keyDest} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("%s still exists after an acme run (err = %v)", path, err)
+		}
+	}
+	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.env",
+		"TES3MP_PANEL_TLS_MODE=acme")
+}
+
+func TestBootstrapFilesTLSRequiresReadablePair(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	key := filepath.Join(h.dir, "operator-key.pem")
+	h.writeFile(key, "-----BEGIN PRIVATE KEY-----\nfake\n", 0o600)
+
+	got := h.run(t, "--tls-mode", "files",
+		"--tls-cert", filepath.Join(h.dir, "absent.pem"), "--tls-key", key)
+
+	assertExit(t, got, 1)
+	assertContains(t, got.stderr, "TLS certificate is not a file")
+}
+
+func TestBootstrapFilesTLSAcceptsPrivateAddress(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	h.env["TES3MP_EASY_PUBLIC_ADDRESS"] = "192.168.1.10"
+	cert := filepath.Join(h.dir, "operator-cert.pem")
+	key := filepath.Join(h.dir, "operator-key.pem")
+	h.writeFile(cert, "-----BEGIN CERTIFICATE-----\nfake\n", 0o644)
+	h.writeFile(key, "-----BEGIN PRIVATE KEY-----\nfake\n", 0o600)
+
+	got := h.run(t, "--tls-mode", "files", "--tls-cert", cert, "--tls-key", key)
+
+	assertExit(t, got, 0)
+	// files mode serves the pair itself, so a private address is fine.
+	assertInstalledFile(t, h, "etc/tes3mp-easy/panel.env",
+		"TES3MP_PANEL_TLS_MODE=files",
+		"TES3MP_PANEL_PUBLIC_ADDRESS=192.168.1.10")
+}
+
+func TestBootstrapFilesTLSRejectsURLAddress(t *testing.T) {
+	h := newFakeHost(t)
+	h.writeServerBinaries()
+	h.env["TES3MP_EASY_PUBLIC_ADDRESS"] = ""
+	cert := filepath.Join(h.dir, "operator-cert.pem")
+	key := filepath.Join(h.dir, "operator-key.pem")
+	h.writeFile(cert, "-----BEGIN CERTIFICATE-----\nfake\n", 0o644)
+	h.writeFile(key, "-----BEGIN PRIVATE KEY-----\nfake\n", 0o600)
+
+	got := h.run(t, "--tls-mode", "files", "--tls-cert", cert, "--tls-key", key,
+		"--public-address", "https://example.com/panel")
+
+	assertExit(t, got, 1)
+	assertContains(t, got.stderr,
+		"public address must be a host or host:port without scheme or path")
+}
+
+func TestBootstrapRejectsUnknownTLSMode(t *testing.T) {
+	h := newFakeHost(t)
+
+	got := h.run(t, "--tls-mode", "selfsigned")
+
+	assertExit(t, got, 2)
+	assertContains(t, got.stderr, "--tls-mode must be acme, staging or files")
+}
+
+func TestBootstrapRequiresTLSFilesForFilesMode(t *testing.T) {
+	h := newFakeHost(t)
+
+	got := h.run(t, "--tls-mode", "files")
+
+	assertExit(t, got, 2)
+	assertContains(t, got.stderr,
+		"--tls-mode files requires --tls-cert PATH and --tls-key PATH")
+}
+
+func TestBootstrapRejectsTLSFilesOutsideFilesMode(t *testing.T) {
+	h := newFakeHost(t)
+
+	got := h.run(t, "--tls-cert", "/tmp/panel.crt")
+
+	assertExit(t, got, 2)
+	assertContains(t, got.stderr,
+		"--tls-cert and --tls-key are only used with --tls-mode files")
 }
 
 func TestBootstrapInstallIsIdempotent(t *testing.T) {

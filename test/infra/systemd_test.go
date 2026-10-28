@@ -44,7 +44,7 @@ func TestSystemdAssetsContainRequiredSettings(t *testing.T) {
 				"SupplementaryGroups=tes3mp",
 				"EnvironmentFile=-/etc/tes3mp-easy/panel.env",
 				"ExecStart=/opt/tes3mp-easy/bin/tes3mp-easy-panel",
-				"StartLimitBurst=2",
+				"StartLimitBurst=4",
 				"RestartSec=60s",
 				"TimeoutStartSec=5min",
 				"Environment=GOMAXPROCS=1",
