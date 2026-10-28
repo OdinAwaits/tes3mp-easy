@@ -7,12 +7,14 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/Saagilat/tes3mp-easy/internal/app"
 	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/i18n"
+	"github.com/Saagilat/tes3mp-easy/internal/ui/style"
 )
 
 // testShell builds a shell on a throw-away configuration so screens can be
@@ -183,6 +185,80 @@ func TestInstallationAdvancedKeepsOnlyPathAccordions(t *testing.T) {
 			t.Fatalf("Advanced item %d = %q, want %q", index, items[index].Title,
 				title)
 		}
+	}
+}
+
+// TestHeaderHasLanguageAndThemeSwitches pins the header contract: one language
+// toggle and one theme list instead of three theme buttons and no language.
+func TestHeaderHasLanguageAndThemeSwitches(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	tr := s.service.Translator()
+
+	var buttons []*widget.Button
+	var selects []*widget.Select
+	walkObjects(s.headerActions(tr), func(item fyne.CanvasObject) {
+		switch typed := item.(type) {
+		case *widget.Button:
+			buttons = append(buttons, typed)
+		case *widget.Select:
+			selects = append(selects, typed)
+		}
+	})
+	if len(selects) != 1 {
+		t.Fatalf("header has %d lists, want 1 theme list", len(selects))
+	}
+	if got, want := strings.Join(selects[0].Options, "|"),
+		strings.Join(themeModeLabels(tr), "|"); got != want {
+		t.Fatalf("theme list options = %q, want %q", got, want)
+	}
+	if want := themeModeLabel(tr, style.ParseMode(s.service.Config().Theme)); selects[0].Selected != want {
+		t.Fatalf("theme list selection = %q, want %q", selects[0].Selected, want)
+	}
+	target, ok := nextLanguage(s.service.Language())
+	if !ok {
+		t.Fatal("the test configuration has no language target")
+	}
+	if len(buttons) != 1 {
+		t.Fatalf("header has %d buttons, want 1 language toggle", len(buttons))
+	}
+	if want := i18n.DisplayName(target); buttons[0].Text != want {
+		t.Fatalf("language toggle = %q, want %q", buttons[0].Text, want)
+	}
+}
+
+// TestHeaderFitsSupportedWindow keeps the header on one line at the smallest
+// window we ship: the brand and the two fixed-width switches must fit 900 px in
+// both languages.
+func TestHeaderFitsSupportedWindow(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+	const narrowest float32 = 900
+	for _, language := range i18n.Supported() {
+		tr := i18n.New(language)
+		header := container.NewBorder(nil, nil, s.brand(tr), s.headerActions(tr), nil)
+		if got := header.MinSize().Width; got > narrowest {
+			t.Fatalf("%s header needs %.0f px, want at most %.0f",
+				language, got, narrowest)
+		}
+	}
+}
+
+// TestAboutHasNoLanguageSelector keeps settings in the header: About only
+// reports versions and links now.
+func TestAboutHasNoLanguageSelector(t *testing.T) {
+	s := testShell(t)
+	defer s.window.Close()
+
+	selects := 0
+	walkObjects(s.aboutScreen(s.service.Translator()), func(item fyne.CanvasObject) {
+		if _, ok := item.(*widget.Select); ok {
+			selects++
+		}
+	})
+	if selects != 0 {
+		t.Fatalf("About has %d selectors, want none: settings live in the header",
+			selects)
 	}
 }
 

@@ -18,7 +18,7 @@ BL-008, BL-013 → BL-007, BL-014 → BL-004, BL-016 → BL-012.
 | [BL-004](BL-004-morrowind-feedback.md) | Morrowind: отсутствие, поиск и проверка без «ошибки» | новое |
 | [BL-006](BL-006-latest-release.md) | Нет постоянной ссылки на последний релиз | новое |
 | [BL-007](BL-007-visual-system.md) | Визуальный слой: контраст, токены, кнопки, плотность | новое |
-| [BL-008](BL-008-header-theme-language.md) | Шапка: тема и язык рядом, без перерисовки окна | новое |
+| [BL-008](BL-008-header-theme-language.md) | Шапка: тема и язык рядом, без перерисовки окна | сделано |
 | [BL-009](BL-009-about-extra.md) | В About видны `%!(EXTRA string=…)` | сделано |
 | [BL-010](BL-010-install-profile-row.md) | Installation: пустая строка «Профиль клиента» | сделано |
 | [BL-012](BL-012-fonts-catalog-preview.md) | Шрифты: десять наборов, Select, превью и один шаг | новое |

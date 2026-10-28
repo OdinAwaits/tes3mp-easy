@@ -294,30 +294,28 @@ const (
 	KeySetupInstalling          = "setup.installing"
 	KeySetupDone                = "setup.done"
 
-	KeyAboutTitle                 = "about.title"
-	KeyAboutIntro                 = "about.intro"
-	KeyAboutVersion               = "about.version"
-	KeyAboutHint                  = "about.hint"
-	KeyAboutInterfaceLanguage     = "about.interface_language"
-	KeyAboutInterfaceLanguageHint = "about.interface_language.hint"
-	KeyAboutLicense               = "about.license"
-	KeyAboutLicenseValue          = "about.license.value"
-	KeyAboutOpenSource            = "about.open_source"
-	KeyAboutProject               = "about.project"
-	KeyAboutOpenPage              = "about.open_page"
-	KeyAboutComponents            = "about.components"
-	KeyAboutTES3MP                = "about.components.tes3mp"
-	KeyAboutTES3MPHint            = "about.components.tes3mp.hint"
-	KeyAboutOpenMW                = "about.components.openmw"
-	KeyAboutOpenMWHint            = "about.components.openmw.hint"
-	KeyAboutFyne                  = "about.components.fyne"
-	KeyAboutFyneHint              = "about.components.fyne.hint"
-	KeyAboutNotInstalled          = "about.not_installed"
-	KeyAboutReady                 = "about.ready"
-	KeyAboutSystem                = "about.system"
-	KeyAboutLegal                 = "about.legal"
-	KeyFooterPath                 = "footer.config_path"
-	KeyFooterVersion              = "footer.version"
+	KeyAboutTitle        = "about.title"
+	KeyAboutIntro        = "about.intro"
+	KeyAboutVersion      = "about.version"
+	KeyAboutHint         = "about.hint"
+	KeyAboutLicense      = "about.license"
+	KeyAboutLicenseValue = "about.license.value"
+	KeyAboutOpenSource   = "about.open_source"
+	KeyAboutProject      = "about.project"
+	KeyAboutOpenPage     = "about.open_page"
+	KeyAboutComponents   = "about.components"
+	KeyAboutTES3MP       = "about.components.tes3mp"
+	KeyAboutTES3MPHint   = "about.components.tes3mp.hint"
+	KeyAboutOpenMW       = "about.components.openmw"
+	KeyAboutOpenMWHint   = "about.components.openmw.hint"
+	KeyAboutFyne         = "about.components.fyne"
+	KeyAboutFyneHint     = "about.components.fyne.hint"
+	KeyAboutNotInstalled = "about.not_installed"
+	KeyAboutReady        = "about.ready"
+	KeyAboutSystem       = "about.system"
+	KeyAboutLegal        = "about.legal"
+	KeyFooterPath        = "footer.config_path"
+	KeyFooterVersion     = "footer.version"
 
 	KeyLanguageRussian = "lang.russian"
 )
@@ -614,30 +612,28 @@ var catalogs = map[Language]map[string]string{
 		KeySetupInstalling:          "Finishing the TES3MP installation...",
 		KeySetupDone:                "TES3MP is installed and ready.",
 
-		KeyAboutTitle:                 "About",
-		KeyAboutIntro:                 "A client that installs and launches TES3MP with the right fonts and settings, without editing files by hand.",
-		KeyAboutVersion:               "Version %s",
-		KeyAboutHint:                  "How the client is built and what is installed.",
-		KeyAboutInterfaceLanguage:     "Interface language",
-		KeyAboutInterfaceLanguageHint: "Applies immediately. The game language stays in Installation.",
-		KeyAboutLicense:               "License",
-		KeyAboutLicenseValue:          "MIT",
-		KeyAboutOpenSource:            "Open source",
-		KeyAboutProject:               "Project",
-		KeyAboutOpenPage:              "Open project page",
-		KeyAboutComponents:            "Components",
-		KeyAboutTES3MP:                "TES3MP %s",
-		KeyAboutTES3MPHint:            "Multiplayer fork of OpenMW used to play on servers.",
-		KeyAboutOpenMW:                "OpenMW",
-		KeyAboutOpenMWHint:            "Open-source engine the client configures and launches.",
-		KeyAboutFyne:                  "Fyne",
-		KeyAboutFyneHint:              "Toolkit that draws this window.",
-		KeyAboutNotInstalled:          "Not installed",
-		KeyAboutReady:                 "Installed",
-		KeyAboutSystem:                "System",
-		KeyAboutLegal:                 "Morrowind and its data files belong to Bethesda Softworks. The client never modifies the game folder.",
-		KeyFooterPath:                 "Config: %s",
-		KeyFooterVersion:              "tes3mp-easy %s · TES3MP %s",
+		KeyAboutTitle:        "About",
+		KeyAboutIntro:        "A client that installs and launches TES3MP with the right fonts and settings, without editing files by hand.",
+		KeyAboutVersion:      "Version %s",
+		KeyAboutHint:         "How the client is built and what is installed.",
+		KeyAboutLicense:      "License",
+		KeyAboutLicenseValue: "MIT",
+		KeyAboutOpenSource:   "Open source",
+		KeyAboutProject:      "Project",
+		KeyAboutOpenPage:     "Open project page",
+		KeyAboutComponents:   "Components",
+		KeyAboutTES3MP:       "TES3MP %s",
+		KeyAboutTES3MPHint:   "Multiplayer fork of OpenMW used to play on servers.",
+		KeyAboutOpenMW:       "OpenMW",
+		KeyAboutOpenMWHint:   "Open-source engine the client configures and launches.",
+		KeyAboutFyne:         "Fyne",
+		KeyAboutFyneHint:     "Toolkit that draws this window.",
+		KeyAboutNotInstalled: "Not installed",
+		KeyAboutReady:        "Installed",
+		KeyAboutSystem:       "System",
+		KeyAboutLegal:        "Morrowind and its data files belong to Bethesda Softworks. The client never modifies the game folder.",
+		KeyFooterPath:        "Config: %s",
+		KeyFooterVersion:     "tes3mp-easy %s · TES3MP %s",
 
 		KeyLanguageRussian: "Russian",
 	},
@@ -932,30 +928,28 @@ var catalogs = map[Language]map[string]string{
 		KeySetupInstalling:          "Завершение установки TES3MP...",
 		KeySetupDone:                "TES3MP установлен и готов.",
 
-		KeyAboutTitle:                 "О клиенте",
-		KeyAboutIntro:                 "Клиент, который устанавливает и запускает TES3MP с нужными шрифтами и настройками — без ручного редактирования файлов.",
-		KeyAboutVersion:               "Версия %s",
-		KeyAboutHint:                  "Из чего собран клиент и что установлено.",
-		KeyAboutInterfaceLanguage:     "Язык интерфейса",
-		KeyAboutInterfaceLanguageHint: "Применяется сразу. Язык игры остаётся на вкладке «Установка».",
-		KeyAboutLicense:               "Лицензия",
-		KeyAboutLicenseValue:          "MIT",
-		KeyAboutOpenSource:            "Открытый код",
-		KeyAboutProject:               "Проект",
-		KeyAboutOpenPage:              "Открыть страницу проекта",
-		KeyAboutComponents:            "Компоненты",
-		KeyAboutTES3MP:                "TES3MP %s",
-		KeyAboutTES3MPHint:            "Сетевая версия OpenMW для игры на серверах.",
-		KeyAboutOpenMW:                "OpenMW",
-		KeyAboutOpenMWHint:            "Свободный движок, который клиент настраивает и запускает.",
-		KeyAboutFyne:                  "Fyne",
-		KeyAboutFyneHint:              "Инструментарий, которым нарисовано это окно.",
-		KeyAboutNotInstalled:          "Не установлен",
-		KeyAboutReady:                 "Установлен",
-		KeyAboutSystem:                "Система",
-		KeyAboutLegal:                 "Morrowind и его файлы принадлежат Bethesda Softworks. Клиент не изменяет папку игры.",
-		KeyFooterPath:                 "Конфиг: %s",
-		KeyFooterVersion:              "tes3mp-easy %s · TES3MP %s",
+		KeyAboutTitle:        "О клиенте",
+		KeyAboutIntro:        "Клиент, который устанавливает и запускает TES3MP с нужными шрифтами и настройками — без ручного редактирования файлов.",
+		KeyAboutVersion:      "Версия %s",
+		KeyAboutHint:         "Из чего собран клиент и что установлено.",
+		KeyAboutLicense:      "Лицензия",
+		KeyAboutLicenseValue: "MIT",
+		KeyAboutOpenSource:   "Открытый код",
+		KeyAboutProject:      "Проект",
+		KeyAboutOpenPage:     "Открыть страницу проекта",
+		KeyAboutComponents:   "Компоненты",
+		KeyAboutTES3MP:       "TES3MP %s",
+		KeyAboutTES3MPHint:   "Сетевая версия OpenMW для игры на серверах.",
+		KeyAboutOpenMW:       "OpenMW",
+		KeyAboutOpenMWHint:   "Свободный движок, который клиент настраивает и запускает.",
+		KeyAboutFyne:         "Fyne",
+		KeyAboutFyneHint:     "Инструментарий, которым нарисовано это окно.",
+		KeyAboutNotInstalled: "Не установлен",
+		KeyAboutReady:        "Установлен",
+		KeyAboutSystem:       "Система",
+		KeyAboutLegal:        "Morrowind и его файлы принадлежат Bethesda Softworks. Клиент не изменяет папку игры.",
+		KeyFooterPath:        "Конфиг: %s",
+		KeyFooterVersion:     "tes3mp-easy %s · TES3MP %s",
 
 		KeyLanguageRussian: "Русский",
 	},

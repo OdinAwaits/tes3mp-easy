@@ -1,7 +1,12 @@
 # BL-008. Шапка: тема и язык рядом, без перерисовки окна
 
-**Статус:** новое (28.10.2026), не начато. Включает BL-011 («Язык интерфейса — в
-шапку, рядом с темой»).
+**Статус:** сделано (28.10.2026). Шапка: фиксированная ширина 190 px у обоих
+контролов, тема — `Select` из трёх режимов, язык — кнопка-тоггл с названием
+целевого языка; `setTheme` не перерисовывает окно, язык перерисовывает. Язык
+убран из About, ключи `about.interface_language*` удалены. Тесты:
+`TestThemeModeLabels`, `TestNextLanguage`, `TestHeaderHasLanguageAndThemeSwitches`,
+`TestHeaderFitsSupportedWindow`, `TestAboutHasNoLanguageSelector`; заодно из
+`06-client.md` и `03-contracts.md` убраны ссылки на несуществующее меню «⋯».
 
 **Симптом.**
 

@@ -4,8 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"fyne.io/fyne/v2/widget"
-
 	"github.com/Saagilat/tes3mp-easy/internal/app"
 	"github.com/Saagilat/tes3mp-easy/internal/config"
 	"github.com/Saagilat/tes3mp-easy/internal/fonts"
@@ -23,12 +21,51 @@ func TestRunRejectsNilService(t *testing.T) {
 	}
 }
 
-func TestThemeOptionImportance(t *testing.T) {
-	if got := themeOptionImportance(style.ModeLight, style.ModeLight); got != widget.HighImportance {
-		t.Fatalf("active theme importance = %v, want high", got)
+func TestThemeModeLabels(t *testing.T) {
+	for _, language := range i18n.Supported() {
+		translator := i18n.New(language)
+		labels := themeModeLabels(translator)
+		if len(labels) != len(themeModes) {
+			t.Fatalf("%s theme labels = %v, want %d modes",
+				language, labels, len(themeModes))
+		}
+		for index, label := range labels {
+			mode, ok := themeModeByLabel(translator, label)
+			if !ok || mode != themeModes[index].mode {
+				t.Fatalf("%s label %q maps to %q, %t; want %q",
+					language, label, mode, ok, themeModes[index].mode)
+			}
+			if got := themeModeLabel(translator, mode); got != label {
+				t.Fatalf("%s themeModeLabel(%q) = %q, want %q",
+					language, mode, got, label)
+			}
+		}
+		if _, ok := themeModeByLabel(translator, "unknown"); ok {
+			t.Fatalf("%s themeModeByLabel(unknown) matched a mode", language)
+		}
+		want := translator.T(i18n.KeyThemeSystem)
+		if got := themeModeLabel(translator, style.Mode("sepia")); got != want {
+			t.Fatalf("%s themeModeLabel(sepia) = %q, want %q",
+				language, got, want)
+		}
 	}
-	if got := themeOptionImportance(style.ModeLight, style.ModeDark); got != widget.MediumImportance {
-		t.Fatalf("inactive theme importance = %v, want medium", got)
+}
+
+func TestNextLanguage(t *testing.T) {
+	languages := i18n.Supported()
+	if len(languages) < 2 {
+		t.Skip("a single interface language has no toggle target")
+	}
+	for index, language := range languages {
+		want := languages[(index+1)%len(languages)]
+		got, ok := nextLanguage(language)
+		if !ok || got != want {
+			t.Fatalf("nextLanguage(%q) = %q, %t; want %q",
+				language, got, ok, want)
+		}
+	}
+	if got, ok := nextLanguage(i18n.Language("de")); !ok || got != languages[0] {
+		t.Fatalf("nextLanguage(de) = %q, %t; want %q", got, ok, languages[0])
 	}
 }
 
