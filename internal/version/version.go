@@ -1,7 +1,12 @@
-// Package version holds build identity shared by the client, panel and release
-// packager. Release builds override Version through -ldflags -X.
+// Package version holds build identity of the shipped components. Release
+// builds override the version of the component they build through -ldflags -X;
+// the values below are the fallbacks used by local builds.
 package version
 
-// Version is the project release version. Keep it in sync with the release tag
-// and the assets produced by cmd/tes3mp-easy-pack.
-var Version = "0.2.2"
+// Client is the desktop client version. It matches the client-v<version> tag
+// and the client archives published with that GitHub release.
+var Client = "0.2.2"
+
+// Server is the server release version: ops, the panel and the archive built by
+// cmd/tes3mp-easy-pack. It matches the server-v<version> tag.
+var Server = "0.2.2"

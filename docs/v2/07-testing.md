@@ -404,9 +404,10 @@ cmp /tmp/release-a/*.tar.gz /tmp/release-b/*.tar.gz
 - Fyne GUI не запускается в CI; клиент собирается под Linux.
 - Windows-клиент собирается на `windows-latest` в
   `.github/workflows/release.yml`; GUI smoke остаётся ручной проверкой по §9.
-- `.github/workflows/release.yml` на тег `v*` собирает серверный архив и
-  Linux/Windows клиентские архивы, проверяет точную воспроизводимость
-  серверного архива и прикладывает `.sha256` к GitHub Release.
+- `.github/workflows/release.yml` на тег `server-v<version>` собирает серверный
+  архив и проверяет его точную воспроизводимость, на `client-v<version>` —
+  Linux/Windows клиентские архивы. `.sha256` прикладывается к GitHub Release в
+  обоих каналах.
 - `test/docs` проверяет локальные ссылки, валидность JSON-примеров,
   отсутствие дублированных схем, запрещённых полей и устаревших имён
   backend-ов.

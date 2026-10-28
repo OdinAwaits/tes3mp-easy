@@ -31,7 +31,7 @@ const TailLines = 300
 
 var (
 	// Version is the client version shown in About and the CLI.
-	Version = version.Version
+	Version = version.Client
 )
 
 const (

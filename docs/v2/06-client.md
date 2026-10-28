@@ -33,7 +33,8 @@
 - Windows: `tes3mp-easy-client.exe`.
 - Linux: `tes3mp-easy-client`.
 - Без установщика и без автообновления: новая версия — новый архив.
-  `.github/workflows/release.yml` собирает Linux и Windows архивы на тег `v*`;
+  `.github/workflows/release.yml` собирает Linux и Windows архивы на тег
+  `client-v<version>`; клиент и сервер выпускаются независимыми каналами, а
   клиентские артефакты не входят в серверный release tar.
 - Все ресурсы (иконки, тексты) встроены через `embed`.
 - Fyne требует графические библиотеки (X11/Wayland/OpenGL) на Linux; это

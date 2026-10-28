@@ -49,7 +49,7 @@ timedatectl
 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
 ```
 
-Конкретную версию можно закрепить:
+Конкретную версию серверного релиза можно закрепить:
 
 ```bash
 TES3MP_EASY_VERSION=0.2.2 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
@@ -58,12 +58,13 @@ TES3MP_EASY_VERSION=0.2.2 bash <(curl -Ls https://raw.githubusercontent.com/Saag
 Ручной путь, если архив нужно скачать заранее:
 
 1. Скачайте архив и checksum с GitHub Releases (или возьмите локально
-   собранный `dist/tes3mp-easy-<version>-linux-amd64.tar.gz`):
+   собранный `dist/tes3mp-easy-<version>-linux-amd64.tar.gz`). Серверные
+   релизы помечены тегом `server-v<version>`:
 
    ```bash
    VERSION=0.2.2
-   curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz"
-   curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
+   curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/server-v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz"
+   curl -fsSLO "https://github.com/Saagilat/tes3mp-easy/releases/download/server-v${VERSION}/tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
    sha256sum -c "tes3mp-easy-${VERSION}-linux-amd64.tar.gz.sha256"
    tar -xzf "tes3mp-easy-${VERSION}-linux-amd64.tar.gz"
    cd "tes3mp-easy-${VERSION}-linux-amd64"
@@ -335,8 +336,9 @@ sudo cat /tes3mp-easy/panel-data/initial-password.txt
 
 ### 5.1. Из релизного архива
 
-Для обычного обновления достаточно команды из §2.1: установщик скачает свежий
-архив и запустит `bootstrap.sh`. Ручной путь:
+Для обычного обновления достаточно команды из §2.1: установщик скачает
+последний серверный релиз и запустит `bootstrap.sh`; клиентские релизы
+(`client-v<version>`) на этот выбор не влияют. Ручной путь:
 
 1. Скачайте и проверьте новый архив по §2.1 и распакуйте его во временный
    каталог.
@@ -970,3 +972,37 @@ sudo journalctl -u tes3mp.service -n 20 --no-pager
 Ожидаемо: все четыре unit активны, оба таймера запланированы, `doctor` без
 `error`, `/healthz` = `ok`, публичный API отдаёт `mods_sha256`, в логах нет
 panic.
+
+## 17. Выпуск релиза
+
+Сервер и клиент выпускаются независимо: правка клиента не создаёт серверный
+релиз и наоборот.
+
+| Канал | Тег | Артефакты |
+|---|---|---|
+| server | `server-v<version>` | `tes3mp-easy-<version>-linux-amd64.tar.gz` (+ `.sha256`) |
+| client | `client-v<version>` | `tes3mp-easy-client-<version>-linux-amd64.tar.gz`, `tes3mp-easy-client-<version>-windows-amd64.zip` (+ `.sha256`) |
+
+```bash
+# серверный релиз
+git tag -a server-v0.3.0 -m "tes3mp-easy server 0.3.0"
+git push origin server-v0.3.0
+
+# клиентский релиз
+git tag -a client-v0.3.0 -m "tes3mp-easy client 0.3.0"
+git push origin client-v0.3.0
+```
+
+- Версию подставляет workflow через `-ldflags -X
+  github.com/Saagilat/tes3mp-easy/internal/version.Server` (server) и
+  `.Client` (client), поэтому коммит «bump version» не нужен. Значения в
+  `internal/version` — фолбэки для локальных сборок.
+- `install.sh` читает список релизов и берёт самый свежий с серверным
+  архивом, поэтому новый клиентский релиз не подменяет серверный.
+  `TES3MP_EASY_VERSION=0.3.0` прибивает версию серверного релиза;
+  `--version 0.3.0` у `tes3mp-easy-pack` задаёт её для локальной сборки.
+- `internal/contract` и `internal/serverapi` описывают протокол
+  клиент↔панель: несовместимые изменения выпускаются в обоих каналах.
+- Панель отдаёт свою версию в `/api/v1/server` как `panel_version` — это
+  версия серверного релиза.
+

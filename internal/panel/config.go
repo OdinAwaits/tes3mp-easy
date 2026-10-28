@@ -21,7 +21,7 @@ import (
 
 var (
 	// Version is reported by the panel binary and the public API.
-	Version = version.Version
+	Version = version.Server
 )
 
 const (

@@ -612,7 +612,8 @@ Gzip-мусор после tar, повреждённый gzip, абсолютн�
 `name` — `hostname` из `tes3mp-server-default.cfg`; `address` — публичный адрес
 панели; `port` — игровой порт; `status` — `running`, `stopped`, `starting`,
 `unhealthy`, `unknown` или `service_unavailable`; `mods_sha256` — sha текущего
-пакета или `null`.
+пакета или `null`; `panel_version` — версия серверного релиза
+(`server-v<version>`), а не клиента.
 
 ### `GET /api/v1/mods/current`
 

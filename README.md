@@ -5,7 +5,10 @@
 
 ## Быстрый старт: игрок
 
-Скачайте клиент из [GitHub Releases](https://github.com/Saagilat/tes3mp-easy/releases):
+Клиент и сервер выпускаются независимыми релизами: клиентские помечены
+`client-v<version>`, серверные — `server-v<version>`. Клиент лежит в
+[GitHub Releases](https://github.com/Saagilat/tes3mp-easy/releases) под тегом
+`client-v<version>`:
 
 - **Windows 10/11** — `tes3mp-easy-client-<version>-windows-amd64.zip`, распакуйте
   и запустите `tes3mp-easy-client.exe`.
@@ -24,6 +27,9 @@
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/Saagilat/tes3mp-easy/master/install.sh)
 ```
+
+Установщик сам находит последний серверный релиз (`server-v<version>`);
+клиентские релизы его не сбивают.
 
 После установки откройте `https://<IP-сервера>/`. Временный пароль:
 

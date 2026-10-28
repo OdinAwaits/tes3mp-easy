@@ -23,7 +23,7 @@ Builds tes3mp-easy-ops and tes3mp-easy-panel for linux/amd64 and writes
 dist/tes3mp-easy-<version>-linux-amd64.tar.gz plus a .sha256 sidecar.
 
 Flags:
-  --version <version>  release version (default: project version)
+  --version <version>  server release version (default: internal/version.Server)
   --source <dir>       repository root (default: current directory)
   --output <dir>       output directory (default: dist)
   --help               print this help and exit
@@ -61,7 +61,7 @@ func parseOptions(args []string) (options, error) {
 	flags := flag.NewFlagSet("tes3mp-easy-pack", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.Usage = func() {}
-	flags.StringVar(&opts.version, "version", version.Version, "")
+	flags.StringVar(&opts.version, "version", version.Server, "")
 	flags.StringVar(&opts.source, "source", ".", "")
 	flags.StringVar(&opts.output, "output", "dist", "")
 	help := flags.Bool("help", false, "")
@@ -131,7 +131,7 @@ func pack(opts options, stdout io.Writer) error {
 		build := exec.CommandContext(ctx, goTool, "build",
 			"-trimpath",
 			"-buildvcs=false",
-			"-ldflags=-s -w -buildid= -X github.com/Saagilat/tes3mp-easy/internal/version.Version="+opts.version,
+			"-ldflags=-s -w -buildid= -X github.com/Saagilat/tes3mp-easy/internal/version.Server="+opts.version,
 			"-o", output,
 			item.pkg,
 		)
