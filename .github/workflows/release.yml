@@ -116,7 +116,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: client-linux
-          path: dist/*
+          path: |
+            dist/*-linux-amd64.tar.gz
+            dist/*-linux-amd64.tar.gz.sha256
           if-no-files-found: error
 
   client-windows:
@@ -161,7 +163,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: client-windows
-          path: dist/*
+          path: |
+            dist/*-windows-amd64.zip
+            dist/*-windows-amd64.zip.sha256
           if-no-files-found: error
 
   publish:
