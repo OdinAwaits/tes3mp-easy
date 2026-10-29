@@ -113,12 +113,21 @@ jobs:
           tar -czf "tes3mp-easy-client-${version}-linux-amd64.tar.gz" tes3mp-easy-client
           sha256sum "tes3mp-easy-client-${version}-linux-amd64.tar.gz" > \
             "tes3mp-easy-client-${version}-linux-amd64.tar.gz.sha256"
+      - name: Stage client installer
+        shell: bash
+        run: |
+          install -m 0644 tes3mp-easy-client-installer.sh dist/
+          cd dist
+          sha256sum tes3mp-easy-client-installer.sh > \
+            tes3mp-easy-client-installer.sh.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: client-linux
           path: |
             dist/*-linux-amd64.tar.gz
             dist/*-linux-amd64.tar.gz.sha256
+            dist/tes3mp-easy-client-installer.sh
+            dist/tes3mp-easy-client-installer.sh.sha256
           if-no-files-found: error
 
   client-windows:

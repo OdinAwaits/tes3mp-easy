@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=TES3MP Easy
+Exec=tes3mp-easy-client %U
+Icon=openmw
+Terminal=false
+Categories=Game;Network;
+StartupNotify=true
+StartupWMClass=io.github.saagilat.tes3mp-easy
