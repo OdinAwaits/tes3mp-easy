@@ -51,6 +51,7 @@ client_asset() {
         cut -d' ' -f2-
 }
 
+icon_url="https://raw.githubusercontent.com/$REPO/refs/heads/master/tes3mp-easy.png"
 asset_url=""
 if [[ -n ${TES3MP_EASY_RELEASES_API:-} ]]; then
     release_json=$(fetch_json "$TES3MP_EASY_RELEASES_API") ||
@@ -81,9 +82,10 @@ if [[ -z $archive_name || $release_name == "$archive_name" ]]; then
     fail "unexpected release asset name: $archive_name"
 fi
 
-bin_dir="$HOME/.local/bin"
-# ~/.local/applications is the default of XDG_DATA_HOME/share/applications.
+bin_dir="${XDG_DATA_HOME:-$HOME/.local}/bin"
+# ~/.local/share/applications is the default of XDG_DATA_HOME/share/applications.
 applications_dir="${XDG_DATA_HOME:-$HOME/.local}/share/applications"
+icon_dir="${XDG_DATA_HOME:-$HOME/.local}/share/icons/hicolor/256x256/apps/"
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/tes3mp-easy-client-install.XXXXXX")
 staged="$bin_dir/.${BINARY}.new.$$"
@@ -96,6 +98,10 @@ curl -fsSL --retry 2 --connect-timeout 10 "$asset_url" -o "$archive" ||
 curl -fsSL --retry 2 --connect-timeout 10 "$asset_url.sha256" \
     -o "$archive.sha256" ||
     fail "cannot download $asset_url.sha256"
+xdg-icon-resource forceupdate
+mkdir -p "$icon_dir"
+curl -fsSL --retry 2 --connect-timeout 10 "$icon_url" -o "$icon_dir/tes3mp-easy.png" ||
+    fail "could not download icon"
 
 (
     cd "$tmp"
@@ -125,7 +131,7 @@ cat >"$tmp/$DESKTOP" <<'DESKTOP'
 Type=Application
 Name=TES3MP Easy
 Exec=tes3mp-easy-client %U
-Icon=openmw
+Icon=tes3mp-easy
 Terminal=false
 Categories=Game;Network;
 StartupNotify=true
